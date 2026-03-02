@@ -26,3 +26,5 @@ pub mod uuid;
 pub mod linalg;
 
 pub mod int;
+pub mod hkdf;
+pub use hkdf::hkdf_sha256;

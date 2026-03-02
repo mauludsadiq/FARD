@@ -8,8 +8,8 @@ impl std::fmt::Display for TryPropagation {
 }
 impl std::error::Error for TryPropagation {}
 use valuecore::base64url;
-use sha2::Sha256;
-use hkdf::Hkdf;
+
+
 use valuecore::json::{JsonVal, from_str as json_from_str, to_string as json_to_string};
 use chacha20poly1305::{XChaCha20Poly1305, KeyInit, aead::{Aead, Payload}};
 
@@ -1121,11 +1121,11 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "hkdf_sha256" => {
             match (args.get(0), args.get(1), args.get(2), args.get(3)) {
                 (Some(V::Bytes(ikm)), Some(V::Bytes(salt)), Some(V::Bytes(info)), Some(V::Int(len))) => {
-                    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
-                    let mut out = vec![0u8; *len as usize];
-                    match hk.expand(info, &mut out) {
-                        Ok(_) => Ok(V::Bytes(out)),
-                        Err(_) => Ok(V::Err("ERROR_BADARG hkdf_sha256: invalid length".into())),
+
+
+                    match valuecore::hkdf_sha256(salt, ikm, info, *len as usize) {
+                        Ok(out) => Ok(V::Bytes(out)),
+                        Err(e) => Ok(V::Err(e.to_string())),
                     }
                 }
                 _ => Err(anyhow!("ERROR_BADARG hkdf_sha256 expects (bytes, bytes, bytes, int)")),
