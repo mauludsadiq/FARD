@@ -44,7 +44,8 @@ pub fn with_effect_handler<H: crate::effects::EffectHandler + 'static>(handler: 
     EFFECT_HANDLER.with(|cell| *cell.borrow_mut() = None);
 }
 use std::collections::{BTreeMap, BTreeSet};
-use valuecore::v0::{canon_cmp, canon_eq, i64_add, i64_mul, i64_sub, V};
+use valuecore::v0::{canon_cmp, canon_eq, V};
+use valuecore::int::{i64_add, i64_sub, i64_mul, i64_div, i64_rem, i64_neg};
 
 #[derive(Debug, Clone)]
 pub struct Env {
@@ -1255,33 +1256,6 @@ fn expect_i64_2(args: &[V]) -> Result<(i64, i64)> {
     };
     Ok((a, b))
 }
-
-// Match Gate8 semantics: div by zero => ERROR_DIV_ZERO; MIN / -1 => ERROR_OVERFLOW; trunc toward zero.
-fn i64_div(a: i64, b: i64) -> Result<i64> {
-    if b == 0 {
-        return Err(anyhow!("ERROR_DIV_ZERO i64_div"));
-    }
-    if a == i64::MIN && b == -1 {
-        return Err(anyhow!("ERROR_OVERFLOW i64_div"));
-    }
-    Ok(a / b)
-}
-
-fn i64_rem(a: i64, b: i64) -> Result<i64> {
-    if b == 0 {
-        return Err(anyhow!("ERROR_DIV_ZERO i64_rem"));
-    }
-    if a == i64::MIN && b == -1 {
-        return Err(anyhow!("ERROR_OVERFLOW i64_rem"));
-    }
-    Ok(a % b)
-}
-
-fn i64_neg(a: i64) -> Result<i64> {
-    a.checked_neg()
-        .ok_or_else(|| anyhow!("ERROR_OVERFLOW i64_neg"))
-}
-
 fn decode_hex(s: &str) -> Result<Vec<u8>> {
     let rest = if let Some(r) = s.strip_prefix("hex:") {
         r

@@ -1,4 +1,5 @@
 use valuecore::Sha256 as NativeSha256;
+use valuecore::int::{i64_add, i64_sub, i64_mul, i64_div, i64_rem};
 use anyhow::{anyhow, bail, Context, Result};
 const QMARK_EXPECT_RESULT: &str = "QMARK_EXPECT_RESULT";
 const QMARK_PROPAGATE_ERR: &str = "QMARK_PROPAGATE_ERR";
@@ -3163,14 +3164,13 @@ fn call_builtin(
             if args.len() != 2 { bail!("ERROR_BADARG int.mul expects 2 args"); }
             let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
             let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
-            Ok(Val::Int(a.checked_mul(b).ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME int overflow"))?))
+            Ok(Val::Int(i64_mul(a, b).map_err(|e| anyhow!("{}", e))?))
         }
         Builtin::IntDiv => {
             if args.len() != 2 { bail!("ERROR_BADARG int.div expects 2 args"); }
             let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
             let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
-            if b == 0 { bail!("ERROR_RUNTIME int divide by zero"); }
-            Ok(Val::Int(a / b))
+            Ok(Val::Int(i64_div(a, b).map_err(|e| anyhow!("{}", e))?))
         }
         Builtin::IntAbs => {
             match args.first() {
@@ -3223,14 +3223,13 @@ fn call_builtin(
             if args.len() != 2 { bail!("ERROR_BADARG int.sub expects 2 args"); }
             let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
             let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
-            Ok(Val::Int(a.checked_sub(b).ok_or_else(|| anyhow::anyhow!("ERROR_RUNTIME int underflow"))?))
+            Ok(Val::Int(i64_sub(a, b).map_err(|e| anyhow!("{}", e))?))
         }
         Builtin::IntMod => {
             if args.len() != 2 { bail!("ERROR_BADARG int.mod expects 2 args"); }
             let a = match &args[0] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
             let b = match &args[1] { Val::Int(n) => *n, _ => bail!("ERROR_BADARG type") };
-            if b == 0 { bail!("ERROR_RUNTIME int mod by zero"); }
-            Ok(Val::Int(a % b))
+            Ok(Val::Int(i64_rem(a, b).map_err(|e| anyhow!("{}", e))?))
         }
         Builtin::IntLt => {
             if args.len() != 2 { bail!("ERROR_BADARG int.lt expects 2 args"); }
