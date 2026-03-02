@@ -44,7 +44,7 @@ pub fn with_effect_handler<H: crate::effects::EffectHandler + 'static>(handler: 
     EFFECT_HANDLER.with(|cell| *cell.borrow_mut() = None);
 }
 use std::collections::{BTreeMap, BTreeSet};
-use valuecore::v0::{canon_cmp, canon_eq, V};
+use valuecore::{Val as V, canon_cmp, canon_eq};
 use valuecore::int::{i64_add, i64_sub, i64_mul, i64_div, i64_rem, i64_neg};
 
 #[derive(Debug, Clone)]
@@ -240,7 +240,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                     return eval_expr(&a.body, &mut child);
                 }
             }
-            Ok(EvalVal::V(V::Err("ERROR_MATCH_NO_ARM".into())))
+            Ok(EvalVal::V(V::err("ERROR_MATCH_NO_ARM")))
         }
         Expr::RecordLit(fs) => {
             let mut kvs: Vec<(String, V)> = vec![];
@@ -248,26 +248,26 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                 let vv = eval_expr(v, env)?.into_v()?;
                 kvs.push((k.clone(), vv));
             }
-            Ok(EvalVal::V(valuecore::v0::normalize(&V::Map(kvs))))
+            Ok(EvalVal::V(V::record(kvs)))
         }
         Expr::FieldGet { base, field } => {
             let b = eval_expr(base, env)?.into_v()?;
             match b {
-                V::Map(kvs) => {
-                    let nb = valuecore::v0::normalize(&V::Map(kvs));
+                V::Record(kvs) => {
+                    let nb = V::record(kvs);
                     match nb {
-                        V::Map(xs) => {
+                        V::Record(xs) => {
                             for (k, v) in xs {
                                 if k == *field {
                                     return Ok(EvalVal::V(v));
                                 }
                             }
-                            Ok(EvalVal::V(V::Err(format!("ERROR_OOB record missing field {}", field))))
+                            Ok(EvalVal::V(V::err_data(&format!("ERROR_OOB record missing field {}", field), V::Unit)))
                         }
                         _ => unreachable!("normalize(Map) must return Map"),
                     }
                 }
-                _ => Ok(EvalVal::V(V::Err("ERROR_BADARG field access expects record".into()))),
+                _ => Ok(EvalVal::V(V::err("ERROR_BADARG field access expects record"))),
             }
         }
         // eval_operator_close_v1 begin
@@ -363,7 +363,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                 });
                 return Ok(EvalVal::V(match result {
                     Ok(v) => v,
-                    Err(e) => V::Err(e.to_string()),
+                    Err(e) => V::err_data(&e.to_string(), V::Unit),
                 }));
             }
 
@@ -382,7 +382,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                     return Err(anyhow!("ERROR_BADARG wrong arity for closure {}", f));
                 }
                 if env.depth >= env.max_depth {
-                    return Ok(EvalVal::V(V::Err("ERROR_EVAL_DEPTH recursion limit exceeded".into())));
+                    return Ok(EvalVal::V(V::err("ERROR_EVAL_DEPTH recursion limit exceeded")));
                 }
                 let mut child = Env::with_fns(fns);
                 child.bindings = captured;
@@ -407,7 +407,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
             }
 
             if env.depth >= env.max_depth {
-                return Ok(EvalVal::V(V::Err("ERROR_EVAL_DEPTH recursion limit exceeded".into())));
+                return Ok(EvalVal::V(V::err("ERROR_EVAL_DEPTH recursion limit exceeded")));
             }
 
             // no closures: new child env, only params + all fns (for recursion)
@@ -422,14 +422,9 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                 // runtime type enforcement for non-Value annotations
                 if let EvalVal::V(ref v) = ev {
                     if !type_check(ty, v) {
-                        return Ok(EvalVal::V(V::Err(format!(
-                            "ERROR_TYPE {}:{} expected {} got {:?}",
-                            f, name, type_name(ty),
-                            match v { V::Int(_) => "Int", V::Text(_) => "Text",
-                              V::Bool(_) => "Bool", V::Bytes(_) => "Bytes",
-                              V::List(_) => "List", V::Map(_) => "Map",
-                              V::Unit => "Unit", V::Ok(_) => "Ok",
-                              V::Err(_) => "Err" }
+                        return Ok(EvalVal::V(V::err(&format!(
+                            "ERROR_TYPE {}:{} expected {} got {}",
+                            f, name, type_name(ty), v.type_name()
                         ))));
                     }
                 }
@@ -444,11 +439,11 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
             let v = eval_expr(inner, env)?;
             match v {
                 // err value: propagate up via sentinel
-                EvalVal::V(V::Err(ref e)) => {
-                    return Err(anyhow::Error::new(TryPropagation(V::Err(e.clone()))));
+                EvalVal::V(V::Err { code: ref e, .. }) => {
+                    return Err(anyhow::Error::new(TryPropagation(V::err(e))));
                 }
                 // {tag:"ok", val:v} record: unwrap to v
-                EvalVal::V(V::Map(ref kvs)) => {
+                EvalVal::V(V::Record(ref kvs)) => {
                     let tag = kvs.iter().find(|(k, _)| k == "tag").map(|(_, v)| v.clone());
                     let val = kvs.iter().find(|(k, _)| k == "val").map(|(_, v)| v.clone());
                     match (tag, val) {
@@ -477,7 +472,7 @@ pub fn eval_expr(expr: &Expr, env: &mut Env) -> Result<EvalVal> {
                         return Err(anyhow!("ERROR_BADARG wrong arity for closure"));
                     }
                     if env.depth >= env.max_depth {
-                        return Ok(EvalVal::V(V::Err("ERROR_EVAL_DEPTH recursion limit exceeded".into())));
+                        return Ok(EvalVal::V(V::err("ERROR_EVAL_DEPTH recursion limit exceeded")));
                     }
                     let mut child = Env::with_fns(fns);
                     child.bindings = captured;
@@ -526,25 +521,24 @@ fn pat_matches(p: &Pattern, v: &V) -> bool {
         Pattern::Ok(inner) => {
             // ok(x) matches {tag:"ok", val:v} or V::Ok(v)
             match v {
-                V::Map(kvs) => {
+                V::Record(kvs) => {
                     let tag = kvs.iter().find(|(k,_)| k == "tag").map(|(_,v)| v);
                     let val = kvs.iter().find(|(k,_)| k == "val").map(|(_,v)| v);
                     matches!(tag, Some(V::Text(t)) if t == "ok")
                         && val.map_or(false, |v| pat_matches(inner, v))
                 }
-                V::Ok(v) => pat_matches(inner, v),
                 _ => false,
             }
         }
         Pattern::Err(inner) => {
             match v {
-                V::Map(kvs) => {
+                V::Record(kvs) => {
                     let tag = kvs.iter().find(|(k,_)| k == "tag").map(|(_,v)| v);
                     let val = kvs.iter().find(|(k,_)| k == "val").map(|(_,v)| v);
                     matches!(tag, Some(V::Text(t)) if t == "err")
                         && val.map_or(false, |v| pat_matches(inner, v))
                 }
-                V::Err(_) => pat_matches(inner, &V::Text("_err_".into())),
+                V::Err { .. } => pat_matches(inner, &V::Text("_err_".into())),
                 _ => false,
             }
         }
@@ -564,23 +558,22 @@ fn pat_binds(p: &Pattern, v: &V) -> Vec<(String, V)> {
         }
         Pattern::Ok(inner) => {
             match v {
-                V::Map(kvs) => {
+                V::Record(kvs) => {
                     if let Some((_, val)) = kvs.iter().find(|(k,_)| k == "val") {
                         pat_binds(inner, val)
                     } else { vec![] }
                 }
-                V::Ok(v) => pat_binds(inner, v),
                 _ => vec![],
             }
         }
         Pattern::Err(inner) => {
             match v {
-                V::Map(kvs) => {
+                V::Record(kvs) => {
                     if let Some((_, val)) = kvs.iter().find(|(k,_)| k == "val") {
                         pat_binds(inner, val)
                     } else { vec![] }
                 }
-                V::Err(e) => pat_binds(inner, &V::Text(e.clone())),
+                V::Err { code: e, .. } => pat_binds(inner, &V::Text(e.clone())),
                 _ => vec![],
             }
         }
@@ -598,7 +591,7 @@ fn type_check(ty: &crate::ast::Type, v: &V) -> bool {
         Type::Text => matches!(v, V::Text(_)),
         Type::Bytes => matches!(v, V::Bytes(_)),
         Type::List(_) => matches!(v, V::List(_)),
-        Type::Map(_, _) => matches!(v, V::Map(_)),
+        Type::Map(_, _) => matches!(v, V::Record(_)),
         Type::Named { name, .. } => match name.as_str() {
             "Value" => true,
             "Int" => matches!(v, V::Int(_)),
@@ -606,7 +599,7 @@ fn type_check(ty: &crate::ast::Type, v: &V) -> bool {
             "Bool" => matches!(v, V::Bool(_)),
             "Bytes" => matches!(v, V::Bytes(_)),
             "List" => matches!(v, V::List(_)),
-            "Map" => matches!(v, V::Map(_)),
+            "Map" => matches!(v, V::Record(_)),
             "Unit" => matches!(v, V::Unit),
             _ => true, // unknown named type — pass through
         },
@@ -623,7 +616,7 @@ fn type_name(ty: &crate::ast::Type) -> &'static str {
         Type::Text => "Text",
         Type::Bytes => "Bytes",
         Type::List(_) => "List",
-        Type::Map(_, _) => "Map",
+        Type::Map(_, _) => "Record",
         Type::Named { name, .. } => match name.as_str() {
             "Int" => "Int", "Text" => "Text", "Bool" => "Bool",
             "Bytes" => "Bytes", "List" => "List", "Map" => "Map",
@@ -733,28 +726,28 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
     if f.starts_with("linalg_") { return eval_linalg_builtin(f, args); }
     match f {
         "add" => {
-            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
-            match i64_add(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            match i64_add(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)) }
         }
         "sub" => {
-            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
-            match i64_sub(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            match i64_sub(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)) }
         }
         "mul" => {
-            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
-            match i64_mul(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            match i64_mul(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)) }
         }
         "div" => {
-            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
-            match i64_div(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            match i64_div(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)) }
         }
         "rem" => {
-            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
-            match i64_rem(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
+            let (a, b) = match expect_i64_2(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            match i64_rem(a, b) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)) }
         }
         "neg" => {
-            let a = match expect_i64_1(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
-            match i64_neg(a) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::Err(e.to_string())) }
+            let a = match expect_i64_1(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            match i64_neg(a) { Ok(n) => Ok(V::Int(n)), Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)) }
         }
         "eq" => {
             if args.len() != 2 {
@@ -771,19 +764,19 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         "gt" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a > b)),
-                _ => Ok(V::Err("ERROR_BADARG gt expects (int, int)".into())),
+                _ => Ok(V::err("ERROR_BADARG gt expects (int, int)")),
             }
         }
         "le" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a <= b)),
-                _ => Ok(V::Err("ERROR_BADARG le expects (int, int)".into())),
+                _ => Ok(V::err("ERROR_BADARG le expects (int, int)")),
             }
         }
         "ge" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Int(a)), Some(V::Int(b))) => Ok(V::Bool(a >= b)),
-                _ => Ok(V::Err("ERROR_BADARG ge expects (int, int)".into())),
+                _ => Ok(V::err("ERROR_BADARG ge expects (int, int)")),
             }
         }
         "not" => {
@@ -792,7 +785,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             match &args[0] {
                 V::Bool(b) => Ok(V::Bool(!*b)),
-                _ => Ok(V::Err("ERROR_BADARG not expects bool".into())),
+                _ => Ok(V::err("ERROR_BADARG not expects bool")),
             }
         }
         "list_len" => {
@@ -801,7 +794,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             match &args[0] {
                 V::List(xs) => Ok(V::Int(xs.len() as i64)),
-                _ => Ok(V::Err("ERROR_BADARG list_len expects list".into())),
+                _ => Ok(V::err("ERROR_BADARG list_len expects list")),
             }
         }
         "list_get" => {
@@ -813,29 +806,29 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 _ => return Err(anyhow!("ERROR_BADARG list_get expects int index")),
             };
             if idx < 0 {
-                return Ok(V::Err("ERROR_OOB list_get".into()));
+                return Ok(V::err("ERROR_OOB list_get"));
             }
             let u = idx as usize;
             match &args[0] {
                 V::List(xs) => Ok(xs
                     .get(u)
                     .cloned()
-                    .unwrap_or_else(|| V::Err("ERROR_OOB list_get".into()))),
-                _ => Ok(V::Err("ERROR_BADARG list_get expects list".into())),
+                    .unwrap_or_else(|| V::err("ERROR_OOB list_get"))),
+                _ => Ok(V::err("ERROR_BADARG list_get expects list")),
             }
         }
         "map_get" => {
             match (args.get(0), args.get(1)) {
-                (Some(V::Map(kvs)), Some(V::Text(k))) => {
-                    let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
-                    if let V::Map(nkvs) = norm {
+                (Some(V::Record(kvs)), Some(V::Text(k))) => {
+                    let norm = V::record(kvs.clone());
+                    if let V::Record(nkvs) = norm {
                         let found = nkvs.into_iter().find(|(ek, _)| ek == k).map(|(_, v)| v);
-                        Ok(found.unwrap_or_else(|| V::Err(format!("ERROR_OOB map_get missing key {}", k))))
+                        Ok(found.unwrap_or_else(|| V::err_data(&format!("ERROR_OOB map_get missing key {}", k), V::Unit)))
                     } else {
-                        Ok(V::Err("ERROR_BADARG map_get expects record".into()))
+                        Ok(V::err("ERROR_BADARG map_get expects record"))
                     }
                 }
-                _ => Ok(V::Err("ERROR_BADARG map_get expects (record, text)".into())),
+                _ => Ok(V::err("ERROR_BADARG map_get expects (record, text)")),
             }
         }
         "text_concat" => {
@@ -849,7 +842,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     out.push_str(b);
                     Ok(V::Text(out))
                 }
-                _ => Ok(V::Err("ERROR_BADARG text_concat expects text".into())),
+                _ => Ok(V::err("ERROR_BADARG text_concat expects text")),
             }
         }
         "int_to_text" => {
@@ -858,25 +851,25 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
             match &args[0] {
                 V::Int(i) => Ok(V::Text(i.to_string())),
-                _ => Ok(V::Err("ERROR_BADARG int_to_text expects int".into())),
+                _ => Ok(V::err("ERROR_BADARG int_to_text expects int")),
             }
         }
         "text_len" => {
             match args.get(0) {
                 Some(V::Text(s)) => Ok(V::Int(s.chars().count() as i64)),
-                _ => Ok(V::Err("ERROR_BADARG text_len expects text".into())),
+                _ => Ok(V::err("ERROR_BADARG text_len expects text")),
             }
         }
         "text_contains" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Text(s)), Some(V::Text(pat))) => Ok(V::Bool(s.contains(pat.as_str()))),
-                _ => Ok(V::Err("ERROR_BADARG text_contains expects (text, text)".into())),
+                _ => Ok(V::err("ERROR_BADARG text_contains expects (text, text)")),
             }
         }
         "text_starts_with" => {
             match (args.get(0), args.get(1)) {
                 (Some(V::Text(s)), Some(V::Text(pat))) => Ok(V::Bool(s.starts_with(pat.as_str()))),
-                _ => Ok(V::Err("ERROR_BADARG text_starts_with expects (text, text)".into())),
+                _ => Ok(V::err("ERROR_BADARG text_starts_with expects (text, text)")),
             }
         }
         "text_split" => {
@@ -885,7 +878,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     let parts: Vec<V> = s.split(sep.as_str()).map(|p| V::Text(p.to_string())).collect();
                     Ok(V::List(parts))
                 }
-                _ => Ok(V::Err("ERROR_BADARG text_split expects (text, text)".into())),
+                _ => Ok(V::err("ERROR_BADARG text_split expects (text, text)")),
             }
         }
         "text_trim" => {
@@ -1021,24 +1014,24 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
             }
         }
         "map_new" => {
-            Ok(valuecore::v0::normalize(&V::Map(vec![])))
+            Ok(V::record(vec![]))
         }
         "map_set" => {
             match (args.get(0), args.get(1), args.get(2)) {
-                (Some(V::Map(kvs)), Some(V::Text(k)), Some(v)) => {
+                (Some(V::Record(kvs)), Some(V::Text(k)), Some(v)) => {
                     let mut out = kvs.clone();
                     out.retain(|(ek, _)| ek != k);
                     out.push((k.clone(), v.clone()));
-                    Ok(valuecore::v0::normalize(&V::Map(out)))
+                    Ok(V::record(out))
                 }
                 _ => Err(anyhow!("ERROR_BADARG map_set expects (record, text, value)")),
             }
         }
         "map_has" => {
             match (args.get(0), args.get(1)) {
-                (Some(V::Map(kvs)), Some(V::Text(k))) => {
-                    let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
-                    if let V::Map(nkvs) = norm {
+                (Some(V::Record(kvs)), Some(V::Text(k))) => {
+                    let norm = V::record(kvs.clone());
+                    if let V::Record(nkvs) = norm {
                         Ok(V::Bool(nkvs.iter().any(|(ek, _)| ek == k)))
                     } else {
                         Ok(V::Bool(false))
@@ -1049,9 +1042,9 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         }
         "map_keys" => {
             match args.get(0) {
-                Some(V::Map(kvs)) => {
-                    let norm = valuecore::v0::normalize(&V::Map(kvs.clone()));
-                    if let V::Map(nkvs) = norm {
+                Some(V::Record(kvs)) => {
+                    let norm = V::record(kvs.clone());
+                    if let V::Record(nkvs) = norm {
                         Ok(V::List(nkvs.into_iter().map(|(k, _)| V::Text(k)).collect()))
                     } else {
                         Ok(V::List(vec![]))
@@ -1062,10 +1055,10 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
         }
         "map_delete" => {
             match (args.get(0), args.get(1)) {
-                (Some(V::Map(kvs)), Some(V::Text(k))) => {
+                (Some(V::Record(kvs)), Some(V::Text(k))) => {
                     let mut out = kvs.clone();
                     out.retain(|(ek, _)| ek != k);
-                    Ok(valuecore::v0::normalize(&V::Map(out)))
+                    Ok(V::record(out))
                 }
                 _ => Err(anyhow!("ERROR_BADARG map_delete expects (record, text)")),
             }
@@ -1081,7 +1074,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 Some(V::Text(s)) => {
                     match base64url::decode(s.as_bytes()) {
                         Ok(b) => Ok(V::Bytes(b)),
-                        Err(e) => Ok(V::Err(format!("ERROR_BADARG base64url_decode: {}", e))),
+                        Err(e) => Ok(V::err_data(&format!("ERROR_BADARG base64url_decode: {}", e), V::Unit)),
                     }
                 }
                 _ => Err(anyhow!("ERROR_BADARG base64url_decode expects text")),
@@ -1092,7 +1085,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 Some(V::Text(s)) => {
                     match json_from_str(s) {
                         Ok(jv) => json_to_v(&jv),
-                        Err(e) => Ok(V::Err(format!("ERROR_BADARG json_parse: {}", e))),
+                        Err(e) => Ok(V::err_data(&format!("ERROR_BADARG json_parse: {}", e), V::Unit)),
                     }
                 }
                 _ => Err(anyhow!("ERROR_BADARG json_parse expects text")),
@@ -1103,7 +1096,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 Some(v) => {
                     match v_to_json(v).map(|jv| json_to_string(&jv)) {
                         Ok(s) => Ok(V::Text(s)),
-                        Err(e) => Ok(V::Err(format!("ERROR_EVAL json_emit: {}", e))),
+                        Err(e) => Ok(V::err_data(&format!("ERROR_EVAL json_emit: {}", e), V::Unit)),
                     }
                 }
                 _ => Err(anyhow!("ERROR_BADARG json_emit expects value")),
@@ -1125,7 +1118,7 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
 
                     match valuecore::hkdf_sha256(salt, ikm, info, *len as usize) {
                         Ok(out) => Ok(V::Bytes(out)),
-                        Err(e) => Ok(V::Err(e.to_string())),
+                        Err(e) => Ok(V::err_data(&e.to_string(), V::Unit)),
                     }
                 }
                 _ => Err(anyhow!("ERROR_BADARG hkdf_sha256 expects (bytes, bytes, bytes, int)")),
@@ -1136,12 +1129,12 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 (Some(V::Bytes(key)), Some(V::Bytes(nonce)), Some(V::Bytes(aad)), Some(V::Bytes(pt))) => {
                     use chacha20poly1305::XNonce;
                     match XChaCha20Poly1305::new_from_slice(key) {
-                        Err(_) => Ok(V::Err("ERROR_BADARG xchacha20poly1305_seal: key must be 32 bytes".into())),
+                        Err(_) => Ok(V::err("ERROR_BADARG xchacha20poly1305_seal: key must be 32 bytes")),
                         Ok(cipher) => {
                             let n = XNonce::from_slice(nonce);
                             match cipher.encrypt(n, Payload { msg: pt, aad }) {
                                 Ok(ct) => Ok(V::Bytes(ct)),
-                                Err(_) => Ok(V::Err("ERROR_EVAL xchacha20poly1305_seal: encryption failed".into())),
+                                Err(_) => Ok(V::err("ERROR_EVAL xchacha20poly1305_seal: encryption failed")),
                             }
                         }
                     }
@@ -1154,12 +1147,12 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                 (Some(V::Bytes(key)), Some(V::Bytes(nonce)), Some(V::Bytes(aad)), Some(V::Bytes(ct))) => {
                     use chacha20poly1305::XNonce;
                     match XChaCha20Poly1305::new_from_slice(key) {
-                        Err(_) => Ok(V::Err("ERROR_BADARG xchacha20poly1305_open: key must be 32 bytes".into())),
+                        Err(_) => Ok(V::err("ERROR_BADARG xchacha20poly1305_open: key must be 32 bytes")),
                         Ok(cipher) => {
                             let n = XNonce::from_slice(nonce);
                             match cipher.decrypt(n, Payload { msg: ct, aad }) {
                                 Ok(pt) => Ok(V::Bytes(pt)),
-                                Err(_) => Ok(V::Err("ERROR_EVAL xchacha20poly1305_open: decryption failed".into())),
+                                Err(_) => Ok(V::err("ERROR_EVAL xchacha20poly1305_open: decryption failed")),
                             }
                         }
                     }
@@ -1171,18 +1164,18 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
 
         "ok" => {
             match args.get(0) {
-                Some(v) => Ok(valuecore::v0::normalize(&V::Map(vec![
+                Some(v) => Ok(V::record(vec![
                     ("tag".to_string(), V::Text("ok".to_string())),
                     ("val".to_string(), v.clone()),
-                ]))),
-                _ => Ok(V::Err("ERROR_BADARG ok expects 1 argument".into())),
+                ])),
+                _ => Ok(V::err("ERROR_BADARG ok expects 1 argument")),
             }
         }
         "err" => {
             match args.get(0) {
-                Some(V::Text(code)) => Ok(V::Err(code.clone())),
-                Some(v) => Ok(V::Err(format!("{:?}", v))),
-                _ => Ok(V::Err("ERROR_BADARG err expects 1 argument".into())),
+                Some(V::Text(code)) => Ok(V::err(code)),
+                Some(v) => Ok(V::err_data(&format!("{:?}", v), V::Unit)),
+                _ => Ok(V::err("ERROR_BADARG err expects 1 argument")),
             }
         }
         _ => Err(anyhow!("ERROR_EVAL unknown builtin {}", f)),
@@ -1204,7 +1197,7 @@ fn json_to_v(j: &JsonVal) -> Result<V> {
             let kvs: Result<Vec<(String, V)>> = m.iter()
                 .map(|(k, v)| json_to_v(v).map(|vv| (k.clone(), vv)))
                 .collect();
-            Ok(valuecore::v0::normalize(&V::Map(kvs?)))
+            Ok(V::record(kvs?))
         }
     }
 }
@@ -1220,15 +1213,16 @@ fn v_to_json(v: &V) -> Result<JsonVal> {
             let vs: Result<Vec<JsonVal>> = xs.iter().map(v_to_json).collect();
             Ok(JsonVal::Array(vs?))
         }
-        V::Map(kvs) => {
+        V::Record(kvs) => {
             let mut m = std::collections::BTreeMap::new();
             for (k, v) in kvs {
                 m.insert(k.clone(), v_to_json(v)?);
             }
             Ok(JsonVal::Object(m))
         }
-        V::Err(e) => Ok(JsonVal::Str(format!("error:{}", e))),
-        V::Ok(v) => v_to_json(v),
+        V::Float(f) => Ok(JsonVal::Float(*f)),
+        V::Err { code: e, .. } => Ok(JsonVal::Str(format!("error:{}", e))),
+
     }
 }
 
@@ -1328,48 +1322,48 @@ fn eval_float_builtin(f: &str, args: &[V]) -> Result<V> {
                     let v: f64 = s.parse().unwrap_or(f64::NAN);
                     Ok(f64_to_bytes(v))
                 }
-                _ => Ok(V::Err("ERROR_BADARG float_from_int expects int".into())),
+                _ => Ok(V::err("ERROR_BADARG float_from_int expects int")),
             }
         }
         "float_to_int" => {
-            let f = match expect_f64_1(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
+            let f = match expect_f64_1(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
             Ok(V::Int(f as i64))
         }
         "float_from_text" => {
             match args.first() {
                 Some(V::Text(s)) => match s.parse::<f64>() {
                     Ok(v) => Ok(f64_to_bytes(v)),
-                    Err(_) => Ok(V::Err(format!("ERROR_PARSE cannot parse float: {}", s))),
+                    Err(_) => Ok(V::err_data(&format!("ERROR_PARSE cannot parse float: {}", s), V::Unit)),
                 },
-                _ => Ok(V::Err("ERROR_BADARG float_from_text expects text".into())),
+                _ => Ok(V::err("ERROR_BADARG float_from_text expects text")),
             }
         }
         "float_to_text" => {
-            let f = match expect_f64_1(args) { Ok(v) => v, Err(e) => return Ok(V::Err(e.to_string())) };
+            let f = match expect_f64_1(args) { Ok(v) => v, Err(e) => return Ok(V::err_data(&e.to_string(), V::Unit)) };
             Ok(V::Text(format!("{}", f)))
         }
-        "float_add" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a+b)) }
-        "float_sub" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a-b)) }
-        "float_mul" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a*b)) }
-        "float_div" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a/b)) }
-        "float_exp"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.exp())) }
-        "float_ln"   => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.ln())) }
-        "float_sqrt" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.sqrt())) }
-        "float_abs"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.abs())) }
-        "float_neg"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(-a)) }
-        "float_floor"=> { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.floor())) }
-        "float_ceil" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.ceil())) }
-        "float_round"=> { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.round())) }
-        "float_pow"  => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(f64_to_bytes(a.powf(b))) }
-        "float_lt"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a<b)) }
-        "float_gt"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a>b)) }
-        "float_le"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a<=b)) }
-        "float_ge"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a>=b)) }
-        "float_eq"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a==b)) }
+        "float_add" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a+b)) }
+        "float_sub" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a-b)) }
+        "float_mul" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a*b)) }
+        "float_div" => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a/b)) }
+        "float_exp"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.exp())) }
+        "float_ln"   => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.ln())) }
+        "float_sqrt" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.sqrt())) }
+        "float_abs"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.abs())) }
+        "float_neg"  => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(-a)) }
+        "float_floor"=> { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.floor())) }
+        "float_ceil" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.ceil())) }
+        "float_round"=> { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.round())) }
+        "float_pow"  => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(f64_to_bytes(a.powf(b))) }
+        "float_lt"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a<b)) }
+        "float_gt"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a>b)) }
+        "float_le"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a<=b)) }
+        "float_ge"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a>=b)) }
+        "float_eq"   => { let (a,b) = match expect_f64_2(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a==b)) }
         "float_nan"  => Ok(f64_to_bytes(f64::NAN)),
         "float_inf"  => Ok(f64_to_bytes(f64::INFINITY)),
-        "float_is_nan"    => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a.is_nan())) }
-        "float_is_finite" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) }; Ok(V::Bool(a.is_finite())) }
+        "float_is_nan"    => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a.is_nan())) }
+        "float_is_finite" => { let a = match expect_f64_1(args) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) }; Ok(V::Bool(a.is_finite())) }
         _ => Err(anyhow!("ERROR_EVAL unknown float builtin: {}", f)),
     }
 }
@@ -1407,7 +1401,7 @@ fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
                     let n: usize = s.parse().map_err(|_| anyhow!("ERROR_BADARG linalg_zeros expects non-negative int"))?;
                     Ok(vec_to_v(&vec![0.0f64; n]))
                 }
-                _ => Ok(V::Err("ERROR_BADARG linalg_zeros expects int".into())),
+                _ => Ok(V::err("ERROR_BADARG linalg_zeros expects int")),
             }
         }
         "linalg_eye" => {
@@ -1418,60 +1412,60 @@ fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
                     let m: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| if i==j {1.0} else {0.0}).collect()).collect();
                     Ok(mat_to_v(&m))
                 }
-                _ => Ok(V::Err("ERROR_BADARG linalg_eye expects int".into())),
+                _ => Ok(V::err("ERROR_BADARG linalg_eye expects int")),
             }
         }
         "linalg_dot" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY linalg_dot expects 2 args".into())); }
-            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            if a.len() != b.len() { return Ok(V::Err("ERROR_BADARG linalg_dot length mismatch".into())); }
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_dot expects 2 args")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            if a.len() != b.len() { return Ok(V::err("ERROR_BADARG linalg_dot length mismatch")); }
             Ok(f64_to_bytes(a.iter().zip(b.iter()).map(|(x,y)| x*y).sum()))
         }
         "linalg_norm" => {
-            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             Ok(f64_to_bytes(a.iter().map(|x| x*x).sum::<f64>().sqrt()))
         }
         "linalg_vec_add" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
-            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            if a.len() != b.len() { return Ok(V::Err("ERROR_BADARG length mismatch".into())); }
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            if a.len() != b.len() { return Ok(V::err("ERROR_BADARG length mismatch")); }
             Ok(vec_to_v(&a.iter().zip(b.iter()).map(|(x,y)| x+y).collect::<Vec<_>>()))
         }
         "linalg_vec_sub" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
-            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            if a.len() != b.len() { return Ok(V::Err("ERROR_BADARG length mismatch".into())); }
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let b = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            if a.len() != b.len() { return Ok(V::err("ERROR_BADARG length mismatch")); }
             Ok(vec_to_v(&a.iter().zip(b.iter()).map(|(x,y)| x-y).collect::<Vec<_>>()))
         }
         "linalg_vec_scale" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
-            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let s = match bytes_to_f64(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY")); }
+            let a = match v_to_vec(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let s = match bytes_to_f64(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             Ok(vec_to_v(&a.iter().map(|x| x*s).collect::<Vec<_>>()))
         }
         "linalg_transpose" => {
-            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             if m.is_empty() { return Ok(mat_to_v(&[])); }
             let rows = m.len(); let cols = m[0].len();
             let t: Vec<Vec<f64>> = (0..cols).map(|j| (0..rows).map(|i| m[i][j]).collect()).collect();
             Ok(mat_to_v(&t))
         }
         "linalg_matvec" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY linalg_matvec expects 2 args".into())); }
-            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let x = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_matvec expects 2 args")); }
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let x = match v_to_vec(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             let result: Vec<f64> = m.iter().map(|row| {
                 row.iter().zip(x.iter()).map(|(a,b)| a*b).sum()
             }).collect();
             Ok(vec_to_v(&result))
         }
         "linalg_matmul" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY linalg_matmul expects 2 args".into())); }
-            let a = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let b = match v_to_mat(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY linalg_matmul expects 2 args")); }
+            let a = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let b = match v_to_mat(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             if a.is_empty() || b.is_empty() { return Ok(mat_to_v(&[])); }
             let m = a.len(); let k = a[0].len(); let n = b[0].len();
             let c: Vec<Vec<f64>> = (0..m).map(|i|
@@ -1482,30 +1476,30 @@ fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
             Ok(mat_to_v(&c))
         }
         "linalg_mat_add" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
-            let a = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let b = match v_to_mat(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY")); }
+            let a = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let b = match v_to_mat(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             let c: Vec<Vec<f64>> = a.iter().zip(b.iter()).map(|(ra,rb)|
                 ra.iter().zip(rb.iter()).map(|(x,y)| x+y).collect()
             ).collect();
             Ok(mat_to_v(&c))
         }
         "linalg_mat_scale" => {
-            if args.len() != 2 { return Ok(V::Err("ERROR_ARITY".into())); }
-            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
-            let s = match bytes_to_f64(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            if args.len() != 2 { return Ok(V::err("ERROR_ARITY")); }
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
+            let s = match bytes_to_f64(&args[1]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             Ok(mat_to_v(&m.iter().map(|r| r.iter().map(|x| x*s).collect()).collect::<Vec<_>>()))
         }
         "linalg_eigh" => {
-            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::Err(e.to_string())) };
+            let m = match v_to_mat(&args[0]) { Ok(v)=>v, Err(e)=>return Ok(V::err_data(&e.to_string(), V::Unit)) };
             let n = m.len();
-            if n == 0 { return Ok(V::Map(vec![
+            if n == 0 { return Ok(V::Record(vec![
                 ("vals".into(), V::List(vec![])),
                 ("vecs".into(), V::List(vec![])),
             ])); }
             let flat: Vec<f64> = m.iter().flat_map(|r| r.iter().cloned()).collect();
             let (eigenvalues, eigenvecs) = valuecore::linalg::eigh(&flat, n);
-            Ok(V::Map(vec![
+            Ok(V::Record(vec![
                 ("vals".into(), vec_to_v(&eigenvalues)),
                 ("vecs".into(), mat_to_v(&eigenvecs)),
             ]))

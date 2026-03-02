@@ -1,4 +1,4 @@
-use valuecore::v0::V;
+use valuecore::Val as V;
 use anyhow::Result;
 
 #[derive(Debug, Clone)]

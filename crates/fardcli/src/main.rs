@@ -3,7 +3,7 @@ use std::fs;
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 use valuecore::{hex_lower, parse_hex};
-use valuecore::v0::V;
+use valuecore::Val as V;
 use fardlang::effects::{EffectHandler, EffectTrace};
 use valuecore::json::{JsonVal, from_slice as json_from_slice, from_str as json_from_str, to_string as json_to_string};
 use anyhow::{anyhow, Result};
@@ -30,7 +30,7 @@ impl EffectHandler for StdEffectHandler {
             "write_file" => {
                 let path = match args.first() { Some(V::Text(s)) => s.clone(), _ => return Err(anyhow!("write_file expects text path")) };
                 let data = args.get(1).cloned().unwrap_or(V::Unit);
-                let bytes = valuecore::v0::encode_json(&data);
+                let bytes = valuecore::v0::encode_json(&val_to_v0(&data));
                 fs::write(&path, &bytes).map_err(|e| anyhow!("write_file {}: {}", path, e))?;
                 V::Bool(true)
             }
@@ -63,7 +63,7 @@ fn json_to_v(j: &JsonVal) -> V {
         JsonVal::Float(f) => V::Text(f.to_string()),
         JsonVal::Str(s) => V::Text(s.clone()),
         JsonVal::Array(a) => V::List(a.iter().map(json_to_v).collect()),
-        JsonVal::Object(o) => V::Map(o.iter().map(|(k,v)| (k.clone(), json_to_v(v))).collect()),
+        JsonVal::Object(o) => V::record(o.iter().map(|(k,v)| (k.clone(), json_to_v(v))).collect()),
     }
 }
 
@@ -164,8 +164,8 @@ mod witness {
     }
 }
 
-fn fard_json_to_v(j: &JsonVal) -> valuecore::v0::V {
-    use valuecore::v0::V;
+fn fard_json_to_v(j: &JsonVal) -> V {
+    use valuecore::Val as V;
     // FARD canonical wire format: {"t": "int", "v": 42}
     if let (Some(t), Some(v)) = (j.get("t").and_then(|x| x.as_str()), j.get("v")) {
         match t {
@@ -186,10 +186,10 @@ fn fard_json_to_v(j: &JsonVal) -> valuecore::v0::V {
                     let val = fard_json_to_v(pair.get(1)?);
                     Some((k, val))
                 }).collect();
-                return V::Map(pairs);
+                return V::record(pairs);
             },
-            "ok" => return V::Ok(Box::new(fard_json_to_v(v))),
-            "err" => if let Some(s) = v.as_str() { return V::Err(s.to_string()); },
+            "ok" => return V::record(vec![("tag".to_string(), V::Text("ok".to_string())), ("val".to_string(), fard_json_to_v(v))]),
+            "err" => if let Some(s) = v.as_str() { return V::err(s); },
             _ => {}
         }
     }
@@ -198,11 +198,11 @@ fn fard_json_to_v(j: &JsonVal) -> valuecore::v0::V {
 }
 
 
-fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
-    use valuecore::v0::V;
+fn render_human(v: &V, indent: usize) -> String {
+    use valuecore::Val as V;
 
     fn is_scalar(v: &V) -> bool {
-        matches!(v, V::Unit | V::Bool(_) | V::Int(_) | V::Text(_) | V::Bytes(_) | V::Ok(_) | V::Err(_))
+        matches!(v, V::Unit | V::Bool(_) | V::Int(_) | V::Float(_) | V::Text(_) | V::Bytes(_) | V::Err { .. })
     }
 
     fn quote_text(s: &str) -> String {
@@ -230,9 +230,10 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
         V::Bool(b) => b.to_string(),
         V::Int(n) => n.to_string(),
         V::Text(s) => quote_text(s),
+        V::Float(f) => f.to_string(),
         V::Bytes(b) => format!("b<{} bytes>", b.len()),
-        V::Ok(inner) => format!("ok({})", render_human(inner, indent)),
-        V::Err(msg) => format!("error:{}", quote_text(msg)),
+
+        V::Err { code, .. } => format!("error:{}", quote_text(code)),
         V::List(items) => {
             if items.is_empty() { return "[]".to_string(); }
             let all_scalar = items.iter().all(|x| is_scalar(x));
@@ -256,7 +257,7 @@ fn render_human(v: &valuecore::v0::V, indent: usize) -> String {
             out.push_str(&format!("{}]", pad));
             out
         }
-        V::Map(kvs) => {
+        V::Record(kvs) => {
             if kvs.is_empty() { return "{}".to_string(); }
             let all_scalar = kvs.iter().all(|(_, v)| is_scalar(v));
             if all_scalar && kvs.len() <= 6 {
@@ -311,6 +312,22 @@ fn main() {
     handler.join().unwrap();
 }
 
+
+fn val_to_v0(v: &V) -> valuecore::v0::V {
+    use valuecore::v0::V as V0;
+    match v {
+        V::Unit => V0::Unit,
+        V::Bool(b) => V0::Bool(*b),
+        V::Int(i) => V0::Int(*i),
+        V::Float(f) => V0::Bytes(f.to_le_bytes().to_vec()),
+        V::Text(s) => V0::Text(s.clone()),
+        V::Bytes(b) => V0::Bytes(b.clone()),
+        V::List(xs) => V0::List(xs.iter().map(val_to_v0).collect()),
+        V::Record(kvs) => V0::Map(kvs.iter().map(|(k, v)| (k.clone(), val_to_v0(v))).collect()),
+        V::Err { code, .. } => V0::Err(code.clone()),
+    }
+}
+
 fn run(max_depth: usize) {
 
 fn json_to_v_json(v: &V) -> JsonVal {
@@ -320,10 +337,10 @@ fn json_to_v_json(v: &V) -> JsonVal {
         V::Int(i)      => JsonVal::Int(*i),
         V::Text(s)     => JsonVal::Str(s.clone()),
         V::Bytes(b)    => JsonVal::Str(hex_lower(b)),
-        V::Ok(x)       => { let mut m = std::collections::BTreeMap::new(); m.insert("ok".to_string(), json_to_v_json(x)); JsonVal::Object(m) },
-        V::Err(e)      => { let mut m = std::collections::BTreeMap::new(); m.insert("error".to_string(), JsonVal::Str(e.clone())); JsonVal::Object(m) },
+        V::Float(f)    => JsonVal::Float(*f),
+        V::Err { code, .. } => { let mut m = std::collections::BTreeMap::new(); m.insert("error".to_string(), JsonVal::Str(code.clone())); JsonVal::Object(m) },
         V::List(items) => JsonVal::Array(items.iter().map(json_to_v_json).collect()),
-        V::Map(pairs)  => {
+        V::Record(pairs)  => {
             let mut m = std::collections::BTreeMap::new();
             for (k, val) in pairs { m.insert(k.clone(), json_to_v_json(val)); }
             JsonVal::Object(m)
@@ -563,7 +580,7 @@ fn json_to_v_json(v: &V) -> JsonVal {
     }
 
     let v = result.unwrap();
-    let output_bytes = valuecore::v0::encode_json(&v);
+    let output_bytes = valuecore::v0::encode_json(&val_to_v0(&v));
 
     let receipt = witness::compute(&src, &inputs, &output_bytes, &trace_ndjson, &derived_from, max_depth);
     witness::write(&receipt, &trace_ndjson, &output_bytes);

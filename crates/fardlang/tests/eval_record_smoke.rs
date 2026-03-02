@@ -1,6 +1,6 @@
 use fardlang::eval::{eval_block, Env};
 use fardlang::{check, parse_module};
-use valuecore::v0::V;
+use valuecore::Val as V;
 
 #[test]
 fn eval_record_literal_and_field_get() {

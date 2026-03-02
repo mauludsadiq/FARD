@@ -1,7 +1,7 @@
 use fardlang::ast::{Block, Expr, FnDecl, Stmt, Type};
 use fardlang::eval::{eval_block, Env};
 use std::collections::BTreeMap;
-use valuecore::v0::V;
+use valuecore::Val as V;
 
 fn empty_block_tail(e: Expr) -> Block {
     Block {

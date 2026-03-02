@@ -1,6 +1,6 @@
 use fardlang::eval::{eval_block, Env};
 use fardlang::{check, parse_module};
-use valuecore::v0::V;
+use valuecore::Val as V;
 
 #[test]
 fn concat_operator_eval_smoke() {
