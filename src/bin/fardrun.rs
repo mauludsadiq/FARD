@@ -1691,6 +1691,8 @@ enum Val {
     Err { code: String, data: Box<Val> },
     Func(Func),
     Builtin(Builtin),
+    /// Method bound to a receiver. When called, receiver is prepended as first arg.
+    BoundMethod(Box<Val>, Box<Val>),
 }
 
 impl Val {
@@ -1706,6 +1708,7 @@ impl Val {
             Val::Unit => "unit", Val::Bool(_) => "bool", Val::Int(_) => "int",
             Val::Float(_) => "float", Val::Text(_) => "text", Val::Bytes(_) => "bytes",
             Val::List(_) => "list", Val::Record(_) => "record",
+            Val::BoundMethod(..) => "bound-method",
             Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin",
         }
     }
@@ -2000,7 +2003,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) => None,
         }
     }
 }
@@ -2194,12 +2197,41 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         }
         Expr::Get(obj, k) => {
             let o = eval(obj, env, tracer, loader)?;
-            match o {
+            match &o {
                 Val::Record(m) => m
                     .get(k)
                     .cloned()
                     .ok_or_else(|| anyhow!("EXPORT_MISSING missing field {k}")),
-                _ => bail!("field access on non-record"),
+                // Method-style dispatch: val.method looks up k in the stdlib
+                // module for that value type and returns a BoundMethod that
+                // prepends the receiver when called. xs.map(f) -> map(xs, f).
+                v => {
+                    let type_mod = match v {
+                        Val::List(_)  => Some("std/list"),
+                        Val::Text(_)  => Some("std/str"),
+                        Val::Int(_)   => Some("std/int"),
+                        Val::Bytes(_) => Some("std/bytes"),
+                        Val::Float(_) => Some("std/float"),
+                        _             => None,
+                    };
+                    if let Some(mod_name) = type_mod {
+                        let here = loader.root_dir.clone();
+                        let m = loader.load_module(mod_name, &here, tracer)
+                            .map_err(|e| anyhow!("method dispatch: {mod_name}: {e}"))?;
+                        if let Some(f) = m.get(k) {
+                            return Ok(Val::BoundMethod(Box::new(o.clone()), Box::new(f.clone())));
+                        }
+                        bail!("method not found: {k} on type {mod_name}");
+                    }
+                    bail!("field access on non-record (type: {})", match v {
+                        Val::Unit => "unit", Val::Bool(_) => "bool",
+                        Val::Int(_) => "int", Val::Float(_) => "float",
+                        Val::Text(_) => "text", Val::Bytes(_) => "bytes",
+                        Val::List(_) => "list", Val::Func(_) | Val::Builtin(_) => "function",
+                        Val::BoundMethod(..) => "bound-method",
+                        Val::Err{..} => "err", Val::Record(_) => "record",
+                    })
+                }
             }
         }
         Expr::Let(name, e1, e2) => {
@@ -2480,6 +2512,13 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                     }
                 }
             }
+            Val::BoundMethod(receiver, func) => {
+                let mut full_args = vec![*receiver];
+                full_args.extend(cur_args);
+                cur_f = *func;
+                cur_args = full_args;
+                // loop continues
+            }
             _ => bail!("call on non-function"),
         }
     }
@@ -2503,6 +2542,11 @@ fn eval_tco(expr: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut Module
             match fv {
                 Val::Func(_) => Ok(TcoResult::TailCall(fv, av)),
                 Val::Builtin(b) => Ok(TcoResult::Done(call_builtin(b, av, tracer, loader)?)),
+                Val::BoundMethod(receiver, func) => {
+                    let mut full_args = vec![*receiver];
+                    full_args.extend(av);
+                    Ok(TcoResult::Done(call(*func, full_args, tracer, loader)?))
+                }
                 _ => bail!("call on non-function"),
             }
         }
