@@ -200,7 +200,7 @@ fn main() -> Result<()> {
                 let b = canonical_json_bytes(&v);
                 let _ = fs::write(tracer.out_dir.join("module_graph.json"), &b);
             }));
-            let msg0 = format!("{}", e);
+            let msg0 = e.root_cause().to_string();
             let code = {
                 const PINNED: &[&str] = &[
                     QMARK_EXPECT_RESULT,
@@ -1729,7 +1729,7 @@ struct Func {
 #[derive(Clone, Debug)]
 enum Builtin {
     PngRed1x1,
-    Unimplemented,
+    Unimplemented(&'static str),
     ListMap,
     ListFilter,
     ListRange,
@@ -2590,7 +2590,7 @@ fn call_builtin(
             Ok(Val::Bool(a == b))
         }
 
-        Builtin::Unimplemented => bail!("ERROR_RUNTIME UNIMPLEMENTED_BUILTIN"),
+        Builtin::Unimplemented(name) => bail!("ERROR_RUNTIME UNIMPLEMENTED_BUILTIN: {}", name),
         Builtin::ResultOk => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG result.ok expects 1 arg");
@@ -4933,79 +4933,79 @@ impl ModuleLoader {
             }
             "std/option" => {
                 let mut m = BTreeMap::new();
-                m.insert("None".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("Some".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("isNone".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("isSome".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("None".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.None")));
+                m.insert("Some".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.Some")));
+                m.insert("isNone".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.isNone")));
+                m.insert("isSome".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.isSome")));
                 m.insert(
                     "fromNullable".to_string(),
-                    Val::Builtin(Builtin::Unimplemented),
+                    Val::Builtin(Builtin::Unimplemented("std/option.fromNullable")),
                 );
                 m.insert(
                     "toNullable".to_string(),
-                    Val::Builtin(Builtin::Unimplemented),
+                    Val::Builtin(Builtin::Unimplemented("std/option.toNullable")),
                 );
-                m.insert("map".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("andThen".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("unwrapOr".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("map".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.map")));
+                m.insert("andThen".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.andThen")));
+                m.insert("unwrapOr".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.unwrapOr")));
                 m.insert(
                     "unwrapOrElse".to_string(),
-                    Val::Builtin(Builtin::Unimplemented),
+                    Val::Builtin(Builtin::Unimplemented("std/option.unwrapOrElse")),
                 );
-                m.insert("toResult".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("toResult".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.toResult")));
                 Ok(m)
             }
             "std/null" => {
                 let mut m = BTreeMap::new();
-                m.insert("isNull".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("coalesce".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("isNull".to_string(), Val::Builtin(Builtin::Unimplemented("std/null.isNull")));
+                m.insert("coalesce".to_string(), Val::Builtin(Builtin::Unimplemented("std/null.coalesce")));
                 m.insert(
                     "guardNotNull".to_string(),
-                    Val::Builtin(Builtin::Unimplemented),
+                    Val::Builtin(Builtin::Unimplemented("std/null.guardNotNull")),
                 );
                 Ok(m)
             }
             "std/path" => {
                 let mut m = BTreeMap::new();
-                m.insert("base".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("dir".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("ext".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("isAbs".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("join".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("joinAll".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("base".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.base")));
+                m.insert("dir".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.dir")));
+                m.insert("ext".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.ext")));
+                m.insert("isAbs".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.isAbs")));
+                m.insert("join".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.join")));
+                m.insert("joinAll".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.joinAll")));
                 m.insert(
                     "normalize".to_string(),
-                    Val::Builtin(Builtin::Unimplemented),
+                    Val::Builtin(Builtin::Unimplemented("std/path.normalize")),
                 );
                 Ok(m)
             }
             "std/time" => {
                 let mut m = BTreeMap::new();
-                m.insert("add".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("sub".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("format".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("add".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.add")));
+                m.insert("sub".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.sub")));
+                m.insert("format".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.format")));
                 let mut d = BTreeMap::new();
-                d.insert("ms".to_string(), Val::Builtin(Builtin::Unimplemented));
-                d.insert("sec".to_string(), Val::Builtin(Builtin::Unimplemented));
-                d.insert("min".to_string(), Val::Builtin(Builtin::Unimplemented));
+                d.insert("ms".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.ms")));
+                d.insert("sec".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.sec")));
+                d.insert("min".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.min")));
                 m.insert("Duration".to_string(), Val::Record(d));
                 Ok(m)
             }
             "std/trace" => {
                 let mut m = BTreeMap::new();
-                m.insert("emit".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("info".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("warn".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("error".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("span".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("emit".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.emit")));
+                m.insert("info".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.info")));
+                m.insert("warn".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.warn")));
+                m.insert("error".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.error")));
+                m.insert("span".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.span")));
                 Ok(m)
             }
             "std/artifact" => {
                 let mut m = BTreeMap::new();
                 m.insert("import".to_string(), Val::Builtin(Builtin::ImportArtifact));
                 m.insert("emit".to_string(), Val::Builtin(Builtin::EmitArtifact));
-                m.insert("ref".to_string(), Val::Builtin(Builtin::Unimplemented));
-                m.insert("derive".to_string(), Val::Builtin(Builtin::Unimplemented));
+                m.insert("ref".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.ref")));
+                m.insert("derive".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.derive")));
                 Ok(m)
             }
             "std/bytes" => {
