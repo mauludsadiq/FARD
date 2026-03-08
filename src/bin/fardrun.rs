@@ -1787,6 +1787,10 @@ enum Builtin {
     ResultMap,
     ResultMapErr,
     ResultOrElse,
+    TraceInfo,
+    TraceWarn,
+    TraceError,
+    TraceSpan,
     HttpGet,
     HttpPost,
     HttpRequest,
@@ -2942,6 +2946,56 @@ fn call_builtin(
             }
         }
 
+        // --- std/trace ---
+        Builtin::TraceInfo => {
+            if args.len() != 1 { bail!("ERROR_BADARG trace.info expects 1 arg"); }
+            let msg = args[0].to_json().ok_or_else(|| anyhow!("trace.info arg must be jsonable"))?;
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("level".to_string(), J::Str("info".to_string()));
+            m.insert("msg".to_string(), msg);
+            tracer.emit(&J::Object(m))?;
+            Ok(Val::Unit)
+        }
+        Builtin::TraceWarn => {
+            if args.len() != 1 { bail!("ERROR_BADARG trace.warn expects 1 arg"); }
+            let msg = args[0].to_json().ok_or_else(|| anyhow!("trace.warn arg must be jsonable"))?;
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("level".to_string(), J::Str("warn".to_string()));
+            m.insert("msg".to_string(), msg);
+            tracer.emit(&J::Object(m))?;
+            Ok(Val::Unit)
+        }
+        Builtin::TraceError => {
+            if args.len() != 1 { bail!("ERROR_BADARG trace.error expects 1 arg"); }
+            let msg = args[0].to_json().ok_or_else(|| anyhow!("trace.error arg must be jsonable"))?;
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("level".to_string(), J::Str("error".to_string()));
+            m.insert("msg".to_string(), msg);
+            tracer.emit(&J::Object(m))?;
+            Ok(Val::Unit)
+        }
+        Builtin::TraceSpan => {
+            // span(name, fn) — emits span_start/span_end around fn(), returns fn result
+            if args.len() != 2 { bail!("ERROR_BADARG trace.span expects 2 args (name, fn)"); }
+            let name = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG trace.span name must be text"),
+            };
+            let f = args[1].clone();
+            // emit span_start
+            let mut start = std::collections::BTreeMap::new();
+            start.insert("level".to_string(), J::Str("span_start".to_string()));
+            start.insert("msg".to_string(), J::Str(name.clone()));
+            tracer.emit(&J::Object(start))?;
+            // call the function
+            let result = call(f, vec![], tracer, loader);
+            // emit span_end regardless of success
+            let mut end = std::collections::BTreeMap::new();
+            end.insert("level".to_string(), J::Str("span_end".to_string()));
+            end.insert("msg".to_string(), J::Str(name));
+            tracer.emit(&J::Object(end))?;
+            result
+        }
         // --- std/http ---
         Builtin::HttpGet => {
             // http.get(url) -> {status: int, body: text, headers: record}
@@ -5512,11 +5566,11 @@ impl ModuleLoader {
             }
             "std/trace" => {
                 let mut m = BTreeMap::new();
-                m.insert("emit".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.emit")));
-                m.insert("info".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.info")));
-                m.insert("warn".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.warn")));
-                m.insert("error".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.error")));
-                m.insert("span".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.span")));
+                m.insert("emit".to_string(), Val::Builtin(Builtin::Emit));
+                m.insert("info".to_string(), Val::Builtin(Builtin::TraceInfo));
+                m.insert("warn".to_string(), Val::Builtin(Builtin::TraceWarn));
+                m.insert("error".to_string(), Val::Builtin(Builtin::TraceError));
+                m.insert("span".to_string(), Val::Builtin(Builtin::TraceSpan));
                 Ok(m)
             }
             "std/artifact" => {
