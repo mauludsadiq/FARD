@@ -2256,7 +2256,7 @@ fn fard_pat_match_v0_5(p: &Pat, v: &Val, env: &mut Env) -> Result<bool> {
 fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
     match e {
         Expr::Int(n) => Ok(Val::Int(*n)),
-        Expr::FloatLit(f) => Ok(Val::Bytes(f.to_le_bytes().to_vec())),
+        Expr::FloatLit(f) => Ok(Val::Float(*f)),
         Expr::Bool(b) => Ok(Val::Bool(*b)),
         Expr::Str(s) => Ok(Val::Text(s.clone())),
         Expr::Null => Ok(Val::Unit),
@@ -2367,6 +2367,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             match (op.as_str(), v) {
                 ("-", Val::Int(n)) => Ok(Val::Int(-n)),
                 ("-", Val::Bytes(b)) => { let f = f64::from_le_bytes(b.as_slice().try_into().unwrap_or([0u8;8])); Ok(Val::Bytes((-f).to_le_bytes().to_vec())) }
+                ("-", Val::Float(f)) => Ok(Val::Float(-f)),
                 ("!", Val::Bool(b)) => Ok(Val::Bool(!b)),
                 _ => bail!("bad unary op"),
             }
@@ -2379,8 +2380,32 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 ("-", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l - r)),
                 ("*", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l * r)),
                 ("/", Val::Int(l), Val::Int(r)) => Ok(Val::Int(l / r)),
-                ("==", l, r) => Ok(Val::Bool(val_eq(&l, &r))),
-                ("!=", l, r) => Ok(Val::Bool(!val_eq(&l, &r))),
+                ("+", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l + r)),
+                ("-", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l - r)),
+                ("*", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l * r)),
+                ("/", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l / r)),
+                ("<", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l < r)),
+                (">", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l > r)),
+                ("<=", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l <= r)),
+                (">=", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l >= r)),
+                ("==", l, r) => {
+                    if matches!((&l, &r), (Val::Float(_), _) | (_, Val::Float(_))) {
+                        let mut lm = BTreeMap::new();
+                        lm.insert("level".to_string(), J::Str("warn".to_string()));
+                        lm.insert("msg".to_string(), J::Str("LINT_FLOAT_EQ: == on float values is unreliable; use float.eq instead".to_string()));
+                        let _ = tracer.emit(&J::Object(lm));
+                    }
+                    Ok(Val::Bool(val_eq(&l, &r)))
+                }
+                ("!=", l, r) => {
+                    if matches!((&l, &r), (Val::Float(_), _) | (_, Val::Float(_))) {
+                        let mut lm = BTreeMap::new();
+                        lm.insert("level".to_string(), J::Str("warn".to_string()));
+                        lm.insert("msg".to_string(), J::Str("LINT_FLOAT_EQ: != on float values is unreliable; use float.eq instead".to_string()));
+                        let _ = tracer.emit(&J::Object(lm));
+                    }
+                    Ok(Val::Bool(!val_eq(&l, &r)))
+                }
                 ("&&", Val::Bool(l), Val::Bool(r)) => Ok(Val::Bool(l && r)),
                 ("||", Val::Bool(l), Val::Bool(r)) => Ok(Val::Bool(l || r)),
                 ("<", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l < r)),
@@ -2622,6 +2647,7 @@ fn mk_result_err(e: Val) -> Val {
 fn val_eq(a: &Val, b: &Val) -> bool {
     match (a, b) {
         (Val::Int(x), Val::Int(y)) => x == y,
+        (Val::Float(x), Val::Float(y)) => x == y,
         (Val::Bool(x), Val::Bool(y)) => x == y,
         (Val::Text(x), Val::Text(y)) => x == y,
         (Val::Unit, Val::Unit) => true,
