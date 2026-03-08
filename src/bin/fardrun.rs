@@ -196,7 +196,10 @@ fn main() -> Result<()> {
     }
     if let Some(lockp) = lockfile {
         loader.lock = Some(Lockfile::load(&lockp)?);
+    } else if run.enforce_lockfile {
+        bail!("ERROR_LOCK --enforce-lockfile requires --lockfile <path>");
     }
+    loader.enforce_lockfile = run.enforce_lockfile;
     let v = match loader.eval_main(&program, &mut tracer) {
         Ok(v) => v,
         Err(e) => {
@@ -4561,6 +4564,7 @@ struct ModuleLoader {
     cache: HashMap<String, BTreeMap<String, Val>>,
     stack: Vec<String>,
     lock: Option<Lockfile>,
+    enforce_lockfile: bool,
     graph: ModuleGraph,
     current: Option<usize>,
 }
@@ -4572,6 +4576,7 @@ impl ModuleLoader {
             cache: HashMap::new(),
             stack: Vec::new(),
             lock: None,
+            enforce_lockfile: false,
             graph: ModuleGraph::new(),
             current: None,
         }
@@ -4883,11 +4888,20 @@ impl ModuleLoader {
     }
     fn check_lock(&self, module: &str, got: &str) -> Result<()> {
         if let Some(lk) = &self.lock {
-            if let Some(exp) = lk.expected(module) {
-                if exp != got {
-                    bail!("LOCK_MISMATCH lock mismatch for module {module}: expected {exp}, got {got}");
+            match lk.expected(module) {
+                Some(exp) => {
+                    if exp != got {
+                        bail!("LOCK_MISMATCH lock mismatch for module {module}: expected {exp}, got {got}");
+                    }
+                }
+                None => {
+                    if self.enforce_lockfile {
+                        bail!("ERROR_LOCK module not in lockfile: {module}");
+                    }
                 }
             }
+        } else if self.enforce_lockfile {
+            bail!("ERROR_LOCK --enforce-lockfile set but no lockfile loaded");
         }
         Ok(())
     }

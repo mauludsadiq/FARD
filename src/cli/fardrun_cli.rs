@@ -31,6 +31,9 @@ pub struct RunArgs {
 
     #[arg(long)]
     pub registry: Option<PathBuf>,
+
+    #[arg(long, default_value_t = false)]
+    pub enforce_lockfile: bool,
 }
 
 impl Cli {
@@ -48,6 +51,7 @@ impl Cli {
                     || s == "--trace"
                     || s == "--result"
                     || s == "--stdin"
+                    || s == "--enforce-lockfile"
             });
             let first_is_flag = argv
                 .get(1)
@@ -65,6 +69,7 @@ impl Cli {
                 out: PathBuf::from("."),
                 lockfile: None,
                 registry: None,
+                enforce_lockfile: false,
             };
             return (dummy, true);
         }
