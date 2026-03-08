@@ -1782,6 +1782,22 @@ enum Builtin {
     ResultAndThen,
     ResultUnwrapOk,
     ResultUnwrapErr,
+    ResultIsOk,
+    ResultIsErr,
+    ResultMap,
+    ResultMapErr,
+    ResultOrElse,
+    OptionNone,
+    OptionSome,
+    OptionIsNone,
+    OptionIsSome,
+    OptionFromNullable,
+    OptionToNullable,
+    OptionMap,
+    OptionAndThen,
+    OptionUnwrapOr,
+    OptionUnwrapOrElse,
+    OptionToResult,
     RecEmpty,
     RecKeys,
     RecValues,
@@ -2741,6 +2757,137 @@ fn call_builtin(
                 bail!("ERROR_BADARG result.err expects 1 arg");
             }
             Ok(mk_result_err(args[0].clone()))
+        }
+        Builtin::ResultIsOk => {
+            if args.len() != 1 { bail!("ERROR_BADARG result.is_ok expects 1 arg"); }
+            Ok(Val::Bool(result_is_ok(&args[0])?))
+        }
+        Builtin::ResultIsErr => {
+            if args.len() != 1 { bail!("ERROR_BADARG result.is_err expects 1 arg"); }
+            Ok(Val::Bool(!result_is_ok(&args[0])?))
+        }
+        Builtin::ResultMap => {
+            if args.len() != 2 { bail!("ERROR_BADARG result.map expects 2 args"); }
+            let r = args[0].clone(); let f = args[1].clone();
+            if result_is_ok(&r)? {
+                let v = result_unwrap_ok(&r)?;
+                Ok(mk_result_ok(call(f, vec![v], tracer, loader)?))
+            } else { Ok(r) }
+        }
+        Builtin::ResultMapErr => {
+            if args.len() != 2 { bail!("ERROR_BADARG result.map_err expects 2 args"); }
+            let r = args[0].clone(); let f = args[1].clone();
+            if !result_is_ok(&r)? {
+                let e = result_unwrap_err(&r)?;
+                Ok(mk_result_err(call(f, vec![e], tracer, loader)?))
+            } else { Ok(r) }
+        }
+        Builtin::ResultOrElse => {
+            if args.len() != 2 { bail!("ERROR_BADARG result.or_else expects 2 args"); }
+            let r = args[0].clone(); let f = args[1].clone();
+            if !result_is_ok(&r)? {
+                let e = result_unwrap_err(&r)?;
+                Ok(call(f, vec![e], tracer, loader)?)
+            } else { Ok(r) }
+        }
+        // --- std/option ---
+        Builtin::OptionNone => Ok(Val::Unit),
+        Builtin::OptionSome => {
+            if args.len() != 1 { bail!("ERROR_BADARG option.some expects 1 arg"); }
+            let mut m = BTreeMap::new();
+            m.insert("t".to_string(), Val::Text("some".to_string()));
+            m.insert("v".to_string(), args[0].clone());
+            Ok(Val::Record(m))
+        }
+        Builtin::OptionIsNone => {
+            if args.len() != 1 { bail!("ERROR_BADARG option.is_none expects 1 arg"); }
+            Ok(Val::Bool(matches!(args[0], Val::Unit)))
+        }
+        Builtin::OptionIsSome => {
+            if args.len() != 1 { bail!("ERROR_BADARG option.is_some expects 1 arg"); }
+            Ok(Val::Bool(!matches!(args[0], Val::Unit)))
+        }
+        Builtin::OptionFromNullable => {
+            if args.len() != 1 { bail!("ERROR_BADARG option.from_nullable expects 1 arg"); }
+            if matches!(args[0], Val::Unit) {
+                Ok(Val::Unit)
+            } else {
+                let mut m = BTreeMap::new();
+                m.insert("t".to_string(), Val::Text("some".to_string()));
+                m.insert("v".to_string(), args[0].clone());
+                Ok(Val::Record(m))
+            }
+        }
+        Builtin::OptionToNullable => {
+            if args.len() != 1 { bail!("ERROR_BADARG option.to_nullable expects 1 arg"); }
+            match &args[0] {
+                Val::Unit => Ok(Val::Unit),
+                Val::Record(m) if matches!(m.get("t"), Some(Val::Text(s)) if s == "some") => {
+                    Ok(m.get("v").cloned().unwrap_or(Val::Unit))
+                }
+                _ => Ok(Val::Unit),
+            }
+        }
+        Builtin::OptionMap => {
+            if args.len() != 2 { bail!("ERROR_BADARG option.map expects 2 args"); }
+            let opt = args[0].clone(); let f = args[1].clone();
+            match &opt {
+                Val::Unit => Ok(Val::Unit),
+                Val::Record(m) if matches!(m.get("t"), Some(Val::Text(s)) if s == "some") => {
+                    let v = m.get("v").cloned().unwrap_or(Val::Unit);
+                    let result = call(f, vec![v], tracer, loader)?;
+                    let mut nm = BTreeMap::new();
+                    nm.insert("t".to_string(), Val::Text("some".to_string()));
+                    nm.insert("v".to_string(), result);
+                    Ok(Val::Record(nm))
+                }
+                _ => Ok(Val::Unit),
+            }
+        }
+        Builtin::OptionAndThen => {
+            if args.len() != 2 { bail!("ERROR_BADARG option.and_then expects 2 args"); }
+            let opt = args[0].clone(); let f = args[1].clone();
+            match &opt {
+                Val::Unit => Ok(Val::Unit),
+                Val::Record(m) if matches!(m.get("t"), Some(Val::Text(s)) if s == "some") => {
+                    let v = m.get("v").cloned().unwrap_or(Val::Unit);
+                    call(f, vec![v], tracer, loader)
+                }
+                _ => Ok(Val::Unit),
+            }
+        }
+        Builtin::OptionUnwrapOr => {
+            if args.len() != 2 { bail!("ERROR_BADARG option.unwrap_or expects 2 args"); }
+            let opt = args[0].clone(); let default = args[1].clone();
+            match &opt {
+                Val::Unit => Ok(default),
+                Val::Record(m) if matches!(m.get("t"), Some(Val::Text(s)) if s == "some") => {
+                    Ok(m.get("v").cloned().unwrap_or(default))
+                }
+                _ => Ok(default),
+            }
+        }
+        Builtin::OptionUnwrapOrElse => {
+            if args.len() != 2 { bail!("ERROR_BADARG option.unwrap_or_else expects 2 args"); }
+            let opt = args[0].clone(); let f = args[1].clone();
+            match &opt {
+                Val::Unit => call(f, vec![], tracer, loader),
+                Val::Record(m) if matches!(m.get("t"), Some(Val::Text(s)) if s == "some") => {
+                    Ok(m.get("v").cloned().unwrap_or(Val::Unit))
+                }
+                _ => call(f, vec![], tracer, loader),
+            }
+        }
+        Builtin::OptionToResult => {
+            if args.len() != 2 { bail!("ERROR_BADARG option.to_result expects 2 args"); }
+            let opt = args[0].clone(); let err_val = args[1].clone();
+            match &opt {
+                Val::Unit => Ok(mk_result_err(err_val)),
+                Val::Record(m) if matches!(m.get("t"), Some(Val::Text(s)) if s == "some") => {
+                    Ok(mk_result_ok(m.get("v").cloned().unwrap_or(Val::Unit)))
+                }
+                _ => Ok(mk_result_err(err_val)),
+            }
         }
         Builtin::FlowPipe => {
             if args.len() != 2 {
@@ -4973,14 +5120,14 @@ impl ModuleLoader {
                 m.insert("ok".to_string(), Val::Builtin(Builtin::ResultOk));
                 m.insert("err".to_string(), Val::Builtin(Builtin::ResultErr));
                 m.insert("andThen".to_string(), Val::Builtin(Builtin::ResultAndThen));
-                m.insert(
-                    "unwrap_ok".to_string(),
-                    Val::Builtin(Builtin::ResultUnwrapOk),
-                );
-                m.insert(
-                    "unwrap_err".to_string(),
-                    Val::Builtin(Builtin::ResultUnwrapErr),
-                );
+                m.insert("and_then".to_string(), Val::Builtin(Builtin::ResultAndThen));
+                m.insert("unwrap_ok".to_string(), Val::Builtin(Builtin::ResultUnwrapOk));
+                m.insert("unwrap_err".to_string(), Val::Builtin(Builtin::ResultUnwrapErr));
+                m.insert("is_ok".to_string(), Val::Builtin(Builtin::ResultIsOk));
+                m.insert("is_err".to_string(), Val::Builtin(Builtin::ResultIsErr));
+                m.insert("map".to_string(), Val::Builtin(Builtin::ResultMap));
+                m.insert("map_err".to_string(), Val::Builtin(Builtin::ResultMapErr));
+                m.insert("or_else".to_string(), Val::Builtin(Builtin::ResultOrElse));
                 Ok(m)
             }
             "std/grow" => {
@@ -5093,26 +5240,27 @@ impl ModuleLoader {
             }
             "std/option" => {
                 let mut m = BTreeMap::new();
-                m.insert("None".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.None")));
-                m.insert("Some".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.Some")));
-                m.insert("isNone".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.isNone")));
-                m.insert("isSome".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.isSome")));
-                m.insert(
-                    "fromNullable".to_string(),
-                    Val::Builtin(Builtin::Unimplemented("std/option.fromNullable")),
-                );
-                m.insert(
-                    "toNullable".to_string(),
-                    Val::Builtin(Builtin::Unimplemented("std/option.toNullable")),
-                );
-                m.insert("map".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.map")));
-                m.insert("andThen".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.andThen")));
-                m.insert("unwrapOr".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.unwrapOr")));
-                m.insert(
-                    "unwrapOrElse".to_string(),
-                    Val::Builtin(Builtin::Unimplemented("std/option.unwrapOrElse")),
-                );
-                m.insert("toResult".to_string(), Val::Builtin(Builtin::Unimplemented("std/option.toResult")));
+                m.insert("none".to_string(), Val::Builtin(Builtin::OptionNone));
+                m.insert("None".to_string(), Val::Builtin(Builtin::OptionNone));
+                m.insert("some".to_string(), Val::Builtin(Builtin::OptionSome));
+                m.insert("Some".to_string(), Val::Builtin(Builtin::OptionSome));
+                m.insert("is_none".to_string(), Val::Builtin(Builtin::OptionIsNone));
+                m.insert("isNone".to_string(), Val::Builtin(Builtin::OptionIsNone));
+                m.insert("is_some".to_string(), Val::Builtin(Builtin::OptionIsSome));
+                m.insert("isSome".to_string(), Val::Builtin(Builtin::OptionIsSome));
+                m.insert("from_nullable".to_string(), Val::Builtin(Builtin::OptionFromNullable));
+                m.insert("fromNullable".to_string(), Val::Builtin(Builtin::OptionFromNullable));
+                m.insert("to_nullable".to_string(), Val::Builtin(Builtin::OptionToNullable));
+                m.insert("toNullable".to_string(), Val::Builtin(Builtin::OptionToNullable));
+                m.insert("map".to_string(), Val::Builtin(Builtin::OptionMap));
+                m.insert("and_then".to_string(), Val::Builtin(Builtin::OptionAndThen));
+                m.insert("andThen".to_string(), Val::Builtin(Builtin::OptionAndThen));
+                m.insert("unwrap_or".to_string(), Val::Builtin(Builtin::OptionUnwrapOr));
+                m.insert("unwrapOr".to_string(), Val::Builtin(Builtin::OptionUnwrapOr));
+                m.insert("unwrap_or_else".to_string(), Val::Builtin(Builtin::OptionUnwrapOrElse));
+                m.insert("unwrapOrElse".to_string(), Val::Builtin(Builtin::OptionUnwrapOrElse));
+                m.insert("to_result".to_string(), Val::Builtin(Builtin::OptionToResult));
+                m.insert("toResult".to_string(), Val::Builtin(Builtin::OptionToResult));
                 Ok(m)
             }
             "std/null" => {
