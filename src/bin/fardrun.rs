@@ -1456,7 +1456,7 @@ impl Parser {
             Tok::Sym(s) if matches!(s.as_str(),
                 "==" | "!=" | "<" | ">" | "<=" | ">=") => Some(3),
             Tok::Sym(s) if s == "+" || s == "-"         => Some(4),
-            Tok::Sym(s) if s == "*" || s == "/"         => Some(5),
+            Tok::Sym(s) if s == "*" || s == "/" || s == "%" => Some(5),
             _                                           => None,
         }
     }
@@ -2414,6 +2414,10 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 (">", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l > r)),
                 ("<=", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l <= r)),
                 (">=", Val::Int(l), Val::Int(r)) => Ok(Val::Bool(l >= r)),
+                ("%", Val::Int(l), Val::Int(r)) => {
+                    if r == 0 { bail!("ERROR_DIV_ZERO modulo by zero") }
+                    Ok(Val::Int(l % r))
+                }
                 _ => bail!("bad binop {op}"),
             }
         }
