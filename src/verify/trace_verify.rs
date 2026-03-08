@@ -213,7 +213,7 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
                 saw_non_module_resolve = true;
             }
             "error" => {
-                expect_only_keys(obj, &["code", "message", "t"])?;
+                expect_only_keys(obj, &["code", "e", "message", "t"])?;
                 let _code = expect_str(obj, "code")?;
                 let _msg = expect_str(obj, "message")?;
                 error_count += 1;
