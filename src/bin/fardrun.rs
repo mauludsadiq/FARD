@@ -258,10 +258,18 @@ fn main() -> Result<()> {
                 let mut ln = se.span.line;
                 let mut cl = se.span.col;
                 if let Ok(src) = fs::read_to_string(&se.span.file) {
-                    let abs_s = bs.min(src.len());
+                    let abs_s = {
+                        let mut i = bs.min(src.len());
+                        while i > 0 && !src.is_char_boundary(i) { i -= 1; }
+                        i
+                    };
                     let ls = src[..abs_s].rfind("\n").map(|i| i + 1).unwrap_or(0);
                     let rel_s = abs_s.saturating_sub(ls);
-                    let abs_e = be.min(src.len());
+                    let abs_e = {
+                        let mut i = be.min(src.len());
+                        while i > 0 && !src.is_char_boundary(i) { i -= 1; }
+                        i
+                    };
                     let le = src[..abs_e].rfind("\n").map(|i| i + 1).unwrap_or(0);
                     let rel_e = abs_e.saturating_sub(le);
                     bs = rel_s;
@@ -283,10 +291,19 @@ fn main() -> Result<()> {
                 let mut ln = pe.span.line;
                 let mut cl = pe.span.col;
                 if let Ok(src) = fs::read_to_string(&pe.span.file) {
-                    let abs_s = bs.min(src.len());
+                    // Snap byte offsets to valid char boundaries (source may contain multibyte chars)
+                    let abs_s = {
+                        let mut i = bs.min(src.len());
+                        while i > 0 && !src.is_char_boundary(i) { i -= 1; }
+                        i
+                    };
                     let ls = src[..abs_s].rfind("\n").map(|i| i + 1).unwrap_or(0);
                     let rel_s = abs_s.saturating_sub(ls);
-                    let abs_e = be.min(src.len());
+                    let abs_e = {
+                        let mut i = be.min(src.len());
+                        while i > 0 && !src.is_char_boundary(i) { i -= 1; }
+                        i
+                    };
                     let le = src[..abs_e].rfind("\n").map(|i| i + 1).unwrap_or(0);
                     let rel_e = abs_e.saturating_sub(le);
                     bs = rel_s;
@@ -1043,6 +1060,17 @@ impl Parser {
             let name = self.expect_ident()?;
             self.expect_sym("=")?;
             let rhs = self.parse_expr()?;
+            // If followed by `in`, this is a let-in expression — parse the
+            // continuation as a full expression and wrap remaining binds around it.
+            if self.eat_kw("in") {
+                let mut tail = self.parse_expr()?;
+                // Wrap any pending `in` continuations (chained let-in)
+                tail = Expr::Let(name, Box::new(rhs), Box::new(tail));
+                for (n, r) in binds.into_iter().rev() {
+                    tail = Expr::Let(n, Box::new(r), Box::new(tail));
+                }
+                return Ok(tail);
+            }
             binds.push((name, rhs));
         }
         let mut tail = self.parse_expr()?;

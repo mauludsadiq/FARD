@@ -380,6 +380,7 @@ dependencies = [
  "anyhow",
  "clap",
  "ed25519-dalek",
+ "fardlang",
  "pretty_assertions",
  "regex",
  "tempfile",
