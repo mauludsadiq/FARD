@@ -1787,6 +1787,14 @@ enum Builtin {
     ResultMap,
     ResultMapErr,
     ResultOrElse,
+    TimeNow,
+    TimeParse,
+    TimeFormat,
+    TimeAdd,
+    TimeSub,
+    TimeDurationMs,
+    TimeDurationSec,
+    TimeDurationMin,
     OptionNone,
     OptionSome,
     OptionIsNone,
@@ -2454,6 +2462,40 @@ fn is_result_val(v: &Val) -> bool {
         _ => false,
     }
 }
+
+fn days_since_epoch(year: i64, month: i64, day: i64) -> i64 {
+    // Proleptic Gregorian calendar days since 1970-01-01
+    let y = if month <= 2 { year - 1 } else { year };
+    let m = if month <= 2 { month + 12 } else { month };
+    let d = day;
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m - 3) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+fn unix_secs_to_iso8601(secs: i64) -> String {
+    let (secs, _neg) = if secs < 0 { (-secs, true) } else { (secs, false) };
+    let days = secs / 86400;
+    let rem = secs % 86400;
+    let h = rem / 3600;
+    let m = (rem % 3600) / 60;
+    let s = rem % 60;
+    // Convert days since epoch to year/month/day
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe/1460 + doe/36524 - doe/146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365*yoe + yoe/4 - yoe/100);
+    let mp = (5*doy + 2)/153;
+    let d = doy - (153*mp+2)/5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, d, h, m, s)
+}
+
 fn result_is_ok(v: &Val) -> Result<bool> {
     match v {
         Val::Record(m) => {
@@ -2876,6 +2918,87 @@ fn call_builtin(
                     Ok(m.get("v").cloned().unwrap_or(Val::Unit))
                 }
                 _ => call(f, vec![], tracer, loader),
+            }
+        }
+
+        // --- std/time ---
+        Builtin::TimeNow => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            Ok(Val::Int(secs as i64))
+        }
+        Builtin::TimeParse => {
+            if args.len() != 1 { bail!("ERROR_BADARG time.parse expects 1 arg"); }
+            match &args[0] {
+                Val::Text(s) => {
+                    // Parse ISO 8601 UTC: "2024-01-15T12:34:56Z" or with ms "...T12:34:56.123Z"
+                    let s = s.trim_end_matches('Z');
+                    let (date_part, time_part) = if let Some(t) = s.find('T') {
+                        (&s[..t], &s[t+1..])
+                    } else {
+                        bail!("ERROR_BADARG time.parse invalid ISO 8601: missing T");
+                    };
+                    let dp: Vec<&str> = date_part.split('-').collect();
+                    if dp.len() != 3 { bail!("ERROR_BADARG time.parse invalid date"); }
+                    let year: i64 = dp[0].parse().context("year")?;
+                    let month: i64 = dp[1].parse().context("month")?;
+                    let day: i64 = dp[2].parse().context("day")?;
+                    let tp_base = time_part.split('.').next().unwrap_or(time_part);
+                    let tp: Vec<&str> = tp_base.split(':').collect();
+                    if tp.len() != 3 { bail!("ERROR_BADARG time.parse invalid time"); }
+                    let hour: i64 = tp[0].parse().context("hour")?;
+                    let min: i64 = tp[1].parse().context("min")?;
+                    let sec: i64 = tp[2].parse().context("sec")?;
+                    // Days since epoch (simple calculation, no leap seconds)
+                    let days = days_since_epoch(year, month, day);
+                    let unix_secs = days * 86400 + hour * 3600 + min * 60 + sec;
+                    Ok(Val::Int(unix_secs))
+                }
+                _ => bail!("ERROR_BADARG time.parse expects text"),
+            }
+        }
+        Builtin::TimeFormat => {
+            if args.len() != 1 { bail!("ERROR_BADARG time.format expects 1 arg"); }
+            match &args[0] {
+                Val::Int(secs) => Ok(Val::Text(unix_secs_to_iso8601(*secs))),
+                _ => bail!("ERROR_BADARG time.format expects int (unix seconds)"),
+            }
+        }
+        Builtin::TimeAdd => {
+            if args.len() != 2 { bail!("ERROR_BADARG time.add expects 2 args (unix_secs, delta_secs)"); }
+            match (&args[0], &args[1]) {
+                (Val::Int(ts), Val::Int(delta)) => Ok(Val::Int(ts + delta)),
+                _ => bail!("ERROR_BADARG time.add expects (int, int)"),
+            }
+        }
+        Builtin::TimeSub => {
+            if args.len() != 2 { bail!("ERROR_BADARG time.sub expects 2 args"); }
+            match (&args[0], &args[1]) {
+                (Val::Int(a), Val::Int(b)) => Ok(Val::Int(a - b)),
+                _ => bail!("ERROR_BADARG time.sub expects (int, int)"),
+            }
+        }
+        Builtin::TimeDurationMs => {
+            if args.len() != 1 { bail!("ERROR_BADARG time.Duration.ms expects 1 arg"); }
+            match &args[0] {
+                Val::Int(n) => Ok(Val::Int(n / 1000)),
+                _ => bail!("ERROR_BADARG time.Duration.ms expects int"),
+            }
+        }
+        Builtin::TimeDurationSec => {
+            if args.len() != 1 { bail!("ERROR_BADARG time.Duration.sec expects 1 arg"); }
+            match &args[0] {
+                Val::Int(n) => Ok(Val::Int(*n)),
+                _ => bail!("ERROR_BADARG time.Duration.sec expects int"),
+            }
+        }
+        Builtin::TimeDurationMin => {
+            if args.len() != 1 { bail!("ERROR_BADARG time.Duration.min expects 1 arg"); }
+            match &args[0] {
+                Val::Int(n) => Ok(Val::Int(n * 60)),
+                _ => bail!("ERROR_BADARG time.Duration.min expects int"),
             }
         }
         Builtin::OptionToResult => {
@@ -5289,13 +5412,15 @@ impl ModuleLoader {
             }
             "std/time" => {
                 let mut m = BTreeMap::new();
-                m.insert("add".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.add")));
-                m.insert("sub".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.sub")));
-                m.insert("format".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.format")));
+                m.insert("now".to_string(), Val::Builtin(Builtin::TimeNow));
+                m.insert("parse".to_string(), Val::Builtin(Builtin::TimeParse));
+                m.insert("format".to_string(), Val::Builtin(Builtin::TimeFormat));
+                m.insert("add".to_string(), Val::Builtin(Builtin::TimeAdd));
+                m.insert("sub".to_string(), Val::Builtin(Builtin::TimeSub));
                 let mut d = BTreeMap::new();
-                d.insert("ms".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.ms")));
-                d.insert("sec".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.sec")));
-                d.insert("min".to_string(), Val::Builtin(Builtin::Unimplemented("std/time.min")));
+                d.insert("ms".to_string(), Val::Builtin(Builtin::TimeDurationMs));
+                d.insert("sec".to_string(), Val::Builtin(Builtin::TimeDurationSec));
+                d.insert("min".to_string(), Val::Builtin(Builtin::TimeDurationMin));
                 m.insert("Duration".to_string(), Val::Record(d));
                 Ok(m)
             }
