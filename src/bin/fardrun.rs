@@ -2223,7 +2223,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         }
                         bail!("method not found: {k} on type {mod_name}");
                     }
-                    bail!("field access on non-record (type: {})", match v {
+                    bail!("no methods on type: {}", match v {
                         Val::Unit => "unit", Val::Bool(_) => "bool",
                         Val::Int(_) => "int", Val::Float(_) => "float",
                         Val::Text(_) => "text", Val::Bytes(_) => "bytes",
