@@ -1787,6 +1787,9 @@ enum Builtin {
     ResultMap,
     ResultMapErr,
     ResultOrElse,
+    HttpGet,
+    HttpPost,
+    HttpRequest,
     TimeNow,
     TimeParse,
     TimeFormat,
@@ -2463,6 +2466,24 @@ fn is_result_val(v: &Val) -> bool {
     }
 }
 
+
+fn http_response_to_val(resp: ureq::Response) -> Result<Val> {
+    let status = resp.status() as i64;
+    let body = resp.into_string().unwrap_or_default();
+    let mut m = BTreeMap::new();
+    m.insert("status".to_string(), Val::Int(status));
+    m.insert("body".to_string(), Val::Text(body));
+    Ok(Val::Record(m))
+}
+
+fn http_response_to_val_with_status(code: u16, resp: ureq::Response) -> Result<Val> {
+    let body = resp.into_string().unwrap_or_default();
+    let mut m = BTreeMap::new();
+    m.insert("status".to_string(), Val::Int(code as i64));
+    m.insert("body".to_string(), Val::Text(body));
+    Ok(Val::Record(m))
+}
+
 fn days_since_epoch(year: i64, month: i64, day: i64) -> i64 {
     // Proleptic Gregorian calendar days since 1970-01-01
     let y = if month <= 2 { year - 1 } else { year };
@@ -2921,6 +2942,71 @@ fn call_builtin(
             }
         }
 
+        // --- std/http ---
+        Builtin::HttpGet => {
+            // http.get(url) -> {status: int, body: text, headers: record}
+            if args.len() != 1 { bail!("ERROR_BADARG http.get expects 1 arg (url)"); }
+            let url = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG http.get url must be text"),
+            };
+            match ureq::get(&url).call() {
+                Ok(resp) => Ok(http_response_to_val(resp)?),
+                Err(ureq::Error::Status(code, resp)) => Ok(http_response_to_val_with_status(code, resp)?),
+                Err(e) => bail!("ERROR_HTTP_GET {}", e),
+            }
+        }
+        Builtin::HttpPost => {
+            // http.post(url, body_text) -> {status: int, body: text, headers: record}
+            if args.len() != 2 { bail!("ERROR_BADARG http.post expects 2 args (url, body)"); }
+            let url = match &args[0] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG http.post url must be text"),
+            };
+            let body = match &args[1] {
+                Val::Text(s) => s.clone(),
+                _ => bail!("ERROR_BADARG http.post body must be text"),
+            };
+            match ureq::post(&url).send_string(&body) {
+                Ok(resp) => Ok(http_response_to_val(resp)?),
+                Err(ureq::Error::Status(code, resp)) => Ok(http_response_to_val_with_status(code, resp)?),
+                Err(e) => bail!("ERROR_HTTP_POST {}", e),
+            }
+        }
+        Builtin::HttpRequest => {
+            // http.request({method, url, body?, headers?}) -> {status, body, headers}
+            if args.len() != 1 { bail!("ERROR_BADARG http.request expects 1 arg (record)"); }
+            let rec = match &args[0] {
+                Val::Record(m) => m.clone(),
+                _ => bail!("ERROR_BADARG http.request expects record"),
+            };
+            let method = match rec.get("method") {
+                Some(Val::Text(s)) => s.to_uppercase(),
+                _ => bail!("ERROR_BADARG http.request missing method"),
+            };
+            let url = match rec.get("url") {
+                Some(Val::Text(s)) => s.clone(),
+                _ => bail!("ERROR_BADARG http.request missing url"),
+            };
+            let mut req = ureq::request(&method, &url);
+            if let Some(Val::Record(hdrs)) = rec.get("headers") {
+                for (k, v) in hdrs {
+                    if let Val::Text(vt) = v {
+                        req = req.set(k, vt);
+                    }
+                }
+            }
+            let result = if let Some(Val::Text(body)) = rec.get("body") {
+                req.send_string(body)
+            } else {
+                req.call()
+            };
+            match result {
+                Ok(resp) => Ok(http_response_to_val(resp)?),
+                Err(ureq::Error::Status(code, resp)) => Ok(http_response_to_val_with_status(code, resp)?),
+                Err(e) => bail!("ERROR_HTTP_REQUEST {}", e),
+            }
+        }
         // --- std/time ---
         Builtin::TimeNow => {
             let secs = std::time::SystemTime::now()
@@ -5465,7 +5551,10 @@ impl ModuleLoader {
                 Ok(m)
             }
             "std/http" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
+                let mut m = BTreeMap::new();
+                m.insert("get".to_string(), Val::Builtin(Builtin::HttpGet));
+                m.insert("post".to_string(), Val::Builtin(Builtin::HttpPost));
+                m.insert("request".to_string(), Val::Builtin(Builtin::HttpRequest));
                 Ok(m)
             }
             "std/record" => {

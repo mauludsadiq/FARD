@@ -12,6 +12,7 @@ regex = "1"
 ed25519-dalek = "2.0"
 valuecore = { path = "crates/valuecore" }
 fardlang = { path = "crates/fardlang" }
+ureq = { version = "2" }
 
 [dev-dependencies]
 pretty_assertions = "1"
