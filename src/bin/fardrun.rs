@@ -1,6 +1,11 @@
 use valuecore::Sha256 as NativeSha256;
 use valuecore::int::{i64_add, i64_sub, i64_mul, i64_div, i64_rem};
 use anyhow::{anyhow, bail, Context, Result};
+// fardlang dialect support (module header detection)
+use fardlang::parse::parse_module as fardlang_parse_module;
+use fardlang::check::check_module as fardlang_check_module;
+use fardlang::eval::{eval_block, apply_imports, Env as FardlangEnv};
+use valuecore::val_to_v0;
 const QMARK_EXPECT_RESULT: &str = "QMARK_EXPECT_RESULT";
 const QMARK_PROPAGATE_ERR: &str = "QMARK_PROPAGATE_ERR";
 const RESULT_OK_TAG: &str = "ok";
@@ -4586,6 +4591,14 @@ impl ModuleLoader {
         let src = fs::read_to_string(main_path)
             .with_context(|| format!("missing main program file: {}", main_path.display()))?;
         let file = main_path.to_string_lossy().to_string();
+
+        // Dialect detection: if source starts with `module `, route to fardlang evaluator.
+        let trimmed = src.trim_start();
+        if trimmed.starts_with("module ") || trimmed.starts_with("module
+") {
+            return self.eval_main_fardlang(&src, main_path, tracer);
+        }
+
         let main_spec = file.clone();
         let main_digest = file_digest(main_path).ok();
         let main_id = self.graph.intern_node(
@@ -4607,6 +4620,34 @@ impl ModuleLoader {
             slf.eval_items(items, &mut env, tracer, &here_dir)
         })?;
         Ok(v)
+    }
+
+    fn eval_main_fardlang(&mut self, src: &str, main_path: &Path, _tracer: &mut Tracer) -> Result<Val> {
+        let raw = src.as_bytes();
+        let m = fardlang_parse_module(raw)
+            .with_context(|| format!("ERROR_PARSE fardlang: {}", main_path.display()))?;
+        fardlang_check_module(&m)
+            .context("ERROR_CHECK fardlang")?;
+
+        let mut fns: std::collections::BTreeMap<String, fardlang::ast::FnDecl> =
+            std::collections::BTreeMap::new();
+        for d in &m.fns {
+            fns.insert(d.name.clone(), d.clone());
+        }
+        let main_decl = fns.get("main").cloned()
+            .ok_or_else(|| anyhow!("ERROR_EVAL fardlang: missing main fn"))?;
+
+        let mut env = FardlangEnv::with_fns(fns);
+        apply_imports(&mut env, &m.imports);
+        let vcore = eval_block(&main_decl.body, &mut env)
+            .context("ERROR_EVAL fardlang")?;
+
+        // Convert valuecore::Val -> fardrun::Val via JSON round-trip
+        let v0 = val_to_v0(&vcore);
+        let json_bytes = valuecore::v0::encode_json(&v0);
+        let j: J = json_from_slice(&json_bytes).map_err(|e| anyhow!("{}", e))?;
+        let fardrun_val = val_from_json(&j)?;
+        Ok(fardrun_val)
     }
     fn eval_items(
         &mut self,
