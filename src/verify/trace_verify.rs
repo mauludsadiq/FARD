@@ -62,15 +62,7 @@ fn canon_line(v: &JsonVal) -> Result<String, String> {
             }
             JsonVal::Object(m) => {
                 let mut keys: Vec<&String> = m.keys().collect();
-                keys.sort_by(|a, b| {
-                    if a.as_str() == "t" && b.as_str() != "t" {
-                        return std::cmp::Ordering::Less;
-                    }
-                    if a.as_str() != "t" && b.as_str() == "t" {
-                        return std::cmp::Ordering::Greater;
-                    }
-                    a.cmp(b)
-                });
+                keys.sort();
                 out.push('{');
                 for (i, k) in keys.iter().enumerate() {
                     if i > 0 {
