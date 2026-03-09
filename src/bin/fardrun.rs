@@ -2537,7 +2537,7 @@ enum Builtin {
     LinalgSoftmax,
     LinalgArgmax,
     ListSet,
-    CastFloat, CastInt, CastText,
+    CastFloat, CastInt, CastText, StrJoin,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -5990,6 +5990,20 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG list.set expects (list, int, val)"),
             }
         }
+        Builtin::StrJoin => match args.as_slice() {
+            [Val::List(items), Val::Text(sep)] => {
+                let mut out = String::new();
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 { out.push_str(sep); }
+                    match item {
+                        Val::Text(s) => out.push_str(s),
+                        _ => bail!("ERROR_BADARG str.join: list items must be text"),
+                    }
+                }
+                Ok(Val::Text(out))
+            }
+            _ => bail!("ERROR_BADARG str.join expects (list, text)"),
+        }
         Builtin::CastText => match args.as_slice() {
             [Val::Int(n)] => {
                 // Convert unicode codepoint to single-char string
@@ -6828,6 +6842,7 @@ impl ModuleLoader {
                 m.insert("slice".to_string(), Val::Builtin(Builtin::StrSlice));
                 m.insert("format".to_string(), Val::Builtin(Builtin::StrFormat));
                 m.insert("from_int".to_string(), Val::Builtin(Builtin::StrFromInt));
+                m.insert("join".to_string(), Val::Builtin(Builtin::StrJoin));
                 m.insert("from_float".to_string(), Val::Builtin(Builtin::StrFromFloat));
                 m.insert("pad_left".to_string(), Val::Builtin(Builtin::StrPadLeft));
                 m.insert("pad_right".to_string(), Val::Builtin(Builtin::StrPadRight));
