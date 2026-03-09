@@ -1406,7 +1406,7 @@ enum Expr {
     Try(Box<Expr>),
     Match(Box<Expr>, Vec<MatchArm>),
     Using(Pat, Box<Expr>, Box<Expr>),
-    While(Box<Expr>, Box<Expr>),
+    While(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 #[derive(Clone, Debug)]
 enum Item {
@@ -1987,11 +1987,10 @@ impl Parser {
             }
         }
         if self.eat_kw("while") {
+            let init = self.parse_expr()?;
             let cond = self.parse_expr()?;
-            self.expect_sym("{")?;
-            let body = self.parse_fn_block_inner()?;
-            self.expect_sym("}")?;
-            return Ok(Expr::While(Box::new(cond), Box::new(body)));
+            let body = self.parse_expr()?;
+            return Ok(Expr::While(Box::new(init), Box::new(cond), Box::new(body)));
         }
         if self.eat_kw("if") {
             let c = self.parse_expr()?;
@@ -2970,17 +2969,42 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             }
             eval(e2, &mut child, tracer, loader)
         }
-        Expr::While(cond, body) => {
-            let mut last = Val::Unit;
+        Expr::While(init_expr, cond_expr, body_expr) => {
+            let mut state = eval(init_expr, env, tracer, loader)?;
+            let mut chain: [u8;32] = sha256_raw(b"").try_into().unwrap_or([0u8;32]);
+            let mut steps: Vec<Val> = Vec::new();
+            let mut step_idx: i64 = 0;
             loop {
-                let cv = eval(cond, env, tracer, loader)?;
+                let cv = call(eval(cond_expr, env, tracer, loader)?, vec![state.clone()], tracer, loader)?;
                 match cv {
-                    Val::Bool(true) => { last = eval(body, env, tracer, loader)?; }
                     Val::Bool(false) => break,
-                    _ => bail!("while cond must be bool"),
+                    Val::Bool(true) => {
+                        let before = state.clone();
+                        state = call(eval(body_expr, env, tracer, loader)?, vec![before.clone()], tracer, loader)?;
+                        // build step digest
+                        let before_j = before.to_json().map(|j| json_to_string(&j)).unwrap_or_else(|| "null".to_string());
+                        let after_j  = state.to_json().map(|j| json_to_string(&j)).unwrap_or_else(|| "null".to_string());
+                        let pre_hex  = hex_lower(&chain);
+                        let args_str = format!("{{\"step\":{},\"before\":{},\"after\":{}}}", step_idx, before_j, after_j);
+                        let digest_input = format!("{{\"args\":{},\"op\":\"WHILE_STEP\",\"post\":\"{}\",\"pre\":\"{}\"}}", args_str, after_j, pre_hex);
+                        chain = sha256_raw(digest_input.as_bytes()).try_into().unwrap_or([0u8;32]);
+                        let chain_hex = hex_lower(&chain);
+                        let mut step_rec = BTreeMap::new();
+                        step_rec.insert("step".to_string(), Val::Int(step_idx));
+                        step_rec.insert("before".to_string(), before);
+                        step_rec.insert("after".to_string(), state.clone());
+                        step_rec.insert("chain_hex".to_string(), Val::Text(chain_hex));
+                        steps.push(Val::Record(step_rec));
+                        step_idx += 1;
+                    }
+                    _ => bail!("while cond_fn must return bool"),
                 }
             }
-            Ok(last)
+            let mut result = BTreeMap::new();
+            result.insert("value".to_string(), state);
+            result.insert("steps".to_string(), Val::List(steps));
+            result.insert("chain_hex".to_string(), Val::Text(hex_lower(&chain)));
+            Ok(Val::Record(result))
         }
         Expr::If(c, t, f) => {
             let cv = eval(c, env, tracer, loader)?;
