@@ -138,6 +138,67 @@ fn sha256_file_hex(path: &std::path::Path) -> Result<String> {
     Ok(sha256_bytes_hex(&bytes))
 }
 
+const REGISTRY_URL: &str = "https://github.com/mauludsadiq/FARD_v0.5/releases/latest/download/registry.json";
+
+fn fard_cache_dir() -> PathBuf {
+    if let Ok(h) = std::env::var("HOME") {
+        PathBuf::from(h).join(".fard").join("cache")
+    } else {
+        PathBuf::from("/tmp/.fard_cache")
+    }
+}
+
+fn fetch_package(pkg_name: &str, version: &str) -> Result<PathBuf> {
+    let cache_dir = fard_cache_dir();
+    let pkg_dir = cache_dir.join(format!("{}@{}", pkg_name, version));
+    let marker = pkg_dir.join(".fetched");
+    if marker.exists() {
+        return Ok(pkg_dir);
+    }
+    // Fetch registry.json
+    eprintln!("[fard] fetching registry...");
+    let registry_body = ureq::get(REGISTRY_URL)
+        .call()
+        .map_err(|e| anyhow!("ERROR_REGISTRY failed to fetch registry: {e}"))?
+        .into_string()?;
+    let registry: J = json_from_slice(registry_body.as_bytes())?;
+    let key = format!("{}@{}", pkg_name, version);
+    let pkg_entry = registry
+        .get("packages")
+        .and_then(|p| p.get(&key))
+        .ok_or_else(|| anyhow!("ERROR_REGISTRY package not found: {key}"))?;
+    let url = pkg_entry
+        .get("url")
+        .and_then(|u| u.as_str())
+        .ok_or_else(|| anyhow!("ERROR_REGISTRY missing url for {key}"))?;
+    let expected_sha256 = pkg_entry
+        .get("sha256")
+        .and_then(|s| s.as_str())
+        .ok_or_else(|| anyhow!("ERROR_REGISTRY missing sha256 for {key}"))?;
+    // Download tar.gz
+    eprintln!("[fard] downloading {}@{}...", pkg_name, version);
+    let mut reader = ureq::get(url)
+        .call()
+        .map_err(|e| anyhow!("ERROR_REGISTRY download failed: {e}"))?
+        .into_reader();
+    let mut tar_bytes = Vec::new();
+    std::io::Read::read_to_end(&mut reader, &mut tar_bytes)?;
+    // Verify sha256
+    let got_sha256 = sha256_bytes_hex(&tar_bytes);
+    if got_sha256 != expected_sha256 {
+        bail!("ERROR_REGISTRY sha256 mismatch for {key}: expected {expected_sha256}, got {got_sha256}");
+    }
+    // Extract tar.gz
+    fs::create_dir_all(&pkg_dir)?;
+    let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(&tar_bytes));
+    let mut archive = tar::Archive::new(gz);
+    archive.unpack(&pkg_dir)?;
+    // Write marker
+    fs::write(&marker, b"")?;
+    eprintln!("[fard] installed {}@{}", pkg_name, version);
+    Ok(pkg_dir)
+}
+
 fn write_m5_digests(
     out_dir: &std::path::Path,
     runtime_version: &str,
@@ -5695,14 +5756,6 @@ impl ModuleLoader {
                 tracer.module_resolve(name, "std", &slf.builtin_digest(name))?;
                 ex
             } else if name.starts_with("pkg:") || name.starts_with("pkg/") {
-                if slf.lock.is_none() {
-                    eprintln!("IMPORT_PKG_REQUIRES_LOCK");
-                    bail!("ERROR_LOCK missing lock for pkg import: {name}");
-                }
-                let reg = slf
-                    .registry_dir
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("ERROR_REGISTRY missing --registry"))?;
                 let spec = if let Some(s) = name.strip_prefix("pkg:") {
                     s
                 } else if let Some(s) = name.strip_prefix("pkg/") {
@@ -5710,13 +5763,21 @@ impl ModuleLoader {
                 } else {
                     name
                 };
-                let (pkg, rest) = spec
+                let (pkg, ver_and_mod) = spec
                     .split_once("@")
                     .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
-                let (ver, mod_id) = rest
-                    .split_once("/")
-                    .ok_or_else(|| anyhow!("ERROR_RUNTIME bad pkg import: {name}"))?;
-                let base = reg.join("pkgs").join(pkg).join(ver);
+                // mod_id is optional: pkg:math@2026-03-08 or pkg:math@2026-03-08/utils
+                let (ver, mod_id) = if let Some((v, m)) = ver_and_mod.split_once("/") {
+                    (v, m)
+                } else {
+                    (ver_and_mod, "main")
+                };
+                // Resolve base dir: use --registry if provided, else fetch from network
+                let base = if let Some(reg) = slf.registry_dir.as_ref() {
+                    reg.join("pkgs").join(pkg).join(ver)
+                } else {
+                    fetch_package(pkg, ver)?
+                };
                 let pkg_json_path = base.join("package.json");
                 let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
                     let pkg_json: J = json_from_slice(&pkg_json_bytes).map_err(|e| anyhow::anyhow!("{}", e))
@@ -5738,13 +5799,12 @@ impl ModuleLoader {
                 let path = base.join("files").join(&rel);
 
                 let p = path.to_string_lossy().to_string();
-                let exp = slf
-                    .lock
-                    .as_ref()
-                    .and_then(|lk| lk.expected(name))
-                    .ok_or_else(|| anyhow!("ERROR_LOCK missing lock for pkg import: {name}"))?;
-                let got = file_digest(&path).unwrap_or_else(|_| exp.to_string());
-                slf.check_lock(name, &got)?;
+                let got = file_digest(&path).unwrap_or_else(|_| "sha256:unknown".to_string());
+                if let Some(exp) = slf.lock.as_ref().and_then(|lk| lk.expected(name)) {
+                    if got != exp {
+                        bail!("ERROR_LOCK digest mismatch for {name}: expected {exp}, got {got}");
+                    }
+                }
                 slf.graph_note_current(Some(p), Some(got.clone()));
                 tracer.module_resolve(name, "pkg", &got)?;
                 let src = fs::read_to_string(&path)
