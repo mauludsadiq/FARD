@@ -2280,6 +2280,8 @@ enum Builtin {
     // std/math
     MathAbs, MathMin, MathMax, MathPow, MathSqrt,
     MathFloor, MathCeil, MathRound, MathLog, MathLog2,
+    // std/bits
+    BitAnd, BitOr, BitXor, BitNot, BitShl, BitShr, BitPopcount,
     // std/null
     NullIsNull, NullCoalesce, NullGuard,
     // std/path
@@ -3430,6 +3432,34 @@ fn call_builtin(
             [Val::Float(f)] => Ok(Val::Float(f.log2())),
             [Val::Int(n)] => Ok(Val::Float((*n as f64).log2())),
             _ => bail!("math.log2 expects a number"),
+        },
+        Builtin::BitAnd => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a & b)),
+            _ => bail!("bits.band expects (int, int)"),
+        },
+        Builtin::BitOr => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a | b)),
+            _ => bail!("bits.bor expects (int, int)"),
+        },
+        Builtin::BitXor => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a ^ b)),
+            _ => bail!("bits.bxor expects (int, int)"),
+        },
+        Builtin::BitNot => match args.as_slice() {
+            [Val::Int(a)] => Ok(Val::Int(!a)),
+            _ => bail!("bits.bnot expects int"),
+        },
+        Builtin::BitShl => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a << (b & 63))),
+            _ => bail!("bits.bshl expects (int, int)"),
+        },
+        Builtin::BitShr => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a >> (b & 63))),
+            _ => bail!("bits.bshr expects (int, int)"),
+        },
+        Builtin::BitPopcount => match args.as_slice() {
+            [Val::Int(a)] => Ok(Val::Int(a.count_ones() as i64)),
+            _ => bail!("bits.popcount expects int"),
         },
         // std/null
         Builtin::NullIsNull => match args.as_slice() {
@@ -6528,6 +6558,17 @@ impl ModuleLoader {
                 m.insert("unwrapOrElse".to_string(), Val::Builtin(Builtin::OptionUnwrapOrElse));
                 m.insert("to_result".to_string(), Val::Builtin(Builtin::OptionToResult));
                 m.insert("toResult".to_string(), Val::Builtin(Builtin::OptionToResult));
+                Ok(m)
+            }
+            "std/bits" => {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("band".to_string(),     Val::Builtin(Builtin::BitAnd));
+                m.insert("bor".to_string(),      Val::Builtin(Builtin::BitOr));
+                m.insert("bxor".to_string(),     Val::Builtin(Builtin::BitXor));
+                m.insert("bnot".to_string(),     Val::Builtin(Builtin::BitNot));
+                m.insert("bshl".to_string(),     Val::Builtin(Builtin::BitShl));
+                m.insert("bshr".to_string(),     Val::Builtin(Builtin::BitShr));
+                m.insert("popcount".to_string(), Val::Builtin(Builtin::BitPopcount));
                 Ok(m)
             }
             "std/math" => {
