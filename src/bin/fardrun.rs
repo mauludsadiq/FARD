@@ -2537,7 +2537,7 @@ enum Builtin {
     LinalgSoftmax,
     LinalgArgmax,
     ListSet,
-    CastFloat, CastInt, CastText, StrJoin,
+    CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -6004,6 +6004,85 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG str.join expects (list, text)"),
         }
+        Builtin::ListAny => match args.as_slice() {
+            [Val::List(items), Val::Func(_)|Val::Builtin(_)|Val::BoundMethod(_,_)] => {
+                let f = args[1].clone();
+                for item in items {
+                    let r = call(f.clone(), vec![item.clone()], tracer, loader)?;
+                    if matches!(r, Val::Bool(true)) { return Ok(Val::Bool(true)); }
+                }
+                Ok(Val::Bool(false))
+            }
+            _ => bail!("ERROR_BADARG list.any expects (list, fn)"),
+        }
+        Builtin::ListAll => match args.as_slice() {
+            [Val::List(items), Val::Func(_)|Val::Builtin(_)|Val::BoundMethod(_,_)] => {
+                let f = args[1].clone();
+                for item in items {
+                    let r = call(f.clone(), vec![item.clone()], tracer, loader)?;
+                    if matches!(r, Val::Bool(false)) { return Ok(Val::Bool(false)); }
+                }
+                Ok(Val::Bool(true))
+            }
+            _ => bail!("ERROR_BADARG list.all expects (list, fn)"),
+        }
+        Builtin::ListFind => match args.as_slice() {
+            [Val::List(items), Val::Func(_)|Val::Builtin(_)|Val::BoundMethod(_,_)] => {
+                let f = args[1].clone();
+                for item in items {
+                    let r = call(f.clone(), vec![item.clone()], tracer, loader)?;
+                    if matches!(r, Val::Bool(true)) {
+                        let mut m = BTreeMap::new();
+                        m.insert("some".to_string(), item.clone());
+                        return Ok(Val::Record(m));
+                    }
+                }
+                let mut m = BTreeMap::new();
+                m.insert("none".to_string(), Val::Unit);
+                Ok(Val::Record(m))
+            }
+            _ => bail!("ERROR_BADARG list.find expects (list, fn)"),
+        }
+        Builtin::ListFindIndex => match args.as_slice() {
+            [Val::List(items), Val::Func(_)|Val::Builtin(_)|Val::BoundMethod(_,_)] => {
+                let f = args[1].clone();
+                for (i, item) in items.iter().enumerate() {
+                    let r = call(f.clone(), vec![item.clone()], tracer, loader)?;
+                    if matches!(r, Val::Bool(true)) { return Ok(Val::Int(i as i64)); }
+                }
+                Ok(Val::Int(-1))
+            }
+            _ => bail!("ERROR_BADARG list.find_index expects (list, fn)"),
+        }
+        Builtin::ListTake => match args.as_slice() {
+            [Val::List(items), Val::Int(n)] => {
+                let n = (*n).max(0) as usize;
+                Ok(Val::List(items.iter().take(n).cloned().collect()))
+            }
+            _ => bail!("ERROR_BADARG list.take expects (list, int)"),
+        }
+        Builtin::ListDrop => match args.as_slice() {
+            [Val::List(items), Val::Int(n)] => {
+                let n = (*n).max(0) as usize;
+                Ok(Val::List(items.iter().skip(n).cloned().collect()))
+            }
+            _ => bail!("ERROR_BADARG list.drop expects (list, int)"),
+        }
+        Builtin::ListFlatMap => match args.as_slice() {
+            [Val::List(items), Val::Func(_)|Val::Builtin(_)|Val::BoundMethod(_,_)] => {
+                let f = args[1].clone();
+                let mut out = Vec::new();
+                for item in items {
+                    let r = call(f.clone(), vec![item.clone()], tracer, loader)?;
+                    match r {
+                        Val::List(sub) => out.extend(sub),
+                        other => out.push(other),
+                    }
+                }
+                Ok(Val::List(out))
+            }
+            _ => bail!("ERROR_BADARG list.flat_map expects (list, fn)"),
+        }
         Builtin::CastText => match args.as_slice() {
             [Val::Int(n)] => {
                 // Convert unicode codepoint to single-char string
@@ -6777,6 +6856,13 @@ impl ModuleLoader {
                 m.insert("reverse".to_string(), Val::Builtin(Builtin::ListReverse));
                 m.insert("flatten".to_string(), Val::Builtin(Builtin::ListFlatten));
                 m.insert("set".to_string(), Val::Builtin(Builtin::ListSet));
+                m.insert("any".to_string(), Val::Builtin(Builtin::ListAny));
+                m.insert("all".to_string(), Val::Builtin(Builtin::ListAll));
+                m.insert("find".to_string(), Val::Builtin(Builtin::ListFind));
+                m.insert("find_index".to_string(), Val::Builtin(Builtin::ListFindIndex));
+                m.insert("take".to_string(), Val::Builtin(Builtin::ListTake));
+                m.insert("drop".to_string(), Val::Builtin(Builtin::ListDrop));
+                m.insert("flat_map".to_string(), Val::Builtin(Builtin::ListFlatMap));
                 m.insert(
                     "sort_by_int_key".to_string(),
                     Val::Builtin(Builtin::ListSortByIntKey),
