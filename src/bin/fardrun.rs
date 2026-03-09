@@ -791,7 +791,7 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "a", "is", "or",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match",
                     "using", "true", "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
@@ -1313,9 +1313,12 @@ impl Parser {
         let mut items = Vec::new();
         while !matches!(self.peek(), Tok::Eof) {
             // "a Point is { x: Int, y: Int }" or "a Shape is Circle(r: Int) or Rect(w: Int, h: Int)"
-            if self.eat_kw("a") {
+            if matches!(self.peek(), Tok::Ident(s) if s == "a") { self.bump();
                 let type_name = self.expect_ident()?;
-                self.expect_kw("is")?;
+                match self.bump() {
+                    Tok::Ident(s) if s == "is" => {}
+                    other => bail!("ERROR_PARSE expected 'is', got {:?}", other),
+                }
                 let kind = if matches!(self.peek(), Tok::Sym(s) if s == "{") {
                     // record type: a Point is { x: Int, y: Int }
                     self.expect_sym("{")?;
@@ -1347,7 +1350,7 @@ impl Parser {
                             self.expect_sym(")")?;
                         }
                         variants.push((vname, fields));
-                        if !self.eat_kw("or") { break; }
+                        if !matches!(self.peek(), Tok::Ident(s) if s == "or") { break; } else { self.bump(); }
                     }
                     TypeDefKind::Sum(variants)
                 };
