@@ -2538,6 +2538,7 @@ enum Builtin {
     LinalgArgmax,
     ListSet,
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
+    MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -6083,6 +6084,52 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.flat_map expects (list, fn)"),
         }
+        Builtin::MathSin => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.sin())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).sin())),
+            _ => bail!("ERROR_BADARG math.sin expects number"),
+        }
+        Builtin::MathCos => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.cos())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).cos())),
+            _ => bail!("ERROR_BADARG math.cos expects number"),
+        }
+        Builtin::MathTan => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.tan())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).tan())),
+            _ => bail!("ERROR_BADARG math.tan expects number"),
+        }
+        Builtin::MathAtan2 => match args.as_slice() {
+            [Val::Float(y), Val::Float(x)] => Ok(Val::Float(y.atan2(*x))),
+            [Val::Int(y), Val::Int(x)] => Ok(Val::Float((*y as f64).atan2(*x as f64))),
+            _ => bail!("ERROR_BADARG math.atan2 expects (y, x)"),
+        }
+        Builtin::IntToHex => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Text(format!("{:x}", n))),
+            _ => bail!("ERROR_BADARG int.to_hex expects int"),
+        }
+        Builtin::IntToBin => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Text(format!("{:b}", n))),
+            _ => bail!("ERROR_BADARG int.to_bin expects int"),
+        }
+        Builtin::FloatIsInf => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Bool(f.is_infinite())),
+            _ => bail!("ERROR_BADARG float.is_inf expects float"),
+        }
+        Builtin::TypeOf => match args.as_slice() {
+            [Val::Unit]      => Ok(Val::Text("unit".to_string())),
+            [Val::Bool(_)]   => Ok(Val::Text("bool".to_string())),
+            [Val::Int(_)]    => Ok(Val::Text("int".to_string())),
+            [Val::Float(_)]  => Ok(Val::Text("float".to_string())),
+            [Val::Text(_)]   => Ok(Val::Text("text".to_string())),
+            [Val::Bytes(_)]  => Ok(Val::Text("bytes".to_string())),
+            [Val::List(_)]   => Ok(Val::Text("list".to_string())),
+            [Val::Record(_)] => Ok(Val::Text("record".to_string())),
+            [Val::Func(_)]   => Ok(Val::Text("func".to_string())),
+            [Val::Builtin(_)]=> Ok(Val::Text("func".to_string())),
+            [Val::BoundMethod(_,_)] => Ok(Val::Text("func".to_string())),
+            _ => bail!("ERROR_BADARG type_of expects 1 arg"),
+        }
         Builtin::CastText => match args.as_slice() {
             [Val::Int(n)] => {
                 // Convert unicode codepoint to single-char string
@@ -6971,6 +7018,11 @@ impl ModuleLoader {
                 Ok(m)
             }
 
+            "std/type" => {
+                let mut m = BTreeMap::new();
+                m.insert("of".to_string(), Val::Builtin(Builtin::TypeOf));
+                Ok(m)
+            }
             "std/cast" =>
             {
                 let mut m = BTreeMap::new();
@@ -6985,6 +7037,8 @@ impl ModuleLoader {
                 m.insert("eq".to_string(), Val::Builtin(Builtin::IntEq));
                 m.insert("parse".to_string(), Val::Builtin(Builtin::IntParse));
                 m.insert("pow".to_string(), Val::Builtin(Builtin::IntPow));
+                m.insert("to_hex".to_string(), Val::Builtin(Builtin::IntToHex));
+                m.insert("to_bin".to_string(), Val::Builtin(Builtin::IntToBin));
                 m.insert("mul".to_string(), Val::Builtin(Builtin::IntMul));
                 m.insert("div".to_string(), Val::Builtin(Builtin::IntDiv));
                 m.insert("sub".to_string(), Val::Builtin(Builtin::IntSub));
@@ -7061,6 +7115,10 @@ impl ModuleLoader {
                 m.insert("round".to_string(), Val::Builtin(Builtin::MathRound));
                 m.insert("log".to_string(), Val::Builtin(Builtin::MathLog));
                 m.insert("log2".to_string(), Val::Builtin(Builtin::MathLog2));
+                m.insert("sin".to_string(), Val::Builtin(Builtin::MathSin));
+                m.insert("cos".to_string(), Val::Builtin(Builtin::MathCos));
+                m.insert("tan".to_string(), Val::Builtin(Builtin::MathTan));
+                m.insert("atan2".to_string(), Val::Builtin(Builtin::MathAtan2));
                 m.insert("exp".to_string(), Val::Builtin(Builtin::MathExp));
                 m.insert("pi".to_string(), Val::Float(std::f64::consts::PI));
                 m.insert("e".to_string(), Val::Float(std::f64::consts::E));
@@ -7230,6 +7288,7 @@ impl ModuleLoader {
                 m.insert("nan".to_string(), Val::Builtin(Builtin::FloatNan));
                 m.insert("inf".to_string(), Val::Builtin(Builtin::FloatInf));
                 m.insert("is_nan".to_string(), Val::Builtin(Builtin::FloatIsNan));
+                m.insert("is_inf".to_string(), Val::Builtin(Builtin::FloatIsInf));
                 m.insert("is_finite".to_string(), Val::Builtin(Builtin::FloatIsFinite));
                 m.insert("min".to_string(), Val::Builtin(Builtin::FloatMin));
                 m.insert("max".to_string(), Val::Builtin(Builtin::FloatMax));
