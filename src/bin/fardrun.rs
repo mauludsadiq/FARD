@@ -1164,7 +1164,36 @@ impl Lex {
                         break;
                     }
                 }
-                return Ok(Tok::Float(n as f64 + frac));
+                // Check for scientific notation: e/E [+-] digits
+                let base = n as f64 + frac;
+                if self.peek().map(|c| c == 'e' || c == 'E').unwrap_or(false) {
+                    self.i += 1; // consume e/E
+                    let neg_exp = if self.peek() == Some('-') { self.i += 1; true }
+                                  else if self.peek() == Some('+') { self.i += 1; false }
+                                  else { false };
+                    let mut exp: i32 = 0;
+                    while let Some(d) = self.peek() {
+                        if d.is_ascii_digit() { exp = exp * 10 + (d as i32 - '0' as i32); self.i += 1; }
+                        else { break; }
+                    }
+                    let factor = 10f64.powi(if neg_exp { -exp } else { exp });
+                    return Ok(Tok::Float(base * factor));
+                }
+                return Ok(Tok::Float(base));
+            }
+            // Check for scientific notation on integers: 1e10
+            if self.peek().map(|c| c == 'e' || c == 'E').unwrap_or(false) {
+                self.i += 1;
+                let neg_exp = if self.peek() == Some('-') { self.i += 1; true }
+                              else if self.peek() == Some('+') { self.i += 1; false }
+                              else { false };
+                let mut exp: i32 = 0;
+                while let Some(d) = self.peek() {
+                    if d.is_ascii_digit() { exp = exp * 10 + (d as i32 - '0' as i32); self.i += 1; }
+                    else { break; }
+                }
+                let factor = 10f64.powi(if neg_exp { -exp } else { exp });
+                return Ok(Tok::Float(n as f64 * factor));
             }
             return Ok(Tok::Num(n));
         }
@@ -2314,7 +2343,7 @@ enum Builtin {
     TypeCheck(String, Vec<String>),   // type_name, required_fields
     // std/math
     MathAbs, MathMin, MathMax, MathPow, MathSqrt,
-    MathFloor, MathCeil, MathRound, MathLog, MathLog2,
+    MathFloor, MathCeil, MathRound, MathLog, MathLog2, MathExp,
     // std/bits
     BitAnd, BitOr, BitXor, BitNot, BitShl, BitShr, BitPopcount,
     // std/bytes
@@ -3474,6 +3503,11 @@ fn call_builtin(
             [Val::Int(n)] => Ok(Val::Float((*n as f64).ln())),
             _ => bail!("math.log expects a number"),
         },
+        Builtin::MathExp => match args.as_slice() {
+            [Val::Float(x)] => Ok(Val::Float(x.exp())),
+            [Val::Int(x)]   => Ok(Val::Float((*x as f64).exp())),
+            _ => bail!("ERROR_BADARG math.exp expects one numeric arg"),
+        }
         Builtin::MathLog2 => match args.as_slice() {
             [Val::Float(f)] => Ok(Val::Float(f.log2())),
             [Val::Int(n)] => Ok(Val::Float((*n as f64).log2())),
@@ -6914,6 +6948,7 @@ impl ModuleLoader {
                 m.insert("round".to_string(), Val::Builtin(Builtin::MathRound));
                 m.insert("log".to_string(), Val::Builtin(Builtin::MathLog));
                 m.insert("log2".to_string(), Val::Builtin(Builtin::MathLog2));
+                m.insert("exp".to_string(), Val::Builtin(Builtin::MathExp));
                 m.insert("pi".to_string(), Val::Float(std::f64::consts::PI));
                 m.insert("e".to_string(), Val::Float(std::f64::consts::E));
                 m.insert("inf".to_string(), Val::Float(f64::INFINITY));
