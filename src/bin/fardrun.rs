@@ -2275,6 +2275,13 @@ struct Func {
 enum Builtin {
     PngRed1x1,
     Unimplemented(&'static str),
+    // std/math
+    MathAbs, MathMin, MathMax, MathPow, MathSqrt,
+    MathFloor, MathCeil, MathRound, MathLog, MathLog2,
+    // std/null
+    NullIsNull, NullCoalesce, NullGuard,
+    // std/path
+    PathBase, PathDir, PathExt, PathIsAbs, PathJoin, PathJoinAll, PathNormalize,
     ListMap,
     ListFilter,
     ListRange,
@@ -3355,6 +3362,140 @@ fn call_builtin(
             Ok(Val::Bool(a == b))
         }
 
+        // std/math
+        Builtin::MathAbs => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Int(n.abs())),
+            [Val::Float(f)] => Ok(Val::Float(f.abs())),
+            _ => bail!("math.abs expects a number"),
+        },
+        Builtin::MathMin => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(*a.min(b))),
+            [Val::Float(a), Val::Float(b)] => Ok(Val::Float(a.min(*b))),
+            _ => bail!("math.min expects two numbers"),
+        },
+        Builtin::MathMax => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(*a.max(b))),
+            [Val::Float(a), Val::Float(b)] => Ok(Val::Float(a.max(*b))),
+            _ => bail!("math.max expects two numbers"),
+        },
+        Builtin::MathPow => match args.as_slice() {
+            [Val::Int(a), Val::Int(b)] => Ok(Val::Int(a.pow(*b as u32))),
+            [Val::Float(a), Val::Float(b)] => Ok(Val::Float(a.powf(*b))),
+            _ => bail!("math.pow expects two numbers"),
+        },
+        Builtin::MathSqrt => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).sqrt())),
+            [Val::Float(f)] => Ok(Val::Float(f.sqrt())),
+            _ => bail!("math.sqrt expects a number"),
+        },
+        Builtin::MathFloor => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Int(*n)),
+            [Val::Float(f)] => Ok(Val::Int(f.floor() as i64)),
+            _ => bail!("math.floor expects a number"),
+        },
+        Builtin::MathCeil => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Int(*n)),
+            [Val::Float(f)] => Ok(Val::Int(f.ceil() as i64)),
+            _ => bail!("math.ceil expects a number"),
+        },
+        Builtin::MathRound => match args.as_slice() {
+            [Val::Int(n)] => Ok(Val::Int(*n)),
+            [Val::Float(f)] => Ok(Val::Int(f.round() as i64)),
+            _ => bail!("math.round expects a number"),
+        },
+        Builtin::MathLog => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.ln())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).ln())),
+            _ => bail!("math.log expects a number"),
+        },
+        Builtin::MathLog2 => match args.as_slice() {
+            [Val::Float(f)] => Ok(Val::Float(f.log2())),
+            [Val::Int(n)] => Ok(Val::Float((*n as f64).log2())),
+            _ => bail!("math.log2 expects a number"),
+        },
+        // std/null
+        Builtin::NullIsNull => match args.as_slice() {
+            [Val::Unit] => Ok(Val::Bool(true)),
+            [_] => Ok(Val::Bool(false)),
+            _ => bail!("null.isNull expects one argument"),
+        },
+        Builtin::NullCoalesce => match args.as_slice() {
+            [Val::Unit, b] => Ok(b.clone()),
+            [a, _] => Ok(a.clone()),
+            _ => bail!("null.coalesce expects two arguments"),
+        },
+        Builtin::NullGuard => match args.as_slice() {
+            [Val::Unit] => bail!("ERROR_NULL_GUARD value was null"),
+            [a] => Ok(a.clone()),
+            _ => bail!("null.guardNotNull expects one argument"),
+        },
+        // std/path
+        Builtin::PathBase => match args.as_slice() {
+            [Val::Text(s)] => Ok(Val::Text(
+                std::path::Path::new(s.as_str())
+                    .file_name().map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            )),
+            _ => bail!("path.base expects a string"),
+        },
+        Builtin::PathDir => match args.as_slice() {
+            [Val::Text(s)] => Ok(Val::Text(
+                std::path::Path::new(s.as_str())
+                    .parent().map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| ".".to_string())
+            )),
+            _ => bail!("path.dir expects a string"),
+        },
+        Builtin::PathExt => match args.as_slice() {
+            [Val::Text(s)] => Ok(Val::Text(
+                std::path::Path::new(s.as_str())
+                    .extension().map(|e| format!(".{}", e.to_string_lossy()))
+                    .unwrap_or_default()
+            )),
+            _ => bail!("path.ext expects a string"),
+        },
+        Builtin::PathIsAbs => match args.as_slice() {
+            [Val::Text(s)] => Ok(Val::Bool(std::path::Path::new(s.as_str()).is_absolute())),
+            _ => bail!("path.isAbs expects a string"),
+        },
+        Builtin::PathJoin => match args.as_slice() {
+            [Val::Text(a), Val::Text(b)] => {
+                let p = std::path::Path::new(a.as_str()).join(b.as_str());
+                Ok(Val::Text(p.to_string_lossy().into_owned()))
+            },
+            _ => bail!("path.join expects two strings"),
+        },
+        Builtin::PathJoinAll => match args.as_slice() {
+            [Val::List(parts)] => {
+                let mut p = std::path::PathBuf::new();
+                for part in parts.iter() {
+                    if let Val::Text(s) = part { p.push(s.as_str()); }
+                    else { bail!("path.joinAll: all elements must be strings"); }
+                }
+                Ok(Val::Text(p.to_string_lossy().into_owned()))
+            },
+            _ => bail!("path.joinAll expects a list of strings"),
+        },
+        Builtin::PathNormalize => match args.as_slice() {
+            [Val::Text(s)] => {
+                // Simple normalize: resolve . and .. components
+                let mut parts: Vec<&str> = Vec::new();
+                for c in s.split('/') {
+                    match c {
+                        "." | "" => {},
+                        ".." => { parts.pop(); },
+                        other => parts.push(other),
+                    }
+                }
+                let result = if s.starts_with('/') {
+                    format!("/{}", parts.join("/"))
+                } else {
+                    parts.join("/")
+                };
+                Ok(Val::Text(result))
+            },
+            _ => bail!("path.normalize expects a string"),
+        },
         Builtin::Unimplemented(name) => bail!("ERROR_RUNTIME UNIMPLEMENTED_BUILTIN: {}", name),
         Builtin::ResultOk => {
             if args.len() != 1 {
@@ -6377,28 +6518,39 @@ impl ModuleLoader {
                 m.insert("toResult".to_string(), Val::Builtin(Builtin::OptionToResult));
                 Ok(m)
             }
+            "std/math" => {
+                let mut m = BTreeMap::new();
+                m.insert("abs".to_string(), Val::Builtin(Builtin::MathAbs));
+                m.insert("min".to_string(), Val::Builtin(Builtin::MathMin));
+                m.insert("max".to_string(), Val::Builtin(Builtin::MathMax));
+                m.insert("pow".to_string(), Val::Builtin(Builtin::MathPow));
+                m.insert("sqrt".to_string(), Val::Builtin(Builtin::MathSqrt));
+                m.insert("floor".to_string(), Val::Builtin(Builtin::MathFloor));
+                m.insert("ceil".to_string(), Val::Builtin(Builtin::MathCeil));
+                m.insert("round".to_string(), Val::Builtin(Builtin::MathRound));
+                m.insert("log".to_string(), Val::Builtin(Builtin::MathLog));
+                m.insert("log2".to_string(), Val::Builtin(Builtin::MathLog2));
+                m.insert("pi".to_string(), Val::Float(std::f64::consts::PI));
+                m.insert("e".to_string(), Val::Float(std::f64::consts::E));
+                m.insert("inf".to_string(), Val::Float(f64::INFINITY));
+                Ok(m)
+            }
             "std/null" => {
                 let mut m = BTreeMap::new();
-                m.insert("isNull".to_string(), Val::Builtin(Builtin::Unimplemented("std/null.isNull")));
-                m.insert("coalesce".to_string(), Val::Builtin(Builtin::Unimplemented("std/null.coalesce")));
-                m.insert(
-                    "guardNotNull".to_string(),
-                    Val::Builtin(Builtin::Unimplemented("std/null.guardNotNull")),
-                );
+                m.insert("isNull".to_string(), Val::Builtin(Builtin::NullIsNull));
+                m.insert("coalesce".to_string(), Val::Builtin(Builtin::NullCoalesce));
+                m.insert("guardNotNull".to_string(), Val::Builtin(Builtin::NullGuard));
                 Ok(m)
             }
             "std/path" => {
                 let mut m = BTreeMap::new();
-                m.insert("base".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.base")));
-                m.insert("dir".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.dir")));
-                m.insert("ext".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.ext")));
-                m.insert("isAbs".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.isAbs")));
-                m.insert("join".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.join")));
-                m.insert("joinAll".to_string(), Val::Builtin(Builtin::Unimplemented("std/path.joinAll")));
-                m.insert(
-                    "normalize".to_string(),
-                    Val::Builtin(Builtin::Unimplemented("std/path.normalize")),
-                );
+                m.insert("base".to_string(), Val::Builtin(Builtin::PathBase));
+                m.insert("dir".to_string(), Val::Builtin(Builtin::PathDir));
+                m.insert("ext".to_string(), Val::Builtin(Builtin::PathExt));
+                m.insert("isAbs".to_string(), Val::Builtin(Builtin::PathIsAbs));
+                m.insert("join".to_string(), Val::Builtin(Builtin::PathJoin));
+                m.insert("joinAll".to_string(), Val::Builtin(Builtin::PathJoinAll));
+                m.insert("normalize".to_string(), Val::Builtin(Builtin::PathNormalize));
                 Ok(m)
             }
             "std/time" => {
@@ -6602,6 +6754,9 @@ impl ModuleLoader {
 }
 fn base_env() -> Env {
     let mut e = Env::new();
+    e.set("unit".to_string(), Val::Unit);
+    e.set("true".to_string(), Val::Bool(true));
+    e.set("false".to_string(), Val::Bool(false));
     e.set("emit".to_string(), Val::Builtin(Builtin::Emit));
     e.set("len".to_string(), Val::Builtin(Builtin::Len));
     e.set(
