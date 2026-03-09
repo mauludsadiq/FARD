@@ -153,7 +153,8 @@ fn fetch_package(pkg_name: &str, version: &str) -> Result<PathBuf> {
     let pkg_dir = cache_dir.join(format!("{}@{}", pkg_name, version));
     let marker = pkg_dir.join(".fetched");
     if marker.exists() {
-        return Ok(pkg_dir);
+        let inner = pkg_dir.join(pkg_name);
+        return Ok(if inner.exists() { inner } else { pkg_dir });
     }
     // Fetch registry.json
     eprintln!("[fard] fetching registry...");
@@ -196,7 +197,9 @@ fn fetch_package(pkg_name: &str, version: &str) -> Result<PathBuf> {
     // Write marker
     fs::write(&marker, b"")?;
     eprintln!("[fard] installed {}@{}", pkg_name, version);
-    Ok(pkg_dir)
+    // Return the inner directory (tar extracts to pkg_name/ subdir)
+    let inner = pkg_dir.join(pkg_name);
+    if inner.exists() { Ok(inner) } else { Ok(pkg_dir) }
 }
 
 fn write_m5_digests(
@@ -5778,25 +5781,43 @@ impl ModuleLoader {
                 } else {
                     fetch_package(pkg, ver)?
                 };
-                let pkg_json_path = base.join("package.json");
-                let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
-                    let pkg_json: J = json_from_slice(&pkg_json_bytes).map_err(|e| anyhow::anyhow!("{}", e))
-                        .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
-                    let entrypoints = pkg_json
-                        .get("entrypoints")
-                        .and_then(|x| x.as_object())
-                        .ok_or_else(|| anyhow!("ERROR_RUNTIME package.json missing entrypoints"))?;
-                    entrypoints
-                        .get(mod_id)
-                        .and_then(|x| x.as_str())
-                        .ok_or_else(|| {
-                            anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json")
-                        })?
-                        .to_string()
+                // Check for fard.toml (network package) or package.json (local registry)
+                let fard_toml_path = base.join("fard.toml");
+                let path = if fard_toml_path.exists() {
+                    // Network package: files are directly in base dir
+                    // Read entry from fard.toml if possible, else use mod_id.fard
+                    let entry = if let Ok(toml_src) = fs::read_to_string(&fard_toml_path) {
+                        toml_src.lines()
+                            .find(|l| l.starts_with("entry"))
+                            .and_then(|l| l.split('=').nth(1))
+                            .map(|s| s.trim().trim_matches('"').to_string())
+                            .unwrap_or_else(|| format!("{mod_id}.fard"))
+                    } else {
+                        format!("{mod_id}.fard")
+                    };
+                    base.join(entry)
                 } else {
-                    format!("{mod_id}.fard")
+                    // Local registry layout: files/ subdir + package.json
+                    let pkg_json_path = base.join("package.json");
+                    let rel: String = if let Ok(pkg_json_bytes) = fs::read(&pkg_json_path) {
+                        let pkg_json: J = json_from_slice(&pkg_json_bytes).map_err(|e| anyhow::anyhow!("{}", e))
+                            .with_context(|| format!("bad json: {}", pkg_json_path.display()))?;
+                        let entrypoints = pkg_json
+                            .get("entrypoints")
+                            .and_then(|x| x.as_object())
+                            .ok_or_else(|| anyhow!("ERROR_RUNTIME package.json missing entrypoints"))?;
+                        entrypoints
+                            .get(mod_id)
+                            .and_then(|x| x.as_str())
+                            .ok_or_else(|| {
+                                anyhow!("ERROR_RUNTIME missing entrypoint {mod_id} in package.json")
+                            })?
+                            .to_string()
+                    } else {
+                        format!("{mod_id}.fard")
+                    };
+                    base.join("files").join(&rel)
                 };
-                let path = base.join("files").join(&rel);
 
                 let p = path.to_string_lossy().to_string();
                 let got = file_digest(&path).unwrap_or_else(|_| "sha256:unknown".to_string());
