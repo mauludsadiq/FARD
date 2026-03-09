@@ -17,6 +17,16 @@ pub struct Cli {
 pub enum Command {
     Run(RunArgs),
     Repl,
+    Test(TestArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct TestArgs {
+    #[arg(long)]
+    pub program: PathBuf,
+
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug)]
@@ -38,7 +48,7 @@ pub struct RunArgs {
 }
 
 impl Cli {
-    pub fn parse_compat() -> (RunArgs, bool, bool) {
+    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>) {
         use std::ffi::OsString;
         let mut argv: Vec<OsString> = std::env::args_os().collect();
         if argv.len() >= 2 {
@@ -72,12 +82,22 @@ impl Cli {
                 registry: None,
                 enforce_lockfile: false,
             };
-            return (dummy, true, false);
+            return (dummy, true, false, None);
         }
 
         let want_repl = matches!(cli.cmd, Some(Command::Repl));
         let run = match cli.cmd {
             Some(Command::Run(r)) => r,
+            Some(Command::Test(t)) => {
+                let dummy = RunArgs {
+                    program: t.program.clone(),
+                    out: PathBuf::from("."),
+                    lockfile: None,
+                    registry: None,
+                    enforce_lockfile: false,
+                };
+                return (dummy, false, false, Some(t));
+            }
             Some(Command::Repl) | None => {
                 if want_repl {
                     let dummy = RunArgs {
@@ -87,15 +107,16 @@ impl Cli {
                         registry: None,
                         enforce_lockfile: false,
                     };
-                    return (dummy, false, true);
+                    return (dummy, false, true, None);
                 }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
+                eprintln!("       fardrun test --program <file.fard>");
                 eprintln!("       fardrun repl");
                 eprintln!("       fardrun --version");
                 std::process::exit(0);
             }
         };
 
-        (run, false, false)
+        (run, false, false, None)
     }
 }

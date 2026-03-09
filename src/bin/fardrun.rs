@@ -254,7 +254,7 @@ fn write_m5_digests(
 }
 
 fn main() -> Result<()> {
-    let (run, want_version, want_repl) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl, test_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
     if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
@@ -308,6 +308,83 @@ fn main() -> Result<()> {
             }
         }
         return Ok(());
+    }
+    // Test runner
+    if let Some(targs) = test_args {
+        use std::io::Write;
+        let program = targs.program;
+        let src = fs::read_to_string(&program)
+            .with_context(|| format!("cannot read {}", program.display()))?;
+        let file = program.to_string_lossy().to_string();
+        let mut parser = Parser::from_src(&src, &file)?;
+        let items = parser.parse_module()?;
+        let mut loader = ModuleLoader::new(program.parent().unwrap_or(Path::new(".")));
+        let t = std::env::temp_dir();
+        let tp = t.join("fard_test_trace.ndjson");
+        let mut tracer = Tracer::new(&t, &tp).expect("tracer");
+        let mut env = base_env();
+        // First pass: register all non-test items
+        let non_test: Vec<Item> = items.iter().filter(|i| !matches!(i, Item::Test(..)))
+            .cloned().collect();
+        loader.eval_items(non_test, &mut env, &mut tracer, program.parent().unwrap_or(Path::new(".")))?;
+        // Second pass: run tests
+        let tests: Vec<(String, Expr, ErrorSpan)> = items.into_iter().filter_map(|i| {
+            if let Item::Test(label, body, span) = i { Some((label, body, span)) } else { None }
+        }).collect();
+        let total = tests.len();
+        let mut passed = 0usize;
+        let mut failed = 0usize;
+        let mut results: Vec<(String, bool, Option<String>)> = Vec::new();
+        for (label, body, span) in tests {
+            let mut test_env = env.clone();
+            match eval(&body, &mut test_env, &mut tracer, &mut loader) {
+                Ok(Val::Bool(true)) => {
+                    passed += 1;
+                    println!("  [32m✓[0m {}", label);
+                    results.push((label, true, None));
+                }
+                Ok(Val::Bool(false)) => {
+                    failed += 1;
+                    println!("  [31m✗[0m {} [2m→ false[0m", label);
+                    results.push((label, false, Some("assertion returned false".to_string())));
+                }
+                Ok(other) => {
+                    failed += 1;
+                    let msg = format!("expected bool, got {:?}", other);
+                    println!("  [31m✗[0m {} [2m→ {}[0m", label, msg);
+                    results.push((label, false, Some(msg)));
+                }
+                Err(e) => {
+                    failed += 1;
+                    let msg = e.root_cause().to_string();
+                    println!("  [31m✗[0m {} [2m→ error: {}[0m  --> {}:{}:{}",
+                        label, msg, span.file, span.line, span.col);
+                    results.push((label, false, Some(msg)));
+                }
+            }
+        }
+        println!();
+        if failed == 0 {
+            println!("[32m  {} passed[0m", passed);
+        } else {
+            println!("[32m  {} passed[0m  [31m{} failed[0m", passed, failed);
+        }
+        if targs.json {
+            let mut out = Map::new();
+            out.insert("passed".to_string(), J::Int(passed as i64));
+            out.insert("failed".to_string(), J::Int(failed as i64));
+            out.insert("total".to_string(), J::Int(total as i64));
+            let arr: Vec<J> = results.into_iter().map(|(label, ok, msg)| {
+                let mut m = Map::new();
+                m.insert("label".to_string(), J::Str(label));
+                m.insert("ok".to_string(), J::Bool(ok));
+                if let Some(e) = msg { m.insert("error".to_string(), J::Str(e)); }
+                J::Object(m)
+            }).collect();
+            out.insert("tests".to_string(), J::Array(arr));
+            println!("{}", json_to_string(&J::Object(out)));
+        }
+        std::process::exit(if failed > 0 { 1 } else { 0 });
     }
     let program = run.program;
     let out_dir = run.out;
@@ -855,7 +932,7 @@ impl Lex {
             {
                 let id = t;
                 let kws = [
-                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match",
+                    "let", "in", "fn", "if", "then", "else", "import", "as", "export", "match", "test",
                     "using", "true", "false", "null",
                 ];
                 if kws.contains(&id.as_str()) {
@@ -1115,6 +1192,7 @@ enum Item {
     Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
     TypeDef(String, TypeDefKind),
+    Test(String, Expr, ErrorSpan),
     Expr(Expr, Option<ErrorSpan>),
 }
 struct Parser {
@@ -1396,6 +1474,19 @@ impl Parser {
     fn parse_module(&mut self) -> Result<Vec<Item>> {
         let mut items = Vec::new();
         while !matches!(self.peek(), Tok::Eof) {
+            // test "name" { expr }
+            if self.eat_kw("test") {
+                let label = match self.bump() {
+                    Tok::Str(s) => s,
+                    other => bail!("ERROR_PARSE test expects a string label, got {:?}", other),
+                };
+                let span = self.cur_span();
+                self.expect_sym("{")?;
+                let body = self.parse_fn_block_inner()?;
+                self.expect_sym("}")?;
+                items.push(Item::Test(label, body, span));
+                continue;
+            }
             // "a Point is { x: Int, y: Int }" or "a Shape is Circle(r: Int) or Rect(w: Int, h: Int)"
             if matches!(self.peek(), Tok::Ident(s) if s == "a") { self.bump();
                 let type_name = self.expect_ident()?;
@@ -5693,6 +5784,10 @@ impl ModuleLoader {
                     env.set(name, f);
                 }
                 Item::Export(ns) => exports = Some(ns),
+                Item::Test(_, _, _) => {
+                    // Test blocks are skipped during normal eval
+                    // They are only executed by `fardrun test`
+                }
                 Item::TypeDef(type_name, kind) => {
                     match kind {
                         TypeDefKind::Record(fields) => {
