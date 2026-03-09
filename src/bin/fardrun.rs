@@ -37,6 +37,12 @@ type Map = std::collections::BTreeMap<String, J>;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+thread_local! {
+    static PROGRAM_ARGS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![]);
+}
+fn set_program_args(args: Vec<String>) {
+    PROGRAM_ARGS.with(|a| *a.borrow_mut() = args);
+}
 fn sha256_bytes_hex(bytes: &[u8]) -> String {
     let mut h = NativeSha256::new();
     h.update(bytes);
@@ -576,6 +582,7 @@ fn main() -> Result<()> {
     let out_dir = run.out;
     let lockfile = run.lockfile;
     let registry_dir = run.registry;
+    set_program_args(run.program_args.clone());
     fs::create_dir_all(&out_dir).ok();
     let trace_path = out_dir.join("trace.ndjson");
     let result_path = out_dir.join("result.json");
@@ -2314,6 +2321,8 @@ enum Builtin {
     BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList,
     // std/io
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
+    // std/cli
+    CliArgs, CliGet, CliGetInt, CliGetFloat, CliGetBool, CliHas,
     // std/null
     NullIsNull, NullCoalesce, NullGuard,
     // std/path
@@ -4758,6 +4767,69 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG hash.sha256_bytes expects str, bytes, or list"),
             }
         }
+        Builtin::CliArgs => {
+            // cli.args() -> list of raw string args passed to program
+            Ok(Val::List(
+                PROGRAM_ARGS.with(|a| a.borrow().iter().map(|s| Val::Text(s.clone())).collect())
+            ))
+        }
+        Builtin::CliGet => {
+            // cli.get(parsed, name) -> string value or unit
+            if args.len() != 2 { bail!("ERROR_BADARG cli.get expects (parsed, name)"); }
+            let name = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG cli.get name must be string") };
+            match &args[0] {
+                Val::Record(m) => Ok(m.get(&name).cloned().unwrap_or(Val::Unit)),
+                _ => bail!("ERROR_BADARG cli.get expects record"),
+            }
+        }
+        Builtin::CliGetInt => {
+            if args.len() != 2 { bail!("ERROR_BADARG cli.get_int expects (parsed, name)"); }
+            let name = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG cli.get_int name must be string") };
+            match &args[0] {
+                Val::Record(m) => match m.get(&name) {
+                    Some(Val::Text(s)) => Ok(Val::Int(s.parse::<i64>().map_err(|_| anyhow!("ERROR_BADARG cli.get_int: '{}' is not an int", s))?)),
+                    Some(Val::Int(n)) => Ok(Val::Int(*n)),
+                    Some(Val::Unit) | None => bail!("ERROR_BADARG cli.get_int: '{}' not found", name),
+                    _ => bail!("ERROR_BADARG cli.get_int type error"),
+                },
+                _ => bail!("ERROR_BADARG cli.get_int expects record"),
+            }
+        }
+        Builtin::CliGetFloat => {
+            if args.len() != 2 { bail!("ERROR_BADARG cli.get_float expects (parsed, name)"); }
+            let name = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG cli.get_float name must be string") };
+            match &args[0] {
+                Val::Record(m) => match m.get(&name) {
+                    Some(Val::Text(s)) => Ok(Val::Float(s.parse::<f64>().map_err(|_| anyhow!("ERROR_BADARG cli.get_float: '{}' is not a float", s))?)),
+                    Some(Val::Float(f)) => Ok(Val::Float(*f)),
+                    Some(Val::Int(n)) => Ok(Val::Float(*n as f64)),
+                    Some(Val::Unit) | None => bail!("ERROR_BADARG cli.get_float: '{}' not found", name),
+                    _ => bail!("ERROR_BADARG cli.get_float type error"),
+                },
+                _ => bail!("ERROR_BADARG cli.get_float expects record"),
+            }
+        }
+        Builtin::CliGetBool => {
+            if args.len() != 2 { bail!("ERROR_BADARG cli.get_bool expects (parsed, name)"); }
+            let name = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG cli.get_bool name must be string") };
+            match &args[0] {
+                Val::Record(m) => match m.get(&name) {
+                    Some(Val::Bool(b)) => Ok(Val::Bool(*b)),
+                    Some(Val::Text(s)) => Ok(Val::Bool(s == "true")),
+                    Some(Val::Unit) | None => Ok(Val::Bool(false)),
+                    _ => bail!("ERROR_BADARG cli.get_bool type error"),
+                },
+                _ => bail!("ERROR_BADARG cli.get_bool expects record"),
+            }
+        }
+        Builtin::CliHas => {
+            if args.len() != 2 { bail!("ERROR_BADARG cli.has expects (parsed, name)"); }
+            let name = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG cli.has name must be string") };
+            match &args[0] {
+                Val::Record(m) => Ok(Val::Bool(matches!(m.get(&name), Some(v) if !matches!(v, Val::Unit)))),
+                _ => bail!("ERROR_BADARG cli.has expects record"),
+            }
+        }
         Builtin::IoReadFile => {
             if args.len() != 1 { bail!("ERROR_BADARG io.read_file expects 1 arg"); }
             let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.read_file expects string path") };
@@ -6801,6 +6873,17 @@ impl ModuleLoader {
                 m.insert("emit".to_string(), Val::Builtin(Builtin::EmitArtifact));
                 m.insert("ref".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.ref")));
                 m.insert("derive".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.derive")));
+                Ok(m)
+            }
+            "std/cli" => {
+                let mut m = BTreeMap::new();
+                m.insert("args".to_string(),      Val::Builtin(Builtin::CliArgs));
+                m.insert("get".to_string(),       Val::Builtin(Builtin::CliGet));
+                m.insert("get_int".to_string(),   Val::Builtin(Builtin::CliGetInt));
+                m.insert("get_float".to_string(), Val::Builtin(Builtin::CliGetFloat));
+                m.insert("get_bool".to_string(),  Val::Builtin(Builtin::CliGetBool));
+                m.insert("has".to_string(),       Val::Builtin(Builtin::CliHas));
+                // cli.parse(spec) is implemented in FARD stdlib, not as a builtin
                 Ok(m)
             }
             "std/io" => {

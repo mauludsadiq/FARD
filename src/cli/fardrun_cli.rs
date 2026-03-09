@@ -46,6 +46,10 @@ pub struct RunArgs {
 
     #[arg(long, default_value_t = false)]
     pub enforce_lockfile: bool,
+
+    /// Program arguments passed after --
+    #[arg(last = true)]
+    pub program_args: Vec<String>,
 }
 
 #[derive(Args, Debug)]
@@ -94,6 +98,7 @@ impl Cli {
                 lockfile: None,
                 registry: None,
                 enforce_lockfile: false,
+                    program_args: vec![],
             };
             return (dummy, true, false, None, None);
         }
@@ -108,6 +113,7 @@ impl Cli {
                     lockfile: None,
                     registry: None,
                     enforce_lockfile: false,
+                    program_args: vec![],
                 };
                 return (dummy, false, false, Some(t), None);
             }
@@ -118,6 +124,7 @@ impl Cli {
                     lockfile: None,
                     registry: None,
                     enforce_lockfile: false,
+                    program_args: vec![],
                 };
                 return (dummy, false, false, None, Some(p));
             }
@@ -129,6 +136,7 @@ impl Cli {
                         lockfile: None,
                         registry: None,
                         enforce_lockfile: false,
+                    program_args: vec![],
                     };
                     return (dummy, false, true, None, None);
                 }
