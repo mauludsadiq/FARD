@@ -9,6 +9,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 walkdir = "2"
 regex = "1"
+base64 = "0.21"
+csv = "1"
 ed25519-dalek = "2.0"
 valuecore = { path = "crates/valuecore" }
 fardlang = { path = "crates/fardlang" }

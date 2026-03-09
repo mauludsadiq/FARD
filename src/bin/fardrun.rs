@@ -2548,6 +2548,7 @@ enum Builtin {
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
+    Base64Encode, Base64Decode, CsvParse, CsvEncode,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
     LinalgEigh,
@@ -6162,6 +6163,62 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG eval expects text"),
         }
+        Builtin::Base64Encode => match args.as_slice() {
+            [Val::Bytes(b)] => {
+                use base64::Engine;
+                Ok(Val::Text(base64::engine::general_purpose::STANDARD.encode(b)))
+            }
+            [Val::Text(s)] => {
+                use base64::Engine;
+                Ok(Val::Text(base64::engine::general_purpose::STANDARD.encode(s.as_bytes())))
+            }
+            _ => bail!("ERROR_BADARG base64.encode expects bytes or text"),
+        }
+        Builtin::Base64Decode => match args.as_slice() {
+            [Val::Text(s)] => {
+                use base64::Engine;
+                let b = base64::engine::general_purpose::STANDARD.decode(s.as_bytes())
+                    .map_err(|e| anyhow::anyhow!("base64.decode: {}", e))?;
+                Ok(Val::Bytes(b))
+            }
+            _ => bail!("ERROR_BADARG base64.decode expects text"),
+        }
+        Builtin::CsvParse => match args.as_slice() {
+            [Val::Text(s)] => {
+                let mut rdr = csv::ReaderBuilder::new().has_headers(false).from_reader(s.as_bytes());
+                let mut rows: Vec<Val> = Vec::new();
+                for result in rdr.records() {
+                    let record = result.map_err(|e| anyhow::anyhow!("csv.parse: {}", e))?;
+                    let fields: Vec<Val> = record.iter().map(|f| Val::Text(f.to_string())).collect();
+                    rows.push(Val::List(fields));
+                }
+                Ok(Val::List(rows))
+            }
+            _ => bail!("ERROR_BADARG csv.parse expects text"),
+        }
+        Builtin::CsvEncode => match args.as_slice() {
+            [Val::List(rows)] => {
+                let mut wtr = csv::WriterBuilder::new().from_writer(vec![]);
+                for row in rows {
+                    match row {
+                        Val::List(fields) => {
+                            let strs: Vec<String> = fields.iter().map(|f| match f {
+                                Val::Text(s) => s.clone(),
+                                Val::Int(n) => n.to_string(),
+                                Val::Float(f) => f.to_string(),
+                                Val::Bool(b) => b.to_string(),
+                                _ => String::new(),
+                            }).collect();
+                            wtr.write_record(&strs).map_err(|e| anyhow::anyhow!("csv.encode: {}", e))?;
+                        }
+                        _ => bail!("csv.encode: each row must be a list"),
+                    }
+                }
+                let data = wtr.into_inner().map_err(|e| anyhow::anyhow!("csv.encode: {}", e))?;
+                Ok(Val::Text(String::from_utf8_lossy(&data).to_string()))
+            }
+            _ => bail!("ERROR_BADARG csv.encode expects list of lists"),
+        }
         Builtin::ReMatch => match args.as_slice() {
             [Val::Text(pattern), Val::Text(text)] => {
                 let re = regex::Regex::new(pattern).map_err(|e| anyhow::anyhow!("re.match: {}", e))?;
@@ -7378,6 +7435,18 @@ impl ModuleLoader {
                 m.insert("new".to_string(), Val::Builtin(Builtin::CellNew));
                 m.insert("get".to_string(), Val::Builtin(Builtin::CellGet));
                 m.insert("set".to_string(), Val::Builtin(Builtin::CellSet));
+                Ok(m)
+            }
+            "std/base64" => {
+                let mut m = BTreeMap::new();
+                m.insert("encode".to_string(), Val::Builtin(Builtin::Base64Encode));
+                m.insert("decode".to_string(), Val::Builtin(Builtin::Base64Decode));
+                Ok(m)
+            }
+            "std/csv" => {
+                let mut m = BTreeMap::new();
+                m.insert("parse".to_string(), Val::Builtin(Builtin::CsvParse));
+                m.insert("encode".to_string(), Val::Builtin(Builtin::CsvEncode));
                 Ok(m)
             }
             "std/eval" => {
