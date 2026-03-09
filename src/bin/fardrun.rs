@@ -2312,6 +2312,8 @@ enum Builtin {
     BitAnd, BitOr, BitXor, BitNot, BitShl, BitShr, BitPopcount,
     // std/bytes
     BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList,
+    // std/io
+    IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
     // std/null
     NullIsNull, NullCoalesce, NullGuard,
     // std/path
@@ -4756,6 +4758,65 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG hash.sha256_bytes expects str, bytes, or list"),
             }
         }
+        Builtin::IoReadFile => {
+            if args.len() != 1 { bail!("ERROR_BADARG io.read_file expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.read_file expects string path") };
+            match std::fs::read_to_string(&path) {
+                Ok(s)  => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("ok".to_string(), Val::Text(s)); m })),
+                Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
+            }
+        }
+        Builtin::IoWriteFile => {
+            if args.len() != 2 { bail!("ERROR_BADARG io.write_file expects 2 args"); }
+            let path    = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.write_file path must be string") };
+            let content = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.write_file content must be string") };
+            let content_with_newline = if content.ends_with('\n') { content } else { format!("{}\n", content) };
+            match std::fs::write(&path, content_with_newline.as_bytes()) {
+                Ok(_)  => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("ok".to_string(), Val::Unit); m })),
+                Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
+            }
+        }
+        Builtin::IoAppendFile => {
+            if args.len() != 2 { bail!("ERROR_BADARG io.append_file expects 2 args"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.append_file path must be string") };
+            let line = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.append_file content must be string") };
+            use std::io::Write;
+            match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                Ok(mut file) => {
+                    let content = format!("{}
+", line);
+                    match file.write_all(content.as_bytes()) {
+                        Ok(_)  => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("ok".to_string(), Val::Unit); m })),
+                        Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
+                    }
+                },
+                Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
+            }
+        }
+        Builtin::IoReadLines => {
+            if args.len() != 1 { bail!("ERROR_BADARG io.read_lines expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.read_lines expects string path") };
+            match std::fs::read_to_string(&path) {
+                Ok(s)  => {
+                    let lines: Vec<Val> = s.lines().map(|l| Val::Text(l.to_string())).collect();
+                    Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("ok".to_string(), Val::List(lines)); m }))
+                },
+                Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
+            }
+        }
+        Builtin::IoFileExists => {
+            if args.len() != 1 { bail!("ERROR_BADARG io.file_exists expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.file_exists expects string path") };
+            Ok(Val::Bool(std::path::Path::new(&path).exists()))
+        }
+        Builtin::IoDeleteFile => {
+            if args.len() != 1 { bail!("ERROR_BADARG io.delete_file expects 1 arg"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG io.delete_file expects string path") };
+            match std::fs::remove_file(&path) {
+                Ok(_)  => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("ok".to_string(), Val::Unit); m })),
+                Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
+            }
+        }
         Builtin::BytesConcat => {
             if args.len() != 2 { bail!("ERROR_BADARG bytes.concat expects 2 args"); }
             let mut a = match &args[0] { Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG bytes.concat arg0 must be bytes") };
@@ -6740,6 +6801,16 @@ impl ModuleLoader {
                 m.insert("emit".to_string(), Val::Builtin(Builtin::EmitArtifact));
                 m.insert("ref".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.ref")));
                 m.insert("derive".to_string(), Val::Builtin(Builtin::Unimplemented("std/trace.derive")));
+                Ok(m)
+            }
+            "std/io" => {
+                let mut m = BTreeMap::new();
+                m.insert("read_file".to_string(),   Val::Builtin(Builtin::IoReadFile));
+                m.insert("write_file".to_string(),  Val::Builtin(Builtin::IoWriteFile));
+                m.insert("append_file".to_string(), Val::Builtin(Builtin::IoAppendFile));
+                m.insert("read_lines".to_string(),  Val::Builtin(Builtin::IoReadLines));
+                m.insert("file_exists".to_string(), Val::Builtin(Builtin::IoFileExists));
+                m.insert("delete_file".to_string(), Val::Builtin(Builtin::IoDeleteFile));
                 Ok(m)
             }
             "std/bytes" => {
