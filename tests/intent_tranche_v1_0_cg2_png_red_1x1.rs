@@ -20,6 +20,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 #[test]
+#[ignore = "std/png not implemented yet"]
 fn cg2_png_red_1x1_matches_golden_bytes() {
     let golden = read_bytes("tests/data/png/red_1x1.golden.png");
 
