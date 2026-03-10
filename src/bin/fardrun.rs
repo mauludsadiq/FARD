@@ -1198,6 +1198,15 @@ impl Lex {
             }
             return Ok(Tok::Num(n));
         }
+        if c == '`' {
+            self.bump();
+            let mut t = String::new();
+            while let Some(d) = self.bump() {
+                if d == '`' { break; }
+                t.push(d);
+            }
+            return Ok(Tok::Str(t));
+        }
         if c == '"' {
             self.bump();
             let mut t = String::new();

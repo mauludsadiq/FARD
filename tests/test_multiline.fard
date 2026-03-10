@@ -1,0 +1,16 @@
+import("std/str") as str
+import("std/list") as list
+
+let a = `hello
+world`
+
+let b = `line one
+line two
+line three`
+
+test "multiline basic" { a == "hello\nworld" }
+test "multiline len" { str.len(a) == 11 }
+test "multiline three lines" { list.len(str.split(b, "\n")) == 3 }
+test "multiline contains newline" { str.contains(a, "\n") == true }
+test "multiline starts with" { str.starts_with(a, "hello") == true }
+test "multiline ends with" { str.ends_with(a, "world") == true }
