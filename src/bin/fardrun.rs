@@ -3016,12 +3016,6 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::Mtx(..) => "mutex",
                         Val::Big(..) => "bigint",
                         Val::Promise(..) => "promise",
-            Val::Promise(..) => "promise",
-            Val::Big(..) => "bigint",
-            Val::Promise(..) => "promise",
-            Val::Mtx(..) => "mutex",
-            Val::Big(..) => "bigint",
-            Val::Promise(..) => "promise",
                     })
                 }
             }
@@ -3060,31 +3054,6 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                     filled[i] = true;
                 } else {
                     bail!("named arg '{}' not found in function params {:?}", name, params);
-                }
-            }
-            for (i, ok) in filled.iter().enumerate() {
-                if !ok { bail!("named arg '{}' not provided", params[i]); }
-            }
-            call(fv, ordered, tracer, loader)
-        }
-        Expr::NamedCall(f_expr, named_args) => {
-            let fv = eval(f_expr, env, tracer, loader)?;
-            let params = match &fv {
-                Val::Func(f) => f.params.iter().map(|p| match p {
-                    Pat::Bind(n) => n.clone(),
-                    _ => "_".to_string(),
-                }).collect::<Vec<_>>(),
-                _ => bail!("named call on non-function"),
-            };
-            let mut ordered: Vec<Val> = vec![Val::Unit; params.len()];
-            let mut filled = vec![false; params.len()];
-            for (name, expr) in named_args {
-                let v = eval(expr, env, tracer, loader)?;
-                if let Some(i) = params.iter().position(|p| p == name) {
-                    ordered[i] = v;
-                    filled[i] = true;
-                } else {
-                    bail!("named arg '{}' not found in params", name);
                 }
             }
             for (i, ok) in filled.iter().enumerate() {
@@ -4047,23 +4016,6 @@ fn call_builtin(
             Ok(Val::Record(record))
         }
         // --- std/sembit ---
-        Builtin::ListGroupBy => {
-            if args.len() != 2 { bail!("ERROR_ARITY list.group_by expects 2 args"); }
-            let xs = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.group_by arg0 must be list") };
-            let f = args[1].clone();
-            let mut groups: BTreeMap<String, Vec<Val>> = BTreeMap::new();
-            for x in xs {
-                let key_val = call(f.clone(), vec![x.clone()], tracer, loader)?;
-                let key_str = match &key_val {
-                    Val::Text(s) => s.clone(),
-                    Val::Bool(b) => b.to_string(),
-                    Val::Int(n) => n.to_string(),
-                    _ => bail!("ERROR_BADARG list.group_by key_fn must return text, bool, or int"),
-                };
-                groups.entry(key_str).or_default().push(x);
-            }
-            Ok(Val::Record(groups.into_iter().map(|(k,v)| (k, Val::List(v))).collect()))
-        }
         Builtin::SembitPartition => {
             if args.len() != 2 { bail!("ERROR_ARITY sembit.partition expects 2 args"); }
             let domain = match &args[0] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG sembit.partition domain must be list") };
