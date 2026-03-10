@@ -1,0 +1,24 @@
+import("std/process") as process
+import("std/promise") as promise
+
+test "process.spawn echo" {
+  let r = process.spawn("echo", ["hello"]) in
+  r.code == 0
+}
+
+test "process.spawn stdout" {
+  let r = process.spawn("echo", ["fard"]) in
+  r.code == 0
+}
+
+test "process.spawn false exit code" {
+  let r = process.spawn("false", []) in
+  r.code != 0
+}
+
+test "thread spawn via promise" {
+  let p1 = promise.spawn(fn() { 100 }) in
+  let p2 = promise.spawn(fn() { 200 }) in
+  let p3 = promise.spawn(fn() { 300 }) in
+  promise.await(p1) + promise.await(p2) + promise.await(p3) == 600
+}
