@@ -1,0 +1,10 @@
+import("std/path") as path
+
+test "path.join" { path.join("/foo", "bar") == "/foo/bar" }
+test "path.base" { path.base("/foo/bar/baz.txt") == "baz.txt" }
+test "path.dir" { path.dir("/foo/bar/baz.txt") == "/foo/bar" }
+test "path.ext" { path.ext("/foo/bar/baz.txt") == ".txt" }
+test "path.ext none" { path.ext("/foo/bar/baz") == "" }
+test "path.isAbs true" { path.isAbs("/foo/bar") == true }
+test "path.isAbs false" { path.isAbs("foo/bar") == false }
+test "path.normalize" { path.normalize("/foo/../bar") == "/bar" }
