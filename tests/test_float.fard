@@ -1,0 +1,8 @@
+import("std/float") as float
+
+test "float.to_str_fixed 2" { float.to_str_fixed(3.14159, 2) == "3.14" }
+test "float.to_str_fixed 4" { float.to_str_fixed(3.14159, 4) == "3.1416" }
+test "float.to_str_fixed 0" { float.to_str_fixed(3.9, 0) == "4" }
+test "float.to_str_fixed int" { float.to_str_fixed(42, 2) == "42.00" }
+test "float.is_nan" { float.is_nan(0.0 / 0.0) == true }
+test "float.is_inf" { float.is_inf(1.0 / 0.0) == true }

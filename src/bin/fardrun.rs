@@ -2553,6 +2553,7 @@ enum Builtin {
     SetNew, SetAdd, SetRemove, SetHas, SetUnion, SetIntersect, SetDiff, SetToList, SetFromList, SetSize,
     ListZipWith, ListChunk, ListSortBy,
     MathAsin, MathAcos, MathAtan, MathLog10,
+    FloatToStrFixed,
     ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
@@ -6192,6 +6193,15 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::FloatToStrFixed => match args.as_slice() {
+            [Val::Float(f), Val::Int(decimals)] => {
+                Ok(Val::Text(format!("{:.prec$}", f, prec = *decimals as usize)))
+            }
+            [Val::Int(n), Val::Int(decimals)] => {
+                Ok(Val::Text(format!("{:.prec$}", *n as f64, prec = *decimals as usize)))
+            }
+            _ => bail!("ERROR_BADARG float.to_str_fixed expects (float, int)"),
+        }
         Builtin::MathAsin => match args.as_slice() {
             [Val::Float(f)] => Ok(Val::Float(f.asin())),
             [Val::Int(n)] => Ok(Val::Float((*n as f64).asin())),
@@ -7731,6 +7741,7 @@ impl ModuleLoader {
                 m.insert("nan".to_string(), Val::Builtin(Builtin::FloatNan));
                 m.insert("inf".to_string(), Val::Builtin(Builtin::FloatInf));
                 m.insert("is_nan".to_string(), Val::Builtin(Builtin::FloatIsNan));
+                m.insert("to_str_fixed".to_string(), Val::Builtin(Builtin::FloatToStrFixed));
                 m.insert("is_inf".to_string(), Val::Builtin(Builtin::FloatIsInf));
                 m.insert("is_finite".to_string(), Val::Builtin(Builtin::FloatIsFinite));
                 m.insert("min".to_string(), Val::Builtin(Builtin::FloatMin));
