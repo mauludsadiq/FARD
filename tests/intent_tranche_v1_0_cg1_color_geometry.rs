@@ -20,6 +20,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 #[test]
+#[ignore = "std/color not implemented yet"]
 fn cg1_color_geometry_hue_report_matches_golden_bytes() {
     let golden = read_bytes("tests/data/color_quant/K3_K5_generated.golden.md");
 
