@@ -2603,6 +2603,7 @@ enum Builtin {
     IntToStrPadded,
     BigFromInt, BigFromStr, BigAdd, BigSub, BigMul, BigDiv, BigPow, BigToStr, BigEq, BigLt, BigGt, BigMod,
     PromiseSpawn, PromiseAwait,
+    AstParse,
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
@@ -6426,6 +6427,40 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::AstParse => match args.as_slice() {
+            [Val::Text(code)] => {
+                let file = "<ast>".to_string();
+                let mut parser = Parser::from_src(code, &file)
+                    .map_err(|e| anyhow::anyhow!("ast.parse: {}", e))?;
+                let items = parser.parse_module()
+                    .map_err(|e| anyhow::anyhow!("ast.parse: {}", e))?;
+                fn expr_to_val(e: &Expr) -> Val {
+                    match e {
+                        Expr::Int(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("int".to_string())); m.insert("v".to_string(), Val::Int(*n)); Val::Record(m) }
+                        Expr::Bool(b) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bool".to_string())); m.insert("v".to_string(), Val::Bool(*b)); Val::Record(m) }
+                        Expr::Str(s) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("str".to_string())); m.insert("v".to_string(), Val::Text(s.clone())); Val::Record(m) }
+                        Expr::Var(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("var".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); Val::Record(m) }
+                        Expr::Null => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("null".to_string())); Val::Record(m) }
+                        Expr::Bin(op, l, r) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bin".to_string())); m.insert("op".to_string(), Val::Text(op.clone())); m.insert("l".to_string(), expr_to_val(l)); m.insert("r".to_string(), expr_to_val(r)); Val::Record(m) }
+                        Expr::Call(f, args) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("call".to_string())); m.insert("f".to_string(), expr_to_val(f)); m.insert("args".to_string(), Val::List(args.iter().map(expr_to_val).collect())); Val::Record(m) }
+                        Expr::If(c, t, f) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("if".to_string())); m.insert("cond".to_string(), expr_to_val(c)); m.insert("then".to_string(), expr_to_val(t)); m.insert("else".to_string(), expr_to_val(f)); Val::Record(m) }
+                        Expr::Let(n, v, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("let".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("val".to_string(), expr_to_val(v)); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                        Expr::List(xs) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("list".to_string())); m.insert("items".to_string(), Val::List(xs.iter().map(expr_to_val).collect())); Val::Record(m) }
+                        _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("other".to_string())); Val::Record(m) }
+                    }
+                }
+                fn item_to_val(item: &Item) -> Val {
+                    match item {
+                        Item::Expr(e, _) => expr_to_val(e),
+                        Item::Let(n, e, _) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("let".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("val".to_string(), expr_to_val(e)); Val::Record(m) }
+                        Item::Fn(n, _, _, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                        _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("item".to_string())); Val::Record(m) }
+                    }
+                }
+                Ok(Val::List(items.iter().map(item_to_val).collect()))
+            }
+            _ => bail!("ast.parse expects text"),
+        }
         Builtin::PromiseSpawn => match args.as_slice() {
             [f] => {
                 let fv = f.clone();
@@ -7780,6 +7815,11 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/ast" => {
+                let mut m = BTreeMap::new();
+                m.insert("parse".to_string(), Val::Builtin(Builtin::AstParse));
                 Ok(m)
             }
             "std/promise" => {

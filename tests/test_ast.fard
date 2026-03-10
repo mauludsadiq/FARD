@@ -1,0 +1,19 @@
+import("std/ast") as ast
+import("std/list") as list
+
+let nodes = ast.parse("1 + 2")
+test "ast.parse returns list" { list.len(nodes) == 1 }
+test "ast.parse bin node" { nodes[0].t == "bin" }
+test "ast.parse bin op" { nodes[0].op == "+" }
+test "ast.parse bin left" { nodes[0].l.t == "int" }
+test "ast.parse bin left val" { nodes[0].l.v == 1 }
+test "ast.parse bin right val" { nodes[0].r.v == 2 }
+
+let nodes2 = ast.parse("let x = 42")
+test "ast.parse let node" { nodes2[0].t == "let" }
+test "ast.parse let name" { nodes2[0].name == "x" }
+test "ast.parse let val" { nodes2[0].val.v == 42 }
+
+let nodes3 = ast.parse("fn add(x, y) { x + y }")
+test "ast.parse fn node" { nodes3[0].t == "fn" }
+test "ast.parse fn name" { nodes3[0].name == "add" }
