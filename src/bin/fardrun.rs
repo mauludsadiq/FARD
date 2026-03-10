@@ -271,6 +271,7 @@ fn write_m5_digests(
     };
     let canon = canon_json(&preimage)?;
     let preimage_sha256 = format!("sha256:{}", sha256_bytes_hex(canon.as_bytes()));
+    println!("fard_run_digest={}", preimage_sha256);
     let dig = {
         let mut m = Map::new();
         m.insert("files".to_string(), J::Object(files.into_iter().map(|(k,v)| (k, J::Str(v))).collect()));
