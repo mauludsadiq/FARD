@@ -2307,6 +2307,7 @@ enum Val {
     /// Method bound to a receiver. When called, receiver is prepended as first arg.
     BoundMethod(Box<Val>, Box<Val>),
     Chan(Arc<Mutex<std::collections::VecDeque<Val>>>, Arc<Mutex<bool>>),
+    Mtx(Arc<Mutex<Val>>),
 }
 
 impl Val {
@@ -2325,6 +2326,7 @@ impl Val {
             Val::BoundMethod(..) => "bound-method",
             Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin",
             Val::Chan(..) => "chan",
+            Val::Mtx(..) => "mutex",
         }
     }
 }
@@ -2361,6 +2363,7 @@ enum Builtin {
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
     IoReadStdin, IoListDir, IoMakeDir,
     ChanNew, ChanSend, ChanRecv, ChanTryRecv, ChanClose,
+    MutexNew, MutexLock, MutexUnlock, MutexWithLock,
     // std/cli
     CliArgs, CliGet, CliGetInt, CliGetFloat, CliGetBool, CliHas,
     // std/null
@@ -2695,7 +2698,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) => None,
         }
     }
 }
@@ -2966,6 +2969,8 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::BoundMethod(..) => "bound-method",
                         Val::Err{..} => "err", Val::Record(_) => "record",
                         Val::Chan(..) => "chan",
+                        Val::Mtx(..) => "mutex",
+            Val::Mtx(..) => "mutex",
                     })
                 }
             }
@@ -4931,6 +4936,29 @@ fn call_builtin(
                 Val::Record(m) => Ok(Val::Bool(matches!(m.get(&name), Some(v) if !matches!(v, Val::Unit)))),
                 _ => bail!("ERROR_BADARG cli.has expects record"),
             }
+        }
+        Builtin::MutexNew => match args.as_slice() {
+            [val] => Ok(Val::Mtx(Arc::new(Mutex::new(val.clone())))),
+            _ => bail!("ERROR_BADARG mutex.new expects 1 arg (initial value)"),
+        }
+        Builtin::MutexLock => match args.as_slice() {
+            [Val::Mtx(m)] => Ok(m.lock().unwrap().clone()),
+            _ => bail!("ERROR_BADARG mutex.lock expects mutex"),
+        }
+        Builtin::MutexUnlock => match args.as_slice() {
+            [Val::Mtx(m), val] => {
+                *m.lock().unwrap() = val.clone();
+                Ok(Val::Bool(true))
+            }
+            _ => bail!("ERROR_BADARG mutex.unlock expects (mutex, val)"),
+        }
+        Builtin::MutexWithLock => match args.as_slice() {
+            [Val::Mtx(m), f] => {
+                let current = m.lock().unwrap().clone();
+                let result = call(f.clone(), vec![current], tracer, loader)?;
+                Ok(result)
+            }
+            _ => bail!("ERROR_BADARG mutex.with_lock expects (mutex, fn)"),
         }
         Builtin::ChanNew => {
             let q: Arc<Mutex<std::collections::VecDeque<Val>>> = Arc::new(Mutex::new(std::collections::VecDeque::new()));
@@ -7523,6 +7551,14 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/mutex" => {
+                let mut m = BTreeMap::new();
+                m.insert("new".to_string(), Val::Builtin(Builtin::MutexNew));
+                m.insert("lock".to_string(), Val::Builtin(Builtin::MutexLock));
+                m.insert("unlock".to_string(), Val::Builtin(Builtin::MutexUnlock));
+                m.insert("with_lock".to_string(), Val::Builtin(Builtin::MutexWithLock));
                 Ok(m)
             }
             "std/chan" => {

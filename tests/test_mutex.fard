@@ -1,0 +1,17 @@
+import("std/mutex") as mutex
+
+let m = mutex.new(0)
+test "mutex.lock initial" { mutex.lock(m) == 0 }
+test "mutex.unlock" { mutex.unlock(m, 42) == true }
+test "mutex.lock after unlock" { mutex.lock(m) == 42 }
+
+let m2 = mutex.new(10)
+test "mutex.with_lock" { mutex.with_lock(m2, fn(v) { v * 2 }) == 20 }
+test "mutex.lock unchanged after with_lock" { mutex.lock(m2) == 10 }
+
+let m3 = mutex.new([])
+let _ = mutex.unlock(m3, [1,2,3])
+test "mutex.lock list" { mutex.lock(m3) == [1,2,3] }
+
+let m4 = mutex.new({count: 0})
+test "mutex.with_lock record" { mutex.with_lock(m4, fn(v) { v.count + 1 }) == 1 }
