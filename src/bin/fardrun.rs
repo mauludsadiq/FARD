@@ -2306,6 +2306,7 @@ enum Val {
     Builtin(Builtin),
     /// Method bound to a receiver. When called, receiver is prepended as first arg.
     BoundMethod(Box<Val>, Box<Val>),
+    Chan(Arc<Mutex<std::collections::VecDeque<Val>>>, Arc<Mutex<bool>>),
 }
 
 impl Val {
@@ -2323,6 +2324,7 @@ impl Val {
             Val::List(_) => "list", Val::Record(_) => "record",
             Val::BoundMethod(..) => "bound-method",
             Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin",
+            Val::Chan(..) => "chan",
         }
     }
 }
@@ -2358,6 +2360,7 @@ enum Builtin {
     // std/io
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
     IoReadStdin, IoListDir, IoMakeDir,
+    ChanNew, ChanSend, ChanRecv, ChanTryRecv, ChanClose,
     // std/cli
     CliArgs, CliGet, CliGetInt, CliGetFloat, CliGetBool, CliHas,
     // std/null
@@ -2583,6 +2586,7 @@ impl std::fmt::Display for QmarkPropagateErr {
 impl std::error::Error for QmarkPropagateErr {}
 
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 
 #[derive(Clone, Debug)]
 struct Env {
@@ -2691,7 +2695,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) => None,
         }
     }
 }
@@ -2961,6 +2965,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::List(_) => "list", Val::Func(_) | Val::Builtin(_) => "function",
                         Val::BoundMethod(..) => "bound-method",
                         Val::Err{..} => "err", Val::Record(_) => "record",
+                        Val::Chan(..) => "chan",
                     })
                 }
             }
@@ -4926,6 +4931,59 @@ fn call_builtin(
                 Val::Record(m) => Ok(Val::Bool(matches!(m.get(&name), Some(v) if !matches!(v, Val::Unit)))),
                 _ => bail!("ERROR_BADARG cli.has expects record"),
             }
+        }
+        Builtin::ChanNew => {
+            let q: Arc<Mutex<std::collections::VecDeque<Val>>> = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+            let closed: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+            Ok(Val::Chan(q, closed))
+        }
+        Builtin::ChanSend => match args.as_slice() {
+            [Val::Chan(q, closed), val] => {
+                if *closed.lock().unwrap() { bail!("chan.send: channel is closed"); }
+                q.lock().unwrap().push_back(val.clone());
+                Ok(Val::Bool(true))
+            }
+            _ => bail!("ERROR_BADARG chan.send expects (chan, val)"),
+        }
+        Builtin::ChanRecv => match args.as_slice() {
+            [Val::Chan(q, closed)] => {
+                loop {
+                    if let Some(v) = q.lock().unwrap().pop_front() {
+                        return Ok(Val::Record({
+                            let mut m = BTreeMap::new();
+                            m.insert("t".to_string(), Val::Text("some".to_string()));
+                            m.insert("v".to_string(), v);
+                            m
+                        }));
+                    }
+                    if *closed.lock().unwrap() {
+                        return Ok(Val::Unit);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+            _ => bail!("ERROR_BADARG chan.recv expects chan"),
+        }
+        Builtin::ChanTryRecv => match args.as_slice() {
+            [Val::Chan(q, _)] => {
+                match q.lock().unwrap().pop_front() {
+                    Some(v) => Ok(Val::Record({
+                        let mut m = BTreeMap::new();
+                        m.insert("t".to_string(), Val::Text("some".to_string()));
+                        m.insert("v".to_string(), v);
+                        m
+                    })),
+                    None => Ok(Val::Unit),
+                }
+            }
+            _ => bail!("ERROR_BADARG chan.try_recv expects chan"),
+        }
+        Builtin::ChanClose => match args.as_slice() {
+            [Val::Chan(_, closed)] => {
+                *closed.lock().unwrap() = true;
+                Ok(Val::Bool(true))
+            }
+            _ => bail!("ERROR_BADARG chan.close expects chan"),
         }
         Builtin::IoReadStdin => {
             let mut buf = String::new();
@@ -7465,6 +7523,15 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/chan" => {
+                let mut m = BTreeMap::new();
+                m.insert("new".to_string(), Val::Builtin(Builtin::ChanNew));
+                m.insert("send".to_string(), Val::Builtin(Builtin::ChanSend));
+                m.insert("recv".to_string(), Val::Builtin(Builtin::ChanRecv));
+                m.insert("try_recv".to_string(), Val::Builtin(Builtin::ChanTryRecv));
+                m.insert("close".to_string(), Val::Builtin(Builtin::ChanClose));
                 Ok(m)
             }
             "std/uuid" => {

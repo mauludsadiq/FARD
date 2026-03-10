@@ -1,0 +1,19 @@
+import("std/chan") as chan
+
+let c = chan.new()
+test "chan.send" { chan.send(c, 42) == true }
+test "chan.try_recv some" { chan.try_recv(c) == {t: "some", v: 42} }
+test "chan.try_recv empty" { chan.try_recv(c) == null }
+
+let c2 = chan.new()
+let _ = chan.send(c2, 1)
+let _ = chan.send(c2, 2)
+let _ = chan.send(c2, 3)
+test "chan.recv 1" { chan.recv(c2) == {t: "some", v: 1} }
+test "chan.recv 2" { chan.recv(c2) == {t: "some", v: 2} }
+test "chan.recv 3" { chan.recv(c2) == {t: "some", v: 3} }
+
+let c3 = chan.new()
+let _ = chan.send(c3, "hello")
+test "chan.close" { chan.close(c3) == true }
+test "chan.recv after close" { chan.recv(c3) == {t: "some", v: "hello"} }
