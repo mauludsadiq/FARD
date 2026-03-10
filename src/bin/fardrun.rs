@@ -2572,6 +2572,7 @@ enum Builtin {
     MathAsin, MathAcos, MathAtan, MathLog10,
     FloatToStrFixed,
     UuidV4, UuidValidate,
+    IntToStrPadded,
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
@@ -6319,6 +6320,20 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::IntToStrPadded => match args.as_slice() {
+            [Val::Int(n), Val::Int(width), Val::Text(pad)] => {
+                let s = n.to_string();
+                let w = *width as usize;
+                let c = pad.chars().next().unwrap_or(' ');
+                if s.len() >= w {
+                    Ok(Val::Text(s))
+                } else {
+                    let padding: String = std::iter::repeat(c).take(w - s.len()).collect();
+                    Ok(Val::Text(format!("{}{}", padding, s)))
+                }
+            }
+            _ => bail!("ERROR_BADARG int.to_str_padded expects (int, width, pad_char)"),
+        }
         Builtin::UuidV4 => {
             Ok(Val::Text(uuid::Uuid::new_v4().to_string()))
         }
@@ -7684,7 +7699,8 @@ impl ModuleLoader {
                 m.insert("gt".to_string(), Val::Builtin(Builtin::IntGt));
                 m.insert("le".to_string(), Val::Builtin(Builtin::IntLe));
                 m.insert("ge".to_string(), Val::Builtin(Builtin::IntGe));
-                Ok(m)
+                                m.insert("to_str_padded".to_string(), Val::Builtin(Builtin::IntToStrPadded));
+Ok(m)
             }
             "std/fs" => {
                 let mut m = BTreeMap::new();

@@ -1,0 +1,8 @@
+import("std/int") as int
+
+test "pad width 5 zeros" { int.to_str_padded(42, 5, "0") == "00042" }
+test "pad width 3 zeros" { int.to_str_padded(7, 3, "0") == "007" }
+test "pad spaces" { int.to_str_padded(99, 5, " ") == "   99" }
+test "pad exact width" { int.to_str_padded(123, 3, "0") == "123" }
+test "pad over width" { int.to_str_padded(12345, 3, "0") == "12345" }
+test "pad negative" { int.to_str_padded(-5, 4, "0") == "00-5" }
