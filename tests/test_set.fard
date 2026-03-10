@@ -1,0 +1,20 @@
+import("std/set") as set
+
+test "set.add and has" { let s = set.add(set.new(), 1) in set.has(s, 1) == true }
+test "set.has missing" { set.has(set.new(), 1) == false }
+test "set.no duplicates" { set.size(set.add(set.add(set.new(), 1), 1)) == 1 }
+test "set.remove" { let s = set.add(set.new(), 1) in set.has(set.remove(s, 1), 1) == false }
+test "set.size" { set.size(set.add(set.add(set.add(set.new(), 1), 2), 3)) == 3 }
+test "set.union" { set.size(set.union(set.add(set.new(), 1), set.add(set.new(), 2))) == 2 }
+test "set.intersect" {
+  let a = set.add(set.add(set.new(), 1), 2) in
+  let b = set.add(set.add(set.new(), 2), 3) in
+  set.to_list(set.intersect(a, b)) == [2]
+}
+test "set.diff" {
+  let a = set.add(set.add(set.new(), 1), 2) in
+  let b = set.add(set.new(), 2) in
+  set.to_list(set.diff(a, b)) == [1]
+}
+test "set.from_list" { set.size(set.from_list([1,2,2,3,3,3])) == 3 }
+test "set.to_list" { set.size(set.from_list(set.to_list(set.add(set.add(set.new(), 1), 2)))) == 2 }

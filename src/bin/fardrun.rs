@@ -2550,6 +2550,7 @@ enum Builtin {
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
+    SetNew, SetAdd, SetRemove, SetHas, SetUnion, SetIntersect, SetDiff, SetToList, SetFromList, SetSize,
     ListParMap,
     CellNew, CellGet, CellSet,
     LinalgTranspose,
@@ -6189,6 +6190,63 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.par_map expects (list, fn)"),
         }
+        Builtin::SetNew => Ok(Val::List(vec![])),
+        Builtin::SetAdd => match args.as_slice() {
+            [Val::List(s), v] => {
+                let mut s2 = s.clone();
+                if !s2.iter().any(|x| val_eq(x, v)) { s2.push(v.clone()); s2.sort_by(|a,b| format!("{:?}",a).cmp(&format!("{:?}",b))); }
+                Ok(Val::List(s2))
+            }
+            _ => bail!("ERROR_BADARG set.add expects (set, val)"),
+        }
+        Builtin::SetRemove => match args.as_slice() {
+            [Val::List(s), v] => {
+                Ok(Val::List(s.iter().filter(|x| !val_eq(x, v)).cloned().collect()))
+            }
+            _ => bail!("ERROR_BADARG set.remove expects (set, val)"),
+        }
+        Builtin::SetHas => match args.as_slice() {
+            [Val::List(s), v] => Ok(Val::Bool(s.iter().any(|x| val_eq(x, v)))),
+            _ => bail!("ERROR_BADARG set.has expects (set, val)"),
+        }
+        Builtin::SetUnion => match args.as_slice() {
+            [Val::List(a), Val::List(b)] => {
+                let mut s = a.clone();
+                for v in b { if !s.iter().any(|x| val_eq(x, v)) { s.push(v.clone()); } }
+                s.sort_by(|a,b| format!("{:?}",a).cmp(&format!("{:?}",b)));
+                Ok(Val::List(s))
+            }
+            _ => bail!("ERROR_BADARG set.union expects (set, set)"),
+        }
+        Builtin::SetIntersect => match args.as_slice() {
+            [Val::List(a), Val::List(b)] => {
+                Ok(Val::List(a.iter().filter(|v| b.iter().any(|x| val_eq(x, v))).cloned().collect()))
+            }
+            _ => bail!("ERROR_BADARG set.intersect expects (set, set)"),
+        }
+        Builtin::SetDiff => match args.as_slice() {
+            [Val::List(a), Val::List(b)] => {
+                Ok(Val::List(a.iter().filter(|v| !b.iter().any(|x| val_eq(x, v))).cloned().collect()))
+            }
+            _ => bail!("ERROR_BADARG set.diff expects (set, set)"),
+        }
+        Builtin::SetToList => match args.as_slice() {
+            [Val::List(s)] => Ok(Val::List(s.clone())),
+            _ => bail!("ERROR_BADARG set.to_list expects set"),
+        }
+        Builtin::SetFromList => match args.as_slice() {
+            [Val::List(items)] => {
+                let mut s: Vec<Val> = Vec::new();
+                for v in items { if !s.iter().any(|x| val_eq(x, v)) { s.push(v.clone()); } }
+                s.sort_by(|a,b| format!("{:?}",a).cmp(&format!("{:?}",b)));
+                Ok(Val::List(s))
+            }
+            _ => bail!("ERROR_BADARG set.from_list expects list"),
+        }
+        Builtin::SetSize => match args.as_slice() {
+            [Val::List(s)] => Ok(Val::Int(s.len() as i64)),
+            _ => bail!("ERROR_BADARG set.size expects set"),
+        }
         Builtin::MapDelete => match args.as_slice() {
             [Val::Record(m), Val::Text(k)] => {
                 let mut m2 = m.clone();
@@ -7239,6 +7297,20 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                Ok(m)
+            }
+            "std/set" => {
+                let mut m = BTreeMap::new();
+                m.insert("new".to_string(), Val::Builtin(Builtin::SetNew));
+                m.insert("add".to_string(), Val::Builtin(Builtin::SetAdd));
+                m.insert("remove".to_string(), Val::Builtin(Builtin::SetRemove));
+                m.insert("has".to_string(), Val::Builtin(Builtin::SetHas));
+                m.insert("union".to_string(), Val::Builtin(Builtin::SetUnion));
+                m.insert("intersect".to_string(), Val::Builtin(Builtin::SetIntersect));
+                m.insert("diff".to_string(), Val::Builtin(Builtin::SetDiff));
+                m.insert("to_list".to_string(), Val::Builtin(Builtin::SetToList));
+                m.insert("from_list".to_string(), Val::Builtin(Builtin::SetFromList));
+                m.insert("size".to_string(), Val::Builtin(Builtin::SetSize));
                 Ok(m)
             }
             "std/map" => {
