@@ -245,4 +245,4 @@ one primitive: `CID(bytes) = "sha256:" || hex(SHA256(bytes))`.
 
 ## License
 
-MIT
+MUI
