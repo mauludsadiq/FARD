@@ -1,0 +1,44 @@
+import("std/str") as str
+import("std/list") as list
+import("std/re") as re
+import("std/base64") as b64
+import("std/csv") as csv
+import("std/result") as result
+
+test "str.len" { str.len("hello") == 5 }
+test "str.concat" { str.concat("foo", "bar") == "foobar" }
+test "str.join" { str.join(["a","b","c"], ",") == "a,b,c" }
+test "str.slice" { str.slice("hello", 1, 3) == "el" }
+test "str.upper" { str.upper("hello") == "HELLO" }
+test "str.lower" { str.lower("HELLO") == "hello" }
+test "str.trim" { str.trim("  hi  ") == "hi" }
+test "str.contains" { str.contains("hello world", "world") == true }
+test "str.starts_with" { str.starts_with("hello", "he") == true }
+test "str.split" { str.split("a,b,c", ",") == ["a","b","c"] }
+
+test "list.map" { list.map([1,2,3], fn(n) { n * 2 }) == [2,4,6] }
+test "list.filter" { list.filter([1,2,3,4], fn(n) { n > 2 }) == [3,4] }
+test "list.fold" { list.fold([1,2,3,4], 0, fn(acc,n) { acc + n }) == 10 }
+test "list.any true" { list.any([1,2,3], fn(n) { n > 2 }) == true }
+test "list.any false" { list.any([1,2,3], fn(n) { n > 5 }) == false }
+test "list.all true" { list.all([2,4,6], fn(n) { n > 0 }) == true }
+test "list.take" { list.take([1,2,3,4,5], 3) == [1,2,3] }
+test "list.drop" { list.drop([1,2,3,4,5], 2) == [3,4,5] }
+test "list.flat_map" { list.flat_map([1,2,3], fn(n) { [n, n*10] }) == [1,10,2,20,3,30] }
+test "list.par_map" { list.par_map([1,2,3], fn(n) { n * n }) == [1,4,9] }
+
+test "re.is_match true" { re.is_match("^[0-9]+$", "123") == true }
+test "re.is_match false" { re.is_match("^[0-9]+$", "abc") == false }
+test "re.find" { re.find("[0-9]+", "foo123").some == "123" }
+test "re.find_all" { re.find_all("[0-9]+", "a1 b22 c333") == ["1","22","333"] }
+test "re.split" { re.split(",", "a,b,c") == ["a","b","c"] }
+test "re.replace" { re.replace("[aeiou]", "hello", "*") == "h*ll*" }
+
+test "base64 encode" { b64.encode("Hello") == "SGVsbG8=" }
+
+test "csv.parse row1" { let r = csv.parse("a,b\n1,2") in r[0] == ["a","b"] }
+test "csv.parse row2" { let r = csv.parse("a,b\n1,2") in r[1] == ["1","2"] }
+
+test "result.ok" { result.is_ok(result.ok(42)) == true }
+test "result.err" { result.is_ok(result.err("oops")) == false }
+test "result.map" { result.unwrap_ok(result.map(result.ok(5), fn(n) { n * 2 })) == 10 }

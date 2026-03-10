@@ -1,0 +1,12 @@
+import("std/list") as list
+
+test "arithmetic" { 1 + 2 + 3 == 6 }
+test "string interp" { "hello ${1 + 1}" == "hello 2" }
+test "fn call" { (fn(a, b) { a + b })(3, 4) == 7 }
+test "if true" { (if true then 1 else 2) == 1 }
+test "if false" { (if false then 1 else 2) == 2 }
+test "list index" { let xs = [10, 20, 30] in xs[1] == 20 }
+test "list len" { list.len([1,2,3]) == 3 }
+test "bool and" { true && true == true }
+test "bool or" { false || true == true }
+test "bool not" { !false == true }
