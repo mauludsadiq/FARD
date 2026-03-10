@@ -1,0 +1,19 @@
+import("std/io") as io
+import("std/list") as list
+import("std/str") as str
+
+let tmp = "/tmp/fard_io_test"
+
+test "io.make_dir" { io.make_dir(tmp) == true }
+test "io.write_file" { io.write_file(str.concat(tmp, "/hello.txt"), "hello") == {ok: null} }
+test "io.file_exists" { io.file_exists(str.concat(tmp, "/hello.txt")) == true }
+test "io.list_dir contains file" {
+  let files = io.list_dir(tmp) in
+  list.any(files, fn(f) { f == "hello.txt" })
+}
+test "io.read_file" {
+  let r = io.read_file(str.concat(tmp, "/hello.txt")) in
+  r == {ok: "hello\n"} || r == {ok: "hello"}
+}
+test "io.delete_file" { io.delete_file(str.concat(tmp, "/hello.txt")) == {ok: null} }
+test "io.file_exists after delete" { io.file_exists(str.concat(tmp, "/hello.txt")) == false }

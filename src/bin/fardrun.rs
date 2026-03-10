@@ -2357,6 +2357,7 @@ enum Builtin {
     BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList,
     // std/io
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
+    IoReadStdin, IoListDir, IoMakeDir,
     // std/cli
     CliArgs, CliGet, CliGetInt, CliGetFloat, CliGetBool, CliHas,
     // std/null
@@ -4925,6 +4926,33 @@ fn call_builtin(
                 Val::Record(m) => Ok(Val::Bool(matches!(m.get(&name), Some(v) if !matches!(v, Val::Unit)))),
                 _ => bail!("ERROR_BADARG cli.has expects record"),
             }
+        }
+        Builtin::IoReadStdin => {
+            let mut buf = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+                .map_err(|e| anyhow::anyhow!("io.read_stdin: {}", e))?;
+            Ok(Val::Text(buf))
+        }
+        Builtin::IoListDir => match args.as_slice() {
+            [Val::Text(path)] => {
+                let entries = std::fs::read_dir(path)
+                    .map_err(|e| anyhow::anyhow!("io.list_dir: {}", e))?;
+                let mut names = Vec::new();
+                for entry in entries {
+                    let e = entry.map_err(|e| anyhow::anyhow!("io.list_dir entry: {}", e))?;
+                    names.push(Val::Text(e.file_name().to_string_lossy().to_string()));
+                }
+                Ok(Val::List(names))
+            }
+            _ => bail!("ERROR_BADARG io.list_dir expects text"),
+        }
+        Builtin::IoMakeDir => match args.as_slice() {
+            [Val::Text(path)] => {
+                std::fs::create_dir_all(path)
+                    .map_err(|e| anyhow::anyhow!("io.make_dir: {}", e))?;
+                Ok(Val::Bool(true))
+            }
+            _ => bail!("ERROR_BADARG io.make_dir expects text"),
         }
         Builtin::IoReadFile => {
             if args.len() != 1 { bail!("ERROR_BADARG io.read_file expects 1 arg"); }
@@ -7691,6 +7719,9 @@ impl ModuleLoader {
                 m.insert("read_lines".to_string(),  Val::Builtin(Builtin::IoReadLines));
                 m.insert("file_exists".to_string(), Val::Builtin(Builtin::IoFileExists));
                 m.insert("delete_file".to_string(), Val::Builtin(Builtin::IoDeleteFile));
+                m.insert("read_stdin".to_string(),  Val::Builtin(Builtin::IoReadStdin));
+                m.insert("list_dir".to_string(),    Val::Builtin(Builtin::IoListDir));
+                m.insert("make_dir".to_string(),    Val::Builtin(Builtin::IoMakeDir));
                 Ok(m)
             }
             "std/bytes" => {
