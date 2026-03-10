@@ -30,6 +30,7 @@ const RESULT_OK_VAL_KEY: &str = "v";
 const RESULT_ERR_VAL_KEY: &str = "e";
 const ERROR_PAT_MISMATCH: &str = "ERROR_PAT_MISMATCH";
 const ERROR_MATCH_NO_ARM: &str = "ERROR_MATCH_NO_ARM";
+use valuecore::int::{i64_sub, i64_mul, i64_div, i64_rem};
 use valuecore::json::{JsonVal as J, escape_string, from_slice as json_from_slice, from_str as json_from_str, to_string as json_to_string};
 type Map = std::collections::BTreeMap<String, J>;
 use std::collections::{BTreeMap, HashMap};
