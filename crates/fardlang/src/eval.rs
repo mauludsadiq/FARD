@@ -104,6 +104,7 @@ impl Env {
         None
     }
 
+    #[allow(dead_code)]
     fn get(&self, name: &str) -> Option<V> {
         match self.get_eval(name)? {
             EvalVal::V(v) => Some(v),

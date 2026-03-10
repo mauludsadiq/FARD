@@ -1,5 +1,5 @@
 use valuecore::Sha256 as NativeSha256;
-use valuecore::json::{JsonVal, from_slice, from_str as json_from_str, escape_string};
+use valuecore::json::{JsonVal, from_slice, escape_string};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 

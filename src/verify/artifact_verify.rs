@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use valuecore::json::{JsonVal, from_slice, from_str as json_from_str, escape_string};
+use valuecore::json::{JsonVal, from_slice, escape_string};
 use std::fs;
 
 fn is_sha256(s: &str) -> bool {

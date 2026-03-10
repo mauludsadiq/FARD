@@ -92,7 +92,7 @@ fn format_src(src: &str) -> String {
         if net > 0 {
             indent += (net as usize) * 2;
         } else if net < 0 {
-            let decrease = (-net as usize) * 2;
+            let _decrease = (-net as usize) * 2;
             // Already adjusted for leading closes above
             // Only adjust for non-leading closes
             let leading_closes = trimmed.chars().take_while(|&c| c == '}').count();

@@ -315,7 +315,7 @@ fn parse_block(lx: &mut Lexer<'_>) -> Result<Block> {
         // lookahead: consume '{', check if next is Ident then Colon (record literal)
         let m = lx.mark();
         lx.next()?; // consume '{'
-        let m2 = lx.mark();
+        let _m2 = lx.mark();
         let next = lx.next()?;
         let after = lx.next()?;
         lx.reset(m);

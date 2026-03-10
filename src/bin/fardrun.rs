@@ -1,11 +1,9 @@
 use valuecore::Sha256 as NativeSha256;
-use valuecore::int::{i64_add, i64_sub, i64_mul, i64_div, i64_rem};
 use anyhow::{anyhow, bail, Context, Result};
 // fardlang dialect support (module header detection)
 use fardlang::parse::parse_module as fardlang_parse_module;
 use fardlang::check::check_module as fardlang_check_module;
 use fardlang::eval::{eval_block, apply_imports, Env as FardlangEnv};
-use valuecore::val_to_v0;
 #[derive(Debug, Clone)]
 enum TypeField {
     Named(String, String), // field_name, type_name
@@ -350,7 +348,6 @@ fn main() -> Result<()> {
     }
     // Test runner
     if let Some(targs) = test_args {
-        use std::io::Write;
         let program = targs.program;
         let src = fs::read_to_string(&program)
             .with_context(|| format!("cannot read {}", program.display()))?;
@@ -427,7 +424,6 @@ fn main() -> Result<()> {
     }
     // Publish
     if let Some(pargs) = publish_args {
-        use std::io::Write;
         let pkg_dir = &pargs.package;
         let toml_path = pkg_dir.join("fard.toml");
         let toml_src = fs::read_to_string(&toml_path)
@@ -522,7 +518,7 @@ fn main() -> Result<()> {
         )?;
         // Download existing registry.json asset
         let assets = reg_rel.get("assets").and_then(|a| a.as_array()).cloned().unwrap_or_default();
-        let mut registry: J = if let Some(asset) = assets.iter().find(|a| {
+        let registry: J = if let Some(asset) = assets.iter().find(|a| {
             a.get("name").and_then(|n| n.as_str()) == Some("registry.json")
         }) {
             let dl_url = asset.get("browser_download_url").and_then(|u| u.as_str()).unwrap_or("");
@@ -2617,7 +2613,6 @@ impl std::fmt::Display for QmarkPropagateErr {
 impl std::error::Error for QmarkPropagateErr {}
 
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc;
 use num_bigint::BigInt;
 use num_traits::Zero;
 
