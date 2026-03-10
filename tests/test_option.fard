@@ -1,0 +1,19 @@
+import("std/option") as opt
+import("std/str") as str
+
+test "opt.some shape" { opt.some(42) == {t: "some", v: 42} }
+test "opt.none shape" { opt.none() == null }
+test "opt.is_some true" { opt.is_some(opt.some(1)) == true }
+test "opt.is_some false" { opt.is_some(opt.none()) == false }
+test "opt.is_none true" { opt.is_none(opt.none()) == true }
+test "opt.is_none false" { opt.is_none(opt.some(1)) == false }
+test "opt.unwrap_or some" { opt.unwrap_or(opt.some(5), 0) == 5 }
+test "opt.unwrap_or none" { opt.unwrap_or(opt.none(), 99) == 99 }
+test "opt.map some" { opt.map(opt.some(2), fn(x) { x * 3 }) == opt.some(6) }
+test "opt.map none" { opt.map(opt.none(), fn(x) { x * 3 }) == opt.none() }
+test "opt.and_then some" { opt.and_then(opt.some(2), fn(x) { opt.some(x + 1) }) == opt.some(3) }
+test "opt.and_then none" { opt.and_then(opt.none(), fn(x) { opt.some(x + 1) }) == opt.none() }
+test "opt.from_nullable value" { opt.from_nullable(42) == opt.some(42) }
+test "opt.from_nullable null" { opt.from_nullable(null) == opt.none() }
+test "opt.to_result some" { opt.to_result(opt.some(1), "err") == {t: "ok", v: 1} }
+test "opt.to_result none" { opt.to_result(opt.none(), "err") == {t: "err", e: "err"} }
