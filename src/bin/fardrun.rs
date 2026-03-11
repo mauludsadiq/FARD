@@ -290,6 +290,7 @@ fn write_m5_digests(
 thread_local! {
     static RETURN_VAL: std::cell::RefCell<Option<Val>> = std::cell::RefCell::new(None);
     static WITNESS_DEPS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    static SELF_DIGEST: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
 }
 
 fn main() -> Result<()> {
@@ -799,6 +800,30 @@ fn main() -> Result<()> {
                 &stdlib_root_digest,
                 true,
             )?;
+            // Two-pass: read digest, set SELF_DIGEST, write receipt
+            if let Ok(dig_bytes) = fs::read(out_dir.join("digests.json")) {
+                if let Ok(dig_json) = json_from_slice(&dig_bytes) {
+                    if let Some(J::Str(run_id)) = dig_json.get("preimage_sha256") {
+                        let run_id = run_id.clone();
+                        SELF_DIGEST.with(|d| *d.borrow_mut() = run_id.clone());
+                        let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+                        fs::create_dir_all("receipts").ok();
+                        let receipt_path = format!("receipts/sha256_{}.json", hex);
+                        let output: J = fs::read(out_dir.join("result.json"))
+                            .ok()
+                            .and_then(|b| json_from_slice(&b).ok())
+                            .and_then(|j| j.get("result").cloned())
+                            .unwrap_or(J::Null);
+                        let deps = WITNESS_DEPS.with(|d| d.borrow().clone());
+                        let mut receipt = BTreeMap::new();
+                        receipt.insert("derived_from".to_string(),
+                            J::Array(deps.into_iter().map(J::Str).collect()));
+                        receipt.insert("output".to_string(), output);
+                        receipt.insert("run_id".to_string(), J::Str(run_id));
+                        let _ = fs::write(&receipt_path, canonical_json_bytes(&J::Object(receipt)));
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -4937,12 +4962,8 @@ fn call_builtin(
             Ok(Val::Text(format!("sha256:{}", hex)))
         }
         Builtin::WitnessSelfDigest => {
-            // Returns the current run's own digest from digests.json if available,
-            // or "pending" if called before finalization (digest not yet computed)
-            // We read from the tracer's out_dir via a thread-local set at run time.
-            // For now return the out_dir path as a stable reference.
-            // The actual digest is computed after eval; we return a sentinel.
-            Ok(Val::Text("sha256:pending".to_string()))
+            let d = SELF_DIGEST.with(|d| d.borrow().clone());
+            if d.is_empty() { Ok(Val::Text("sha256:pending".to_string())) } else { Ok(Val::Text(d)) }
         }
         Builtin::WitnessDeps => {
             // Returns list of run_ids this program depends on (via artifact keyword)
