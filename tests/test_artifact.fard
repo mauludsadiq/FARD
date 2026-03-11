@@ -1,0 +1,8 @@
+artifact prior = "sha256:689dede59eba8a533083040a4795f539a1c860c9de6cc229691f62a1399b078a"
+
+test "artifact binds a record" { prior.z1 == "[3,1]" }
+test "artifact field z2" { prior.z2 == "[1,4]" }
+test "artifact field z1_val" { prior.z1_val == 2 }
+test "artifact field z2_val" { prior.z2_val == -3 }
+test "artifact rational q1" { prior.q1 == "1/2" }
+test "artifact rational q_mul" { prior.q_mul == "3/8" }

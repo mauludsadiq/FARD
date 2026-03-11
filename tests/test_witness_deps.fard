@@ -1,0 +1,10 @@
+import("std/witness") as w
+import("std/list") as list
+
+artifact prior = "sha256:689dede59eba8a533083040a4795f539a1c860c9de6cc229691f62a1399b078a"
+
+let deps = w.deps()
+
+test "deps is a list" { list.len(deps) == 1 }
+test "deps contains artifact run_id" { deps[0] == "sha256:689dede59eba8a533083040a4795f539a1c860c9de6cc229691f62a1399b078a" }
+test "deps matches artifact value" { prior.z1 == "[3,1]" }

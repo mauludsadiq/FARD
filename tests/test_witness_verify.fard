@@ -1,0 +1,9 @@
+import("std/witness") as w
+
+let good = w.verify("sha256:689dede59eba8a533083040a4795f539a1c860c9de6cc229691f62a1399b078a")
+let bad  = w.verify("sha256:0000000000000000000000000000000000000000000000000000000000000000")
+
+test "verify known run_id returns ok"      { good.t == "ok" }
+test "verify known run_id has output"      { good.v.output.z1 == "[3,1]" }
+test "verify unknown run_id returns err"   { bad.t == "err" }
+test "verify err has message"              { bad.e != "" }
