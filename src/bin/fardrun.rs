@@ -858,6 +858,16 @@ impl Tracer {
         self.write_ndjson(&line)?;
         Ok(())
     }
+    fn note_artifact_dep(&mut self, run_id: &str) -> Result<()> {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("run_id".to_string(), J::Str(run_id.to_string()));
+        m.insert("t".to_string(), J::Str("artifact_dep".to_string()));
+        let line = json_to_string(&J::Object(m)) + "
+";
+        std::io::Write::write_all(&mut self.w, line.as_bytes())?;
+        Ok(())
+    }
+
     fn artifact_in(&mut self, path: &str, cid: &str) -> Result<()> {
         // legacy import_artifact: treat path as the stable name
         self.artifact_cids.insert(path.to_string(), cid.to_string());
@@ -1410,6 +1420,7 @@ enum Expr {
 #[derive(Clone, Debug)]
 enum Item {
     Import(String, String),
+    Artifact(String, String),   // name, run_id — witness composition
     Let(String, Expr, Option<ErrorSpan>),
     Fn(String, Vec<(Pat, Option<Type>)>, Option<Type>, Expr),
     Export(Vec<String>),
@@ -1764,6 +1775,19 @@ impl Parser {
                 self.expect_kw("as")?;
                 let alias = self.expect_ident()?;
                 items.push(Item::Import(p, alias));
+                continue;
+            }
+            if self.eat_kw("artifact") {
+                let name = self.expect_ident()?;
+                self.expect_sym("=")?;
+                let run_id = match self.bump() {
+                    Tok::Str(s) => s,
+                    _ => bail!("ERROR_PARSE artifact requires run_id string"),
+                };
+                if !run_id.starts_with("sha256:") {
+                    bail!("ERROR_PARSE artifact run_id must start with 'sha256:'");
+                }
+                items.push(Item::Artifact(name, run_id));
                 continue;
             }
             if self.eat_kw("export") {
@@ -7378,6 +7402,34 @@ impl ModuleLoader {
                     let ex = self.load_module(&path, here, tracer)?;
                     env.set(alias, Val::Record(ex));
                 }
+                Item::Artifact(name, run_id) => {
+                    // Witness composition: load a prior verified run by RunID
+                    let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
+                    let receipt_path = format!("receipts/sha256_{}.json", hex);
+                    let bytes = std::fs::read(&receipt_path).map_err(|_| {
+                        anyhow!("ERROR_ARTIFACT run_id {} not found in receipts/", run_id)
+                    })?;
+                    let receipt = json_from_slice(&bytes)
+                        .map_err(|e| anyhow!("ERROR_ARTIFACT malformed receipt: {}", e))?;
+                    // Verify RunID matches
+                    let stored_id = match &receipt {
+                        J::Object(m) => m.get("run_id").and_then(|v| if let J::Str(s) = v { Some(s.as_str()) } else { None }).unwrap_or(""),
+                        _ => "",
+                    };
+                    if stored_id != run_id {
+                        bail!("ERROR_ARTIFACT run_id mismatch: stored={} requested={}", stored_id, run_id);
+                    }
+                    // Extract output field
+                    let output = match &receipt {
+                        J::Object(m) => m.get("output").cloned().ok_or_else(|| anyhow!("ERROR_ARTIFACT receipt missing output"))?,
+                        _ => bail!("ERROR_ARTIFACT receipt is not an object"),
+                    };
+                    // Convert JsonVal to Val
+                    let val = jval_to_val(&output);
+                    // Record dependency in trace
+                    tracer.note_artifact_dep(&run_id)?;
+                    env.set(name, val);
+                }
                 Item::Let(name, rhs, span) => {
                     let v = eval(&rhs, env, tracer, self).map_err(|e| {
                         if let Some(sp) = &span {
@@ -8290,6 +8342,50 @@ fn base_env() -> Env {
     );
     e
 }
+fn jval_to_val(j: &J) -> Val {
+    match j {
+        J::Null => Val::Unit,
+        J::Bool(b) => Val::Bool(*b),
+        J::Int(n) => Val::Int(*n),
+        J::Float(f) => Val::Float(*f),
+        J::Str(s) => Val::Text(s.clone()),
+        J::Array(items) => Val::List(items.iter().map(jval_to_val).collect()),
+        J::Object(m) => {
+            // Typed encoding: {"t":"int","v":42} etc
+            if let (Some(J::Str(t)), Some(v)) = (m.get("t"), m.get("v")) {
+                match t.as_str() {
+                    "bool"  => { if let J::Bool(b)  = v { return Val::Bool(*b); } }
+                    "int"   => { if let J::Int(n)   = v { return Val::Int(*n); } }
+                    "float" => { if let J::Float(f) = v { return Val::Float(*f); } }
+                    "text"  => { if let J::Str(s)   = v { return Val::Text(s.clone()); } }
+                    "unit"  => { return Val::Unit; }
+                    "list"  => { if let J::Array(xs) = v {
+                        return Val::List(xs.iter().map(jval_to_val).collect());
+                    }}
+                    "map"   => { if let J::Array(pairs) = v {
+                        let mut kvs: BTreeMap<String, Val> = pairs.iter().filter_map(|p| {
+                            if let J::Array(kv) = p {
+                                if kv.len() == 2 {
+                                    if let J::Str(k) = &kv[0] {
+                                        return Some((k.clone(), jval_to_val(&kv[1])));
+                                    }
+                                }
+                            }
+                            None
+                        }).collect();
+                        return Val::Record(kvs);
+                    }}
+                    _ => {}
+                }
+            }
+            // Plain object -> record
+            let kvs: BTreeMap<String, Val> = m.iter()
+                .map(|(k,v)| (k.clone(), jval_to_val(v))).collect();
+            Val::Record(kvs)
+        }
+    }
+}
+
 fn sha256_bytes(bytes: &[u8]) -> String {
     let mut h = NativeSha256::new();
     h.update(bytes);
