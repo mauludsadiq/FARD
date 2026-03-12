@@ -8738,7 +8738,7 @@ Ok(m)
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 24] = [
+        let names: [&str; 26] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
