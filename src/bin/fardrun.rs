@@ -1,3 +1,4 @@
+use sha2::Digest as Sha2Digest;
 use valuecore::Sha256 as NativeSha256;
 use anyhow::{anyhow, bail, Context, Result};
 // fardlang dialect support (module header detection)
@@ -2646,6 +2647,12 @@ enum Builtin {
     FfiClose,  // ffi.close(handle_id) -> null
     NetServe,   // net.serve(port, handler) -> never (blocking)
     NetRespond, // net.respond(req, status, headers, body) -> null (internal)
+    CryptoSha512,         // crypto.sha512(bytes) -> text
+    CryptoAesEncrypt,     // crypto.aes_encrypt(key_hex, nonce_hex, plaintext) -> {ok: hex} | {err: text}
+    CryptoAesDecrypt,     // crypto.aes_decrypt(key_hex, nonce_hex, ciphertext_hex) -> {ok: text} | {err: text}
+    CryptoMerkleRoot,     // crypto.merkle_root(list_of_hex) -> hex
+    CompressGzip,         // compress.gzip(text) -> bytes_hex
+    CompressGunzip,       // compress.gunzip(bytes_hex) -> {ok: text} | {err: text}
     HashSha256Bytes,
     IntMul,
     IntDiv,
@@ -5288,6 +5295,140 @@ fn call_builtin(
         }
         Builtin::NetRespond => {
             Ok(Val::Unit)
+        }
+
+        Builtin::CryptoSha512 => {
+            if args.len() != 1 { bail!("ERROR_BADARG crypto.sha512 expects 1 arg"); }
+            let bytes = match &args[0] {
+                Val::Bytes(b) => b.clone(),
+                Val::Text(s) => s.as_bytes().to_vec(),
+                _ => bail!("ERROR_BADARG crypto.sha512 expects bytes or text"),
+            };
+            let mut h = sha2::Sha512::new();
+            h.update(&bytes);
+            let result = h.finalize();
+            let hex: String = result.iter().map(|b| format!("{:02x}", b)).collect();
+            Ok(Val::Text(format!("sha512:{}", hex)))
+        }
+        Builtin::CryptoAesEncrypt => {
+            if args.len() != 3 { bail!("ERROR_BADARG crypto.aes_encrypt expects 3 args: key_hex, nonce_hex, plaintext"); }
+            let key_hex = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG key must be text hex") };
+            let nonce_hex = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG nonce must be text hex") };
+            let plaintext = match &args[2] { Val::Text(s) => s.as_bytes().to_vec(), Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG plaintext must be text or bytes") };
+            let mut m = BTreeMap::new();
+            let key_bytes = hex_decode(&key_hex);
+            let nonce_bytes = hex_decode(&nonce_hex);
+            match (key_bytes, nonce_bytes) {
+                (Ok(k), Ok(n)) if k.len() == 32 && n.len() == 12 => {
+                    use aes_gcm::{Aes256Gcm, KeyInit, aead::{Aead, Nonce}};
+                    let cipher = Aes256Gcm::new_from_slice(&k).map_err(|e| anyhow!("ERROR_CRYPTO key error: {}", e))?;
+                    let nonce = Nonce::<Aes256Gcm>::from_slice(&n);
+                    match cipher.encrypt(nonce, plaintext.as_ref()) {
+                        Ok(ciphertext) => {
+                            let hex: String = ciphertext.iter().map(|b| format!("{:02x}", b)).collect();
+                            m.insert("ok".to_string(), Val::Text(hex));
+                            m.insert("t".to_string(), Val::Text("ok".to_string()));
+                        }
+                        Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                    }
+                }
+                (Ok(k), Ok(_)) => { m.insert("e".to_string(), Val::Text(format!("key must be 32 bytes (got {}), nonce must be 12 bytes", k.len()))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                (Err(e), _) | (_, Err(e)) => { m.insert("e".to_string(), Val::Text(format!("hex decode error: {}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::CryptoAesDecrypt => {
+            if args.len() != 3 { bail!("ERROR_BADARG crypto.aes_decrypt expects 3 args: key_hex, nonce_hex, ciphertext_hex"); }
+            let key_hex = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG key must be text hex") };
+            let nonce_hex = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG nonce must be text hex") };
+            let ct_hex = match &args[2] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ciphertext must be text hex") };
+            let mut m = BTreeMap::new();
+            let key_bytes = hex_decode(&key_hex);
+            let nonce_bytes = hex_decode(&nonce_hex);
+            let ct_bytes = hex_decode(&ct_hex);
+            match (key_bytes, nonce_bytes, ct_bytes) {
+                (Ok(k), Ok(n), Ok(ct)) if k.len() == 32 && n.len() == 12 => {
+                    use aes_gcm::{Aes256Gcm, KeyInit, aead::{Aead, Nonce}};
+                    let cipher = Aes256Gcm::new_from_slice(&k).map_err(|e| anyhow!("ERROR_CRYPTO key error: {}", e))?;
+                    let nonce = Nonce::<Aes256Gcm>::from_slice(&n);
+                    match cipher.decrypt(nonce, ct.as_ref()) {
+                        Ok(plaintext) => {
+                            let text = String::from_utf8_lossy(&plaintext).to_string();
+                            m.insert("ok".to_string(), Val::Text(text));
+                            m.insert("t".to_string(), Val::Text("ok".to_string()));
+                        }
+                        Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                    }
+                }
+                (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => { m.insert("e".to_string(), Val::Text(format!("hex decode error: {}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                _ => { m.insert("e".to_string(), Val::Text("key must be 32 bytes, nonce 12 bytes".to_string())); m.insert("t".to_string(), Val::Text("err".to_string())); }
+            }
+            Ok(Val::Record(m))
+        }
+        Builtin::CryptoMerkleRoot => {
+            if args.len() != 1 { bail!("ERROR_BADARG crypto.merkle_root expects 1 arg: list of hex strings"); }
+            let items = match &args[0] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG merkle_root expects list") };
+            if items.is_empty() {
+                return Ok(Val::Text("sha256:0000000000000000000000000000000000000000000000000000000000000000".to_string()));
+            }
+            let mut layer: Vec<Vec<u8>> = items.iter().map(|v| {
+                let hex = match v { Val::Text(s) => s.trim_start_matches("sha256:").to_string(), _ => format!("{:?}", v) };
+                hex_decode(&hex).unwrap_or_else(|_| sha256_raw(hex.as_bytes()))
+            }).collect();
+            while layer.len() > 1 {
+                let mut next = Vec::new();
+                let mut i = 0;
+                while i < layer.len() {
+                    let left = &layer[i];
+                    let right = if i + 1 < layer.len() { &layer[i+1] } else { &layer[i] };
+                    let mut combined = left.clone();
+                    combined.extend_from_slice(right);
+                    next.push(sha256_raw(&combined));
+                    i += 2;
+                }
+                layer = next;
+            }
+            let hex: String = layer[0].iter().map(|b| format!("{:02x}", b)).collect();
+            Ok(Val::Text(format!("sha256:{}", hex)))
+        }
+        Builtin::CompressGzip => {
+            if args.len() != 1 { bail!("ERROR_BADARG compress.gzip expects 1 arg"); }
+            let data = match &args[0] {
+                Val::Text(s) => s.as_bytes().to_vec(),
+                Val::Bytes(b) => b.clone(),
+                _ => bail!("ERROR_BADARG compress.gzip expects text or bytes"),
+            };
+            use flate2::write::GzEncoder;
+            use flate2::Compression;
+            use std::io::Write;
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(&data).map_err(|e| anyhow!("ERROR_COMPRESS gzip: {}", e))?;
+            let compressed = encoder.finish().map_err(|e| anyhow!("ERROR_COMPRESS gzip finish: {}", e))?;
+            let hex: String = compressed.iter().map(|b| format!("{:02x}", b)).collect();
+            Ok(Val::Text(hex))
+        }
+        Builtin::CompressGunzip => {
+            if args.len() != 1 { bail!("ERROR_BADARG compress.gunzip expects 1 arg"); }
+            let hex = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG compress.gunzip expects text hex") };
+            let mut m = BTreeMap::new();
+            match hex_decode(&hex) {
+                Err(e) => { m.insert("e".to_string(), Val::Text(format!("hex decode: {}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                Ok(compressed) => {
+                    use flate2::read::GzDecoder;
+                    use std::io::Read;
+                    let mut decoder = GzDecoder::new(std::io::Cursor::new(compressed));
+                    let mut out = Vec::new();
+                    match decoder.read_to_end(&mut out) {
+                        Ok(_) => {
+                            let text = String::from_utf8_lossy(&out).to_string();
+                            m.insert("ok".to_string(), Val::Text(text));
+                            m.insert("t".to_string(), Val::Text("ok".to_string()));
+                        }
+                        Err(e) => { m.insert("e".to_string(), Val::Text(format!("gunzip: {}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                    }
+                }
+            }
+            Ok(Val::Record(m))
         }
 
         Builtin::FfiOpen => {
@@ -8733,6 +8874,12 @@ Ok(m)
                 Ok(m)
             }
 
+            "std/compress" => {
+                let mut m = BTreeMap::new();
+                m.insert("gzip".to_string(),   Val::Builtin(Builtin::CompressGzip));
+                m.insert("gunzip".to_string(),  Val::Builtin(Builtin::CompressGunzip));
+                Ok(m)
+            }
             "std/rand" => {
                 let mut m = BTreeMap::new();
                 m.insert("uuid_v4".to_string(), Val::Builtin(Builtin::RandUuidV4));
@@ -8742,6 +8889,10 @@ Ok(m)
                 let mut m = BTreeMap::new();
                 m.insert("ed25519_verify".to_string(), Val::Builtin(Builtin::CryptoEd25519Verify));
                 m.insert("hmac_sha256".to_string(), Val::Builtin(Builtin::CryptoHmacSha256));
+                m.insert("sha512".to_string(), Val::Builtin(Builtin::CryptoSha512));
+                m.insert("aes_encrypt".to_string(), Val::Builtin(Builtin::CryptoAesEncrypt));
+                m.insert("aes_decrypt".to_string(), Val::Builtin(Builtin::CryptoAesDecrypt));
+                m.insert("merkle_root".to_string(), Val::Builtin(Builtin::CryptoMerkleRoot));
                 Ok(m)
             }
             "std/float" => {
@@ -8812,7 +8963,7 @@ Ok(m)
     }
 
     fn stdlib_root_digest(&self) -> String {
-        let names: [&str; 27] = [
+        let names: [&str; 28] = [
             "std/artifact",
             "std/bytes",
             "std/codec",
@@ -8840,6 +8991,7 @@ Ok(m)
             "std/ffi",
             "std/witness",
             "std/net",
+            "std/compress",
         ];
 
         let mut pairs: Vec<(String, String)> = names
