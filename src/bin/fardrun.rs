@@ -376,6 +376,12 @@ fn main() -> Result<()> {
         let tp = t.join("fard_test_trace.ndjson");
         let mut tracer = Tracer::new(&t, &tp).expect("tracer");
         let mut env = base_env();
+        // Set SELF_DIGEST to a stable value for test mode (hash of program source)
+        {
+            let test_digest = format!("sha256:{}", sha256_bytes_hex(src.as_bytes()));
+            SELF_DIGEST.with(|d| *d.borrow_mut() = test_digest);
+            SELF_DIGEST_ACCESSED.with(|a| *a.borrow_mut() = false);
+        }
         // First pass: register all non-test items
         let non_test: Vec<Item> = items.iter().filter(|i| !matches!(i, Item::Test(..)))
             .cloned().collect();
