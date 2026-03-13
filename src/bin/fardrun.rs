@@ -242,6 +242,7 @@ fn write_m5_digests(
     trace_format_version: &str,
     stdlib_root_digest: &str,
     ok: bool,
+    self_digest_subst: Option<&str>,
 ) -> Result<()> {
     let trace_path = out_dir.join("trace.ndjson");
     let modg_path = out_dir.join("module_graph.json");
@@ -254,7 +255,17 @@ fn write_m5_digests(
     } else {
         ("error.json", out_dir.join("error.json"))
     };
-    let leaf_h = format!("sha256:{}", sha256_file_hex(&leaf_path)?);
+    // Normalize self_digest placeholder in leaf file before hashing
+    // so the digest is stable across fixed-point iterations
+    let leaf_h = if let Some(subst) = self_digest_subst {
+        let raw = std::fs::read(&leaf_path).unwrap_or_default();
+        let normalized = String::from_utf8_lossy(&raw)
+            .replace(subst, "sha256:self")
+            .into_bytes();
+        format!("sha256:{}", sha256_bytes_hex(&normalized))
+    } else {
+        format!("sha256:{}", sha256_file_hex(&leaf_path)?)
+    };
 
     let mut files: BTreeMap<String, String> = BTreeMap::new();
     files.insert("trace.ndjson".to_string(), trace_h.clone());
@@ -292,6 +303,7 @@ thread_local! {
     static RETURN_VAL: std::cell::RefCell<Option<Val>> = std::cell::RefCell::new(None);
     static WITNESS_DEPS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     static SELF_DIGEST: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+    static SELF_DIGEST_ACCESSED: std::cell::RefCell<bool> = std::cell::RefCell::new(false);
     static FFI_LIBS: std::cell::RefCell<std::collections::HashMap<String, libloading::Library>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -668,12 +680,31 @@ fn main() -> Result<()> {
     if let Some(rp) = registry_dir.clone() {
         loader.registry_dir = Some(rp);
     }
-    if let Some(lockp) = lockfile {
-        loader.lock = Some(Lockfile::load(&lockp)?);
+    if let Some(ref lockp) = lockfile {
+        loader.lock = Some(Lockfile::load(lockp)?);
     } else if run.enforce_lockfile {
         bail!("ERROR_LOCK --enforce-lockfile requires --lockfile <path>");
     }
     loader.enforce_lockfile = run.enforce_lockfile;
+    let mut _fp_prev_digest: Option<String> = None;
+    let mut _fp_attempt = 0u32;
+    SELF_DIGEST_ACCESSED.with(|a| *a.borrow_mut() = false);
+    SELF_DIGEST.with(|d| *d.borrow_mut() = "sha256:pending".to_string());
+    'fp: loop {
+    _fp_attempt += 1;
+    if _fp_attempt > 1 {
+        let _ = fs::remove_dir_all(&out_dir);
+        fs::create_dir_all(&out_dir)?;
+        tracer = Tracer::new(&out_dir, &trace_path)?;
+        loader = ModuleLoader::new(program.parent().unwrap_or(Path::new(".")));
+        let fard_toml_path2 = program.parent().unwrap_or(Path::new(".")).join("fard.toml");
+        loader.load_fard_toml(&fard_toml_path2);
+        if let Some(rp) = registry_dir.clone() { loader.registry_dir = Some(rp); }
+        if let Some(ref lockp) = lockfile { loader.lock = Some(Lockfile::load(lockp)?); }
+        loader.enforce_lockfile = run.enforce_lockfile;
+        SELF_DIGEST_ACCESSED.with(|a| *a.borrow_mut() = false);
+        WITNESS_DEPS.with(|d| d.borrow_mut().clear());
+    }
     let v = match loader.eval_main(&program, &mut tracer) {
         Ok(v) => v,
         Err(e) => {
@@ -843,6 +874,7 @@ fn main() -> Result<()> {
                     trace_format_version,
                     &stdlib_root_digest,
                     false,
+                    None,
                 )?;
             }
             bail!(msg);
@@ -864,18 +896,32 @@ fn main() -> Result<()> {
 
             let stdlib_root_digest = loader.stdlib_root_digest();
             drop(tracer);
+            // Re-initialize tracer binding so loop can reassign it on next iteration
+            tracer = Tracer::new(&out_dir, &trace_path)?;
+            let _fp_subst = _fp_prev_digest.as_deref();
             write_m5_digests(
                 &out_dir,
                 runtime_version,
                 trace_format_version,
                 &stdlib_root_digest,
                 true,
+                _fp_subst,
             )?;
-            // Two-pass: read digest, set SELF_DIGEST, write receipt
+            // Fixed-point check for w.self_digest()
             if let Ok(dig_bytes) = fs::read(out_dir.join("digests.json")) {
                 if let Ok(dig_json) = json_from_slice(&dig_bytes) {
                     if let Some(J::Str(run_id)) = dig_json.get("preimage_sha256") {
                         let run_id = run_id.clone();
+                        let accessed = SELF_DIGEST_ACCESSED.with(|a| *a.borrow());
+                        let converged = _fp_prev_digest.as_deref() == Some(run_id.as_str());
+                        if accessed && !converged && _fp_attempt < 3 {
+                            _fp_prev_digest = Some(run_id.clone());
+                            SELF_DIGEST.with(|d| *d.borrow_mut() = run_id.clone());
+                            continue 'fp;
+                        }
+                        if accessed && !converged {
+                            bail!("ERROR_SELF_DIGEST_DIVERGE w.self_digest() did not converge after 3 iterations");
+                        }
                         SELF_DIGEST.with(|d| *d.borrow_mut() = run_id.clone());
                         let hex = run_id.strip_prefix("sha256:").unwrap_or(&run_id);
                         fs::create_dir_all("receipts").ok();
@@ -895,8 +941,10 @@ fn main() -> Result<()> {
                     }
                 }
             }
-        }
-    }
+        } // end inner block
+    } // end success block
+    break 'fp;
+    } // end fp loop
     Ok(())
 }
 struct Tracer {
@@ -5049,6 +5097,7 @@ fn call_builtin(
             Ok(Val::Text(format!("sha256:{}", hex)))
         }
         Builtin::WitnessSelfDigest => {
+            SELF_DIGEST_ACCESSED.with(|a| *a.borrow_mut() = true);
             let d = SELF_DIGEST.with(|d| d.borrow().clone());
             if d.is_empty() { Ok(Val::Text("sha256:pending".to_string())) } else { Ok(Val::Text(d)) }
         }
