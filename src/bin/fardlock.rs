@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
+use std::io::Read;
 use regex::Regex;
 use valuecore::json::{JsonVal as J, escape_string, from_slice, to_string, to_string_pretty};
 
@@ -109,6 +110,7 @@ fn canon_json(v: &J) -> Result<String> {
 fn usage() -> ! {
     eprintln!("usage:");
     eprintln!("  fardlock gen --root <app_root> --registry <registry_dir> --out <out_dir>");
+    eprintln!("  fardlock gen-toml --manifest fard.toml --out fard.lock.json [--registry-url <url>]");
     eprintln!("  fardlock show-preimage --out <run_out_dir>");
     std::process::exit(2);
 }
@@ -311,6 +313,134 @@ fn cmd_gen(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+
+fn cmd_gen_toml(args: &[String]) -> Result<()> {
+    let mut manifest: Option<PathBuf> = None;
+    let mut out: Option<PathBuf> = None;
+    let mut registry_url = "https://github.com/mauludsadiq/FARD_v0.5/releases/latest/download/registry.json".to_string();
+
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--manifest" => { i += 1; manifest = Some(PathBuf::from(args.get(i).ok_or_else(|| anyhow!("missing --manifest value"))?)); }
+            "--out"      => { i += 1; out      = Some(PathBuf::from(args.get(i).ok_or_else(|| anyhow!("missing --out value"))?)); }
+            "--registry-url" => { i += 1; registry_url = args.get(i).ok_or_else(|| anyhow!("missing --registry-url value"))?.clone(); }
+            _ => bail!("unknown arg: {}", args[i]),
+        }
+        i += 1;
+    }
+
+    let manifest = manifest.ok_or_else(|| anyhow!("missing --manifest"))?;
+    let out      = out.ok_or_else(|| anyhow!("missing --out"))?;
+
+    // Parse fard.toml deps
+    let toml_src = fs::read_to_string(&manifest)
+        .with_context(|| format!("cannot read {}", manifest.display()))?;
+    let mut deps: Vec<(String, String)> = Vec::new(); // (alias, pkg@ver)
+    let mut in_deps = false;
+    for line in toml_src.lines() {
+        let line = line.trim();
+        if line == "[deps]" { in_deps = true; continue; }
+        if line.starts_with('[') { in_deps = false; continue; }
+        if in_deps && line.contains('=') {
+            let mut parts = line.splitn(2, '=');
+            let _alias = parts.next().unwrap_or("").trim().to_string();
+            let val = parts.next().unwrap_or("").trim().trim_matches('"').to_string();
+            deps.push((_alias, val));
+        }
+    }
+    if deps.is_empty() {
+        eprintln!("[fardlock] no [deps] found in {}", manifest.display());
+    }
+
+    // Fetch registry.json
+    eprintln!("[fardlock] fetching registry from {}...", registry_url);
+    let reg_body = ureq::get(&registry_url)
+        .call()
+        .map_err(|e| anyhow!("ERROR_REGISTRY failed to fetch: {e}"))?
+        .into_string()?;
+    let registry: J = from_slice(reg_body.as_bytes())?;
+
+    // For each dep, fetch the tarball, extract entry file, compute digest
+    let mut modules: BTreeMap<String, J> = BTreeMap::new();
+    let cache_base = if let Ok(h) = std::env::var("HOME") {
+        PathBuf::from(h).join(".fard").join("cache")
+    } else {
+        PathBuf::from("/tmp/.fard_cache")
+    };
+
+    for (_alias, pkg_ver) in &deps {
+        let pkg_entry = registry
+            .get("packages")
+            .and_then(|p| p.get(pkg_ver.as_str()))
+            .ok_or_else(|| anyhow!("ERROR_LOCK package not found in registry: {}", pkg_ver))?;
+        let url = pkg_entry.get("url").and_then(|u| u.as_str())
+            .ok_or_else(|| anyhow!("ERROR_LOCK missing url for {}", pkg_ver))?;
+        let expected_sha = pkg_entry.get("sha256").and_then(|s| s.as_str())
+            .ok_or_else(|| anyhow!("ERROR_LOCK missing sha256 for {}", pkg_ver))?;
+
+        // Download or use cache
+        let (pkg_name, _ver) = pkg_ver.split_once('@')
+            .ok_or_else(|| anyhow!("bad pkg@ver: {}", pkg_ver))?;
+        let pkg_cache = cache_base.join(pkg_ver).join(pkg_name);
+        if !pkg_cache.join(".fetched").exists() && !pkg_cache.exists() {
+            eprintln!("[fardlock] downloading {}...", pkg_ver);
+            let mut reader = ureq::get(url).call()
+                .map_err(|e| anyhow!("download failed: {e}"))?.into_reader();
+            let mut tar_bytes = Vec::new();
+            std::io::Read::read_to_end(&mut reader, &mut tar_bytes)?;
+            let got = sha256_bytes(&tar_bytes);
+            let got_hex = got.strip_prefix("sha256:").unwrap_or(&got);
+            if got_hex != expected_sha {
+                bail!("ERROR_LOCK sha256 mismatch for {}: expected {}, got {}", pkg_ver, expected_sha, got_hex);
+            }
+            let parent = pkg_cache.parent().unwrap();
+            fs::create_dir_all(parent)?;
+            let gz = flate2::read::GzDecoder::new(std::io::Cursor::new(&tar_bytes));
+            let mut archive = tar::Archive::new(gz);
+            archive.unpack(parent)?;
+            fs::write(pkg_cache.join(".fetched"), b"")?;
+        }
+
+        // Read fard.toml to find entry file
+        let pkg_toml = pkg_cache.join("fard.toml");
+        let entry_file = if pkg_toml.exists() {
+            let t = fs::read_to_string(&pkg_toml)?;
+            t.lines()
+                .find(|l| l.trim_start().starts_with("entry"))
+                .and_then(|l| l.split_once('='))
+                .map(|(_, v)| v.trim().trim_matches('"').to_string())
+                .unwrap_or_else(|| "main.fard".to_string())
+        } else {
+            "main.fard".to_string()
+        };
+        let entry_path = pkg_cache.join(&entry_file);
+        let entry_bytes = fs::read(&entry_path)
+            .with_context(|| format!("cannot read entry {} for {}", entry_file, pkg_ver))?;
+        let digest = sha256_bytes(&entry_bytes);
+
+        let spec = format!("pkg:{}", pkg_name);
+        eprintln!("[fardlock] {} → {} ({})", spec, digest, entry_file);
+
+        let mut m = BTreeMap::new();
+        m.insert("digest".to_string(), J::Str(digest));
+        m.insert("pkg".to_string(), J::Str(pkg_ver.clone()));
+        m.insert("entry".to_string(), J::Str(entry_file));
+        modules.insert(spec, J::Object(m));
+    }
+
+    // Write lockfile
+    let mut lock = BTreeMap::new();
+    lock.insert("fard_lock_version".to_string(), J::Str("1".to_string()));
+    lock.insert("modules".to_string(), J::Object(modules));
+    let lock_json = J::Object(lock);
+    let out_str = to_string_pretty(&lock_json);
+    if let Some(p) = out.parent() { fs::create_dir_all(p).ok(); }
+    fs::write(&out, out_str.as_bytes())?;
+    eprintln!("[fardlock] wrote {}", out.display());
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
@@ -321,6 +451,7 @@ fn main() -> Result<()> {
 
     match sub {
         "gen" => cmd_gen(rest),
+        "gen-toml" => cmd_gen_toml(rest),
         "show-preimage" => cmd_show_preimage(rest),
         _ => {
             usage();
