@@ -7605,23 +7605,36 @@ fn call_builtin(
             let args_list: Vec<Val> = std::env::args().map(|a| Val::Text(a)).collect();
             Ok(Val::List(args_list))
         }
-        Builtin::ProcessSpawn => match args.as_slice() {
-            [Val::Text(cmd), Val::List(cmd_args)] => {
-                let str_args: Vec<String> = cmd_args.iter().map(|a| match a {
-                    Val::Text(s) => Ok(s.clone()),
-                    _ => Err(anyhow::anyhow!("process.spawn: args must be text")),
-                }).collect::<Result<Vec<_>>>()?;
-                let out = std::process::Command::new(cmd.as_str())
-                    .args(&str_args)
-                    .output()
-                    .map_err(|e| anyhow::anyhow!("ERROR_IO process.spawn: {}", e))?;
-                let mut m = BTreeMap::new();
-                m.insert("stdout".to_string(), Val::Text(String::from_utf8_lossy(&out.stdout).to_string()));
-                m.insert("stderr".to_string(), Val::Text(String::from_utf8_lossy(&out.stderr).to_string()));
-                m.insert("code".to_string(), Val::Int(out.status.code().unwrap_or(-1) as i64));
-                Ok(Val::Record(m))
+        Builtin::ProcessSpawn => {
+            if args.len() < 2 { bail!("ERROR_BADARG process.spawn expects (text, list) or (text, list, stdin_text)"); }
+            let cmd = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG process.spawn: cmd must be text") };
+            let cmd_args = match &args[1] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG process.spawn: args must be list") };
+            let stdin_text: Option<String> = if args.len() >= 3 {
+                match &args[2] { Val::Text(s) => Some(s.clone()), Val::Unit => None, _ => None }
+            } else { None };
+            let str_args: Vec<String> = cmd_args.iter().map(|a| match a {
+                Val::Text(s) => Ok(s.clone()),
+                _ => Err(anyhow::anyhow!("process.spawn: args must be text")),
+            }).collect::<Result<Vec<_>>>()?;
+            let mut child = std::process::Command::new(cmd.as_str())
+                .args(&str_args)
+                .stdin(if stdin_text.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() })
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| anyhow::anyhow!("ERROR_IO process.spawn: {}", e))?;
+            if let Some(text) = stdin_text {
+                if let Some(mut stdin) = child.stdin.take() {
+                    use std::io::Write;
+                    let _ = stdin.write_all(text.as_bytes());
+                }
             }
-            _ => bail!("ERROR_BADARG process.spawn expects (text, list)"),
+            let out = child.wait_with_output().map_err(|e| anyhow::anyhow!("ERROR_IO process.spawn wait: {}", e))?;
+            let mut m = BTreeMap::new();
+            m.insert("stdout".to_string(), Val::Text(String::from_utf8_lossy(&out.stdout).to_string()));
+            m.insert("stderr".to_string(), Val::Text(String::from_utf8_lossy(&out.stderr).to_string()));
+            m.insert("code".to_string(), Val::Int(out.status.code().unwrap_or(-1) as i64));
+            Ok(Val::Record(m))
         }
         Builtin::ProcessExit => match args.as_slice() {
             [Val::Int(code)] => { std::process::exit(*code as i32); }

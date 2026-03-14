@@ -1,0 +1,49 @@
+// fard-fmt-server — HTTP service that formats FARD source code
+// Every request produces a witnessed execution receipt.
+
+import("std/net")     as net
+import("std/str")     as str
+import("std/json")    as json
+import("std/process") as process
+
+fn fmt_source(src) {
+  let r = process.spawn("fardfmt", ["--stdin"], src)
+  if r.code == 0 then r.stdout else src
+}
+
+fn resp(status, body) {
+  { status: status, body: body, headers: {} }
+}
+
+fn usage_text() {
+  str.join([
+    "fard-fmt-server",
+    "POST /fmt        -- format FARD source",
+    "POST /fmt/check  -- check if formatted",
+    "GET  /health     -- liveness"
+  ], "\n")
+}
+
+fn do_fmt(body) {
+  resp(200, fmt_source(body))
+}
+
+fn do_fmt_check(body) {
+  let formatted = fmt_source(body)
+  let changed = formatted != body
+  resp(200, json.encode({ ok: true, changed: changed }))
+}
+
+fn handle(req) {
+  match req.path {
+    "/health"     => resp(200, "ok"),
+    "/"           => resp(200, usage_text()),
+    "/fmt"        => do_fmt(req.body),
+    "/fmt/check"  => do_fmt_check(req.body),
+    _             => resp(404, "not found")
+  }
+}
+
+let port = 8080
+let _ = net.serve(port, fn(req) { handle(req) })
+null
