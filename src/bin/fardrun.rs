@@ -902,8 +902,6 @@ fn main() -> Result<()> {
 
             let stdlib_root_digest = loader.stdlib_root_digest();
             drop(tracer);
-            // Re-initialize tracer binding so loop can reassign it on next iteration
-            tracer = Tracer::new(&out_dir, &trace_path)?;
             let _fp_subst = _fp_prev_digest.as_deref();
             write_m5_digests(
                 &out_dir,
@@ -923,6 +921,7 @@ fn main() -> Result<()> {
                         if accessed && !converged && _fp_attempt < 3 {
                             _fp_prev_digest = Some(run_id.clone());
                             SELF_DIGEST.with(|d| *d.borrow_mut() = run_id.clone());
+                            tracer = Tracer::new(&out_dir, &trace_path)?;
                             continue 'fp;
                         }
                         if accessed && !converged {
