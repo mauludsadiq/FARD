@@ -1,2 +1,0 @@
-module main
-pub fn main(): int { [1, 2, 3].list_len() }

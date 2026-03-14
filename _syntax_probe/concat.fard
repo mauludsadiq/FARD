@@ -1,2 +1,0 @@
-module main
-pub fn main(): text { "a" ++ "b" }
