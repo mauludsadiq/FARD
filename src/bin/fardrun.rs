@@ -2701,6 +2701,7 @@ enum Builtin {
     FfiCall,   // ffi.call(handle_id, symbol, args) -> {ok: val} | {err: text}
     FfiClose,  // ffi.close(handle_id) -> null
     FfiCallPure, // ffi.call_pure(handle_id, symbol, args) -> same as call but hashed into witness
+    FfiCallStr,  // ffi.call_str(handle_id, symbol, args) -> {ok: text} | {err: text}
     NetServe,   // net.serve(port, handler) -> never (blocking)
     NetRespond, // net.respond(req, status, headers, body) -> null (internal)
     CryptoSha512,         // crypto.sha512(bytes) -> text
@@ -5281,9 +5282,18 @@ fn call_builtin(
             let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: symbol must be text") };
             let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call: args must be list") };
             let mut m = BTreeMap::new();
+            // Mixed args: Int -> i64, Bool -> 0/1, Text -> pointer to leaked CString
+            let mut _cstrings: Vec<std::ffi::CString> = Vec::new();
             let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
                 Val::Int(n) => Ok(*n),
-                _ => Err(anyhow::anyhow!("ERROR_FFI only int args supported in v1")),
+                Val::Bool(b) => Ok(if *b { 1 } else { 0 }),
+                Val::Text(s) => {
+                    let cs = std::ffi::CString::new(s.as_str()).unwrap_or_default();
+                    let ptr = cs.as_ptr() as i64;
+                    _cstrings.push(cs);
+                    Ok(ptr)
+                }
+                _ => Err(anyhow::anyhow!("ERROR_FFI unsupported arg type")),
             }).collect();
             match int_args {
                 Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
@@ -5361,6 +5371,52 @@ fn call_builtin(
             Ok(Val::Record(m))
         }
 
+        Builtin::FfiCallStr => {
+            // call_str: calls a C function that returns char* (as i64 pointer), converts to FARD text
+            if args.len() != 3 { bail!("ERROR_BADARG ffi.call_str expects 3 args"); }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call_str: handle must be text") };
+            let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call_str: symbol must be text") };
+            let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call_str: args must be list") };
+            let mut m = BTreeMap::new();
+            let mut _cstrings: Vec<std::ffi::CString> = Vec::new();
+            let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
+                Val::Int(n) => Ok(*n),
+                Val::Bool(b) => Ok(if *b { 1 } else { 0 }),
+                Val::Text(s) => {
+                    let cs = std::ffi::CString::new(s.as_str()).unwrap_or_default();
+                    let ptr = cs.as_ptr() as i64;
+                    _cstrings.push(cs);
+                    Ok(ptr)
+                }
+                _ => Err(anyhow::anyhow!("ERROR_FFI call_str: unsupported arg")),
+            }).collect();
+            match int_args {
+                Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                Ok(iargs) => {
+                    let result: anyhow::Result<String> = FFI_LIBS.with(|libs| {
+                        let libs = libs.borrow();
+                        let lib = libs.get(&handle).ok_or_else(|| anyhow::anyhow!("ERROR_FFI handle not found: {}", handle))?;
+                        unsafe {
+                            let ptr: i64 = match iargs.len() {
+                                0 => { let f: libloading::Symbol<unsafe extern "C" fn() -> i64> = lib.get(symbol.as_bytes())?; f() }
+                                1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; f(iargs[0]) }
+                                2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; f(iargs[0],iargs[1]) }
+                                3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; f(iargs[0],iargs[1],iargs[2]) }
+                                _ => bail!("ERROR_FFI max 3 args"),
+                            };
+                            if ptr == 0 { return Ok(String::new()); }
+                            let cstr = std::ffi::CStr::from_ptr(ptr as *const std::os::raw::c_char);
+                            Ok(cstr.to_string_lossy().to_string())
+                        }
+                    });
+                    match result {
+                        Ok(s) => { m.insert("ok".to_string(), Val::Text(s)); m.insert("t".to_string(), Val::Text("ok".to_string())); }
+                        Err(e) => { m.insert("e".to_string(), Val::Text(format!("{}", e))); m.insert("t".to_string(), Val::Text("err".to_string())); }
+                    }
+                }
+            }
+            Ok(Val::Record(m))
+        }
         Builtin::NetServe => {
             // net.serve(port, handler_fn) -> blocking server
             // handler_fn receives {method, path, headers, body} -> {status, headers, body}
@@ -8965,6 +9021,7 @@ Ok(m)
                 m.insert("open".to_string(),  Val::Builtin(Builtin::FfiOpen));
                 m.insert("call".to_string(),  Val::Builtin(Builtin::FfiCall));
                 m.insert("call_pure".to_string(), Val::Builtin(Builtin::FfiCallPure));
+                m.insert("call_str".to_string(), Val::Builtin(Builtin::FfiCallStr));
                 m.insert("load".to_string(),  Val::Builtin(Builtin::FfiOpen));
                 m.insert("close".to_string(), Val::Builtin(Builtin::FfiClose));
                 Ok(m)

@@ -1,0 +1,56 @@
+// fard-db — SQLite key-value store written in FARD
+// Uses std/ffi to call native Rust dylib for SQLite access.
+// Every write produces a cryptographic witness receipt.
+
+import("std/ffi")     as ffi
+import("std/str")     as str
+import("std/witness") as w
+
+// Load the native library
+let lib_path = "examples/fard-db/native/target/release/libfard_db_native.dylib"
+let lib      = ffi.load(lib_path)
+
+// Open database
+let opened = ffi.call(lib.ok, "fdb_open", ["fard_kv.sqlite"])
+
+// set(key, value) -> 1 on success
+fn db_set(key, value) {
+  ffi.call(lib.ok, "fdb_set", [key, value])
+}
+
+// get(key) -> text value or null
+fn db_get(key) {
+  ffi.call_str(lib.ok, "fdb_get", [key])
+}
+
+// delete(key) -> rows deleted
+fn db_delete(key) {
+  ffi.call(lib.ok, "fdb_delete", [key])
+}
+
+// count() -> number of keys
+fn db_count() {
+  ffi.call(lib.ok, "fdb_count", [])
+}
+
+// Run a demo sequence
+let _ = db_set("name",    "FARD")
+let _ = db_set("version", "2.5.0")
+let _ = db_set("status",  "production")
+
+let name    = db_get("name")
+let version = db_get("version")
+let count   = db_count()
+
+// Delete one key
+let _ = db_delete("status")
+let count_after = db_count()
+
+{
+  opened:       opened.ok,
+  name:         name.ok,
+  version:      version.ok,
+  count_before: count.ok,
+  count_after:  count_after.ok,
+  self_digest:  w.self_digest()
+}

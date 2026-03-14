@@ -36,6 +36,7 @@ serde = { version = "1", features = ["derive"] }
 hex = "0.4"
 
 [workspace]
+exclude = ["examples/fard-db/native"]
 members = [
   "crates/valuecore",
   "crates/witnesscore",

@@ -1,0 +1,10 @@
+[package]
+name = "fard_db_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
