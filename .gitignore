@@ -34,3 +34,5 @@ spec/tmp/*
 
 # Legacy junk patterns (never again)
 =
+editors/vscode/node_modules/
+editors/vscode/package-lock.json

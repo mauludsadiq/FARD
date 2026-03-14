@@ -1,1 +1,1 @@
-MIT License — Copyright 2026 mauludsadiq
+MUI License — Copyright 2026 mauludsadiq
