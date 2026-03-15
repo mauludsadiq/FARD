@@ -8,6 +8,8 @@ Every execution produces a SHA-256 receipt committing to source, inputs, imports
 fard_run_digest=sha256:4dda9ce7d4dcfe7ddc5eda2f80d78bbf81c188e...
 ```
 
+**Version:** v1.6.0 — [Releases](https://github.com/mauludsadiq/FARD/releases)
+
 -----
 
 ## What FARD Is
@@ -28,20 +30,52 @@ Programs written in FARD are not just correct — they are provably correct. Eve
 
 -----
 
+## Install
+
+Download the pre-built binary for your platform, extract, and add to PATH:
+
+```bash
+# macOS (Apple Silicon)
+curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-macos-aarch64.tar.gz | tar xz
+sudo mv fard-macos-aarch64/fard* /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-macos-x86_64.tar.gz | tar xz
+sudo mv fard-macos-x86_64/fard* /usr/local/bin/
+
+# Linux
+curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-linux-x86_64.tar.gz | tar xz
+sudo mv fard-linux-x86_64/fard* /usr/local/bin/
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/mauludsadiq/FARD.git
+cd FARD
+cargo build --release
+```
+
+-----
+
 ## Quick Start
 
 ```bash
-cargo build
+# Create a new project
+fardrun new my-project
+cd my-project
+
+# Run it
+fardrun run --program main.fard --out ./out
+cat out/result.json   # {"result":"Hello, world!"}
 ```
 
-Write a program:
+Or write a program directly:
 
 ```
 fn double(n) { n * 2 }
 double(21)
 ```
-
-Run it:
 
 ```bash
 fardrun run --program main.fard --out ./out
@@ -316,13 +350,49 @@ import("pkg:greet")  as greet
 
 **std/graph** — `new`, `add_node`, `add_edge`, `bfs`, `dfs`, `shortest_path`, `topo_sort`
 
-**std/linalg** — matrix/vector operations (see Numbers above)
-
 **std/sembit** — semantic bitfield partitioning
 
 **std/grow** — `append`, `merge`, `unfold`, `unfold_tree`
 
 **std/flow** — `id`, `pipe`, `tap` — function composition combinators
+
+-----
+
+## Package Manager
+
+FARD has a content-addressed package registry. Packages are versioned, sha256-verified, and cached locally.
+
+Add dependencies to `fard.toml`:
+
+```toml
+name = "my-project"
+version = "1.0.0"
+entry = "main.fard"
+
+[deps]
+greet = "greet@1.6.0"
+```
+
+Install:
+
+```bash
+fardrun install --manifest fard.toml
+```
+
+Use in code:
+
+```
+import("pkg:greet") as greet
+greet.hello("world")   // -> "Hello, world!"
+```
+
+Publish a package:
+
+```bash
+fardrun publish --package ./my-pkg --token <github-token>
+```
+
+Registry: `https://github.com/mauludsadiq/FARD/releases/latest/download/registry.json`
 
 -----
 
@@ -353,40 +423,16 @@ chan.recv(c)   // -> {t: "some", v: 42}
 
 ## Metaprogramming
 
-### eval
-
 ```
 import("std/eval") as e
 e.eval("fn double(n) { n * 2 }\ndouble(21)")   // -> 42
 ```
-
-### AST Access
 
 ```
 import("std/ast") as ast
 let nodes = ast.parse("1 + 2")
 nodes[0].t    // -> "bin"
 nodes[0].op   // -> "+"
-```
-
-### Macros
-
-Combine `std/ast`, `std/eval`, and `std/str` for source-level transformation:
-
-```
-import("std/eval")  as e
-import("std/str")   as str
-import("std/list")  as list
-
-let defmacro = fn(template, bindings) {
-  let code = list.fold(bindings, template, fn(acc, pair) {
-    str.replace(acc, pair[0], pair[1])
-  }) in
-  e.eval(code)
-}
-
-let mul3 = defmacro("fn(x) { x * _N_ }", [["_N_", "3"]])
-mul3(7)   // -> 21
 ```
 
 -----
@@ -444,14 +490,14 @@ let lib    = ffi.load("/usr/lib/libm.dylib")
 let result = ffi.call(lib.ok, "abs", [-42])
 result.ok   // -> 42
 
-// call_pure: included in witness hash chain
+// call_pure: result included in witness hash chain
 let r2 = ffi.call_pure(lib.ok, "abs", [-7])
 
-// call_str: returns text (char* return value)
+// call_str: C function returning char*
 let r3 = ffi.call_str(lib.ok, "some_fn", ["arg"])
 ```
 
-Type mapping: `Int` -> `i64`, `Float` -> `f64`, `Text` -> `char*` (pointer), `Bool` -> `0/1`
+Type mapping: `Int` → `i64`, `Float` → `f64`, `Text` → `char*`, `Bool` → `0/1`
 
 -----
 
@@ -460,11 +506,11 @@ Type mapping: `Int` -> `i64`, `Float` -> `f64`, `Text` -> `char*` (pointer), `Bo
 Compile pure FARD functions to WebAssembly:
 
 ```bash
-fardwasm main.fard --out main.wat             # WebAssembly Text
-fardwasm main.fard --target wasi --out main.wasm  # Binary WASM
+fardwasm main.fard --out main.wat              # WebAssembly Text
+fardwasm main.fard --target wasi --out main.wasm   # Binary WASM
 ```
 
-Supports: integers, arithmetic, booleans, let bindings, if/then/else, recursion.
+Supports integers, arithmetic, booleans, let bindings, if/then/else, and recursion.
 
 ```bash
 wat2wasm main.wat -o main.wasm
@@ -476,21 +522,23 @@ wasm-interp main.wasm -r factorial -a 'i64:10'
 
 ## CLI
 
-### Run
+### fardrun new
+
+```bash
+fardrun new my-project                    # minimal template
+fardrun new my-server --template server   # HTTP server
+fardrun new my-pipeline --template ci     # CI runner
+```
+
+### fardrun run
 
 ```bash
 fardrun run --program main.fard --out ./out
 ```
 
-Output:
+Output directory contains `result.json`, `error.json`, `trace.ndjson`, `module_graph.json`, `digests.json`.
 
-- `result.json` — `{"result": <value>}` on success
-- `error.json` — `{"code": "...", "message": "..."}` on failure
-- `trace.ndjson` — full execution trace
-- `module_graph.json` — import graph with content digests
-- `digests.json` — SHA-256 of every output file
-
-### Test
+### fardrun test
 
 ```
 fn gcd(a, b) { if b == 0 then a else gcd(b, a % b) }
@@ -506,16 +554,19 @@ fardrun test --program math.fard
 #   2 passed
 ```
 
-### REPL
+### fardrun repl
 
 ```bash
 fardrun repl
+# FARD v1.6.0 REPL
 # fard> let x = 42
 # fard> x * 2
-# {"result":84}
+# 84
 ```
 
-### Format
+History persists to `~/.fard_history`. Up/Down arrow navigation. Ctrl-D to exit.
+
+### fardfmt
 
 ```bash
 fardfmt main.fard            # format in place
@@ -523,7 +574,7 @@ fardfmt --check main.fard    # exit 1 if not formatted
 fardfmt --stdin              # read from stdin
 ```
 
-### Type Check
+### fardcheck
 
 ```bash
 fardcheck main.fard
@@ -532,14 +583,14 @@ fardcheck main.fard
 
 Hindley-Milner style best-effort type checker. Dynamic values propagate as `Dynamic` without false positives.
 
-### Compile to WebAssembly
+### fardwasm
 
 ```bash
 fardwasm main.fard --out main.wat
 fardwasm main.fard --target wasi --out main.wasm
 ```
 
-### Registry Server
+### fardregistry
 
 ```bash
 fardregistry --port 7370 --db receipts.db --seed receipts/
@@ -548,14 +599,14 @@ fardregistry --port 7370 --db receipts.db --seed receipts/
 Routes: `GET /health`, `GET /stats`, `GET /receipt/<id>`, `GET /verify/<id>`,
 `GET /packages`, `GET /packages/<name>`, `POST /publish`, `POST /packages/publish`
 
-### Lockfile
+### fardlock
 
 ```bash
 fardlock gen-toml --manifest fard.toml --out fard.lock.json
 fardrun run --program main.fard --lockfile fard.lock.json --enforce-lockfile
 ```
 
-### Bundle
+### fardbundle
 
 ```bash
 fardbundle build  --root . --entry main.fard --out ./bundle
@@ -563,7 +614,7 @@ fardbundle verify --bundle bundle/bundle.json --out ./out
 fardbundle run    --bundle bundle/bundle.json --out ./out
 ```
 
-### Verify
+### fardverify
 
 ```bash
 fardverify trace    --out ./out
@@ -571,57 +622,41 @@ fardverify artifact --out ./out
 fardverify bundle   --out ./out
 ```
 
-### Publish a Package
-
-```bash
-fardrun publish --package ./my-pkg --token <github-token>
-```
-
-`fard.toml`:
-
-```toml
-name = "greet"
-version = "2026-03-14"
-entry = "main.fard"
-```
-
 -----
 
 ## VS Code Extension
-
-Install:
 
 ```bash
 code --install-extension editors/vscode/fard-language-0.1.0.vsix
 ```
 
-Or via VS Code: `Cmd+Shift+P` -> `Extensions: Install from VSIX`.
+Or via VS Code: `Cmd+Shift+P` → `Extensions: Install from VSIX`.
 
-Provides: syntax highlighting, inline diagnostics, hover documentation for all keywords and stdlib modules.
+Features: syntax highlighting, inline diagnostics, dot-completion for all 53 stdlib modules, hover documentation, import path completion.
 
-The Language Server (`fard-lsp`) must be on `PATH` or configured via `fard.lspPath` in VS Code settings.
+Configure the Language Server path:
 
 ```json
-{ "fard.lspPath": "/Users/you/bin/fard-lsp" }
+{ "fard.lspPath": "/usr/local/bin/fard-lsp" }
 ```
 
 -----
 
 ## Binaries
 
-|Binary        |Purpose                                                        |
-|--------------|---------------------------------------------------------------|
-|`fardrun`     |Runtime: `run`, `test`, `repl`, `install`, `publish`           |
-|`fardfmt`     |Canonical formatter                                            |
-|`fardcheck`   |HM-style type checker                                          |
-|`fardwasm`    |FARD to WAT/WASM compiler                                      |
-|`fardregistry`|SQLite-backed HTTP receipt registry server                     |
-|`fardlock`    |Lockfile generation and enforcement                            |
-|`fardbundle`  |Bundle build, verify, and run                                  |
-|`fardverify`  |Trace, artifact, and bundle verification                       |
-|`fardpkg`     |Package management                                             |
-|`fard-lsp`    |Language Server Protocol (diagnostics, hover, go-to-definition)|
-|`fardc`       |Compiler frontend and canonicalizer                            |
+|Binary        |Purpose                                                    |
+|--------------|-----------------------------------------------------------|
+|`fardrun`     |Runtime: `run`, `test`, `repl`, `new`, `install`, `publish`|
+|`fardfmt`     |Canonical formatter                                        |
+|`fardcheck`   |HM-style type checker                                      |
+|`fardwasm`    |FARD to WAT/WASM compiler                                  |
+|`fardregistry`|SQLite-backed HTTP receipt registry server                 |
+|`fardlock`    |Lockfile generation and enforcement                        |
+|`fardbundle`  |Bundle build, verify, and run                              |
+|`fardverify`  |Trace, artifact, and bundle verification                   |
+|`fardpkg`     |Package management                                         |
+|`fard-lsp`    |Language Server Protocol (diagnostics, hover, completion)  |
+|`fardc`       |Compiler frontend and canonicalizer                        |
 
 -----
 
@@ -647,9 +682,11 @@ The Language Server (`fard-lsp`) must be on `PATH` or configured via `fard.lspPa
 HTTP service that formats FARD source code. Written entirely in FARD.
 
 ```bash
-fardrun run --program examples/fard-fmt-server/main.fard --out ./out
+fardrun run --program examples/fard-fmt-server/main.fard --out ./out &
 curl -X POST http://localhost:8080/fmt -d 'fn add(a,b){a+b}'
 # fn add(a, b) { a + b }
+curl -X POST http://localhost:8080/fmt/check -d 'fn add(a,b){a+b}'
+# {"changed":true,"ok":true}
 ```
 
 ### fard-ci
@@ -659,22 +696,22 @@ CI pipeline runner. Reads a `pipeline.json` spec, runs each step via `fardrun`, 
 ```bash
 cd examples/fard-ci
 fardrun run --program main.fard --out ./out
-# {"result":{"ok":true,"passed":3,"summary":"3/3 passed -- fard-ci-selftest",...}}
+# {"result":{"ok":true,"passed":3,"summary":"3/3 passed -- fard-ci-selftest"}}
 ```
 
 ### fard-db
 
-SQLite key-value store via native FFI. Every write produces a witness receipt.
+SQLite key-value store via native FFI. Every operation produces a witness receipt.
 
 ```bash
 cd examples/fard-db/native && cargo build --release
 fardrun run --program examples/fard-db/main.fard --out ./out
-# {"result":{"name":"FARD","version":"2.5.0","count_before":3,"count_after":2,...}}
+# {"result":{"name":"FARD","count_before":3,"count_after":2,...}}
 ```
 
 ### collapse_stack
 
-Cryptographic Z-state machine with hash-chained delta application. A formal proof assistant — apply theorems as deltas to a verified state, each step producing a new content-addressed receipt.
+Cryptographic Z-state machine with hash-chained delta application. A formal proof assistant written in FARD — apply theorems as deltas to a verified state, each step producing a new content-addressed receipt.
 
 ### mathematical_proof_system
 
@@ -686,7 +723,17 @@ Numerical safety verification using `std/linalg` and `std/float` for matrix oper
 
 -----
 
-## Error Format
+## Error Messages
+
+FARD provides actionable error messages with suggestions:
+
+```
+Error: unbound var: str -- did you forget to import? Try: import("std/str") as str
+Error: no member 'mpa' -- did you mean 'map'?
+Error: arity mismatch: expected 2 args, got 3
+```
+
+Error format:
 
 ```json
 {
@@ -696,29 +743,25 @@ Numerical safety verification using `std/linalg` and `std/float` for matrix oper
 }
 ```
 
-|Code                |Meaning                                    |
-|--------------------|-------------------------------------------|
-|`ERROR_PARSE`       |Syntax error                               |
-|`ERROR_RUNTIME`     |Runtime failure (index out of bounds, etc.)|
-|`ERROR_DIV_ZERO`    |Division by zero                           |
-|`ERROR_PAT_MISMATCH`|Pattern match failed                       |
-|`ERROR_ARITY`       |Wrong number of arguments                  |
-|`ERROR_BADARG`      |Wrong argument type for a builtin          |
-|`ERROR_IO`          |File or network I/O failure                |
-|`ERROR_LOCK`        |Lockfile enforcement failure               |
-|`ERROR_FFI`         |Foreign function interface error           |
+|Code                |Meaning                          |
+|--------------------|---------------------------------|
+|`ERROR_PARSE`       |Syntax error                     |
+|`ERROR_RUNTIME`     |Runtime failure                  |
+|`ERROR_DIV_ZERO`    |Division by zero                 |
+|`ERROR_PAT_MISMATCH`|Pattern match failed             |
+|`ERROR_ARITY`       |Wrong number of arguments        |
+|`ERROR_BADARG`      |Wrong argument type for a builtin|
+|`ERROR_IO`          |File or network I/O failure      |
+|`ERROR_LOCK`        |Lockfile enforcement failure     |
+|`ERROR_FFI`         |Foreign function interface error |
 
 -----
 
 ## Determinism
 
-Given identical source, imports, and inputs:
+Given identical source, imports, and inputs, the result, trace, and digest are always identical — across machines, OS versions, and time.
 
-- The result is always identical
-- The trace is always identical
-- The digest is always identical
-
-This holds across machines, OS versions, and time. The only non-deterministic primitives are explicitly marked as oracle boundaries — `std/http`, `std/datetime.now`, `std/io.read_stdin`, `std/uuid.v4`, `std/ffi.call`. These are recorded in the trace so their values are auditable even when non-deterministic.
+The only non-deterministic primitives are explicitly marked as oracle boundaries: `std/http`, `std/datetime.now`, `std/io.read_stdin`, `std/uuid.v4`, `std/ffi.call`. These are recorded in the trace so their values are auditable even when non-deterministic.
 
 `std/ffi.call_pure` declares an FFI call deterministic and includes its result in the witness hash chain.
 
@@ -744,21 +787,16 @@ CID(bytes) = "sha256:" || hex(SHA256(bytes))
 
 ## Self-Verifying
 
-**313 tests across 36 files, all written in pure FARD:**
+313 tests across 36 files, all written in pure FARD:
 
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
 ```
 
-**The spec was generated by a FARD program:**
+The spec and release announcements are generated by FARD programs:
 
 ```bash
 fardrun run --program tools/gen_spec.fard --out ./out
-```
-
-**The announcement was generated by a FARD program:**
-
-```bash
 fardrun run --program tools/gen_announcement.fard --out ./out
 ```
 
@@ -770,7 +808,6 @@ fardrun run --program tools/gen_announcement.fard --out ./out
 |----------------------------------|----------------------------------|
 |`spec/fard_spec_stack_v0_final.md`|Trust stack specification (frozen)|
 |`spec/fardlang_grammar_v0.5.txt`  |Surface language grammar          |
-|`FARD_2.0_ROADMAP.md`             |Roadmap and design decisions      |
 |`SPEC.md`                         |Stdlib surface spec (generated)   |
 |`ANNOUNCEMENT.md`                 |Release announcement (generated)  |
 
