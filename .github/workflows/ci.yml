@@ -89,8 +89,7 @@ jobs:
 
       - name: Package binaries
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          DIST="fard-${TAG}-${{ matrix.suffix }}"
+          DIST="fard-${{ matrix.suffix }}"
           mkdir -p "$DIST"
           for bin in fardrun fardfmt fardcheck fardwasm fardregistry fardlock fardbundle fardverify; do
             cp "target/${{ matrix.target }}/release/$bin" "$DIST/" 2>/dev/null || true
@@ -110,16 +109,16 @@ jobs:
 
             ```bash
             # macOS (Apple Silicon)
-            curl -L https://github.com/mauludsadiq/FARD_v0.5/releases/download/${{ github.ref\_name }}/fard-${{ github.ref_name }}-macos-aarch64.tar.gz | tar xz
-            sudo mv fard-${{ github.ref_name }}-macos-aarch64/fard* /usr/local/bin/
+            curl -L https://github.com/mauludsadiq/FARD_v0.5/releases/latest/download/fard-macos-aarch64.tar.gz | tar xz
+            sudo mv fard-macos-aarch64/fard* /usr/local/bin/
 
             # macOS (Intel)
-            curl -L https://github.com/mauludsadiq/FARD_v0.5/releases/download/${{ github.ref\_name }}/fard-${{ github.ref_name }}-macos-x86_64.tar.gz | tar xz
-            sudo mv fard-${{ github.ref_name }}-macos-x86_64/fard* /usr/local/bin/
+            curl -L https://github.com/mauludsadiq/FARD_v0.5/releases/latest/download/fard-macos-x86_64.tar.gz | tar xz
+            sudo mv fard-macos-x86_64/fard* /usr/local/bin/
 
             # Linux
-            curl -L https://github.com/mauludsadiq/FARD_v0.5/releases/download/${{ github.ref\_name }}/fard-${{ github.ref_name }}-linux-x86_64.tar.gz | tar xz
-            sudo mv fard-${{ github.ref_name }}-linux-x86_64/fard* /usr/local/bin/
+            curl -L https://github.com/mauludsadiq/FARD_v0.5/releases/latest/download/fard-linux-x86_64.tar.gz | tar xz
+            sudo mv fard-linux-x86_64/fard* /usr/local/bin/
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
