@@ -172,7 +172,7 @@ fn sha256_file_hex(path: &std::path::Path) -> Result<String> {
     Ok(sha256_bytes_hex(&bytes))
 }
 
-const REGISTRY_URL: &str = "https://github.com/mauludsadiq/FARD_v0.5/releases/latest/download/registry.json";
+const REGISTRY_URL: &str = "https://github.com/mauludsadiq/FARD/releases/latest/download/registry.json";
 
 fn fard_cache_dir() -> PathBuf {
     if let Ok(h) = std::env::var("HOME") {
