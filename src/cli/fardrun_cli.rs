@@ -72,7 +72,7 @@ pub struct PublishArgs {
     #[arg(long)]
     pub token: String,
 
-    #[arg(long, default_value = "mauludsadiq/FARD_v0.5")]
+    #[arg(long, default_value = "mauludsadiq/FARD")]
     pub repo: String,
 }
 
