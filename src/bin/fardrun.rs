@@ -307,6 +307,26 @@ thread_local! {
     static FFI_LIBS: std::cell::RefCell<std::collections::HashMap<String, libloading::Library>> = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let m = a.len();
+    let n = b.len();
+    let mut dp = vec![vec![0usize; n + 1]; m + 1];
+    for i in 0..=m { dp[i][0] = i; }
+    for j in 0..=n { dp[0][j] = j; }
+    for i in 1..=m {
+        for j in 1..=n {
+            dp[i][j] = if a[i-1] == b[j-1] {
+                dp[i-1][j-1]
+            } else {
+                1 + dp[i-1][j].min(dp[i][j-1]).min(dp[i-1][j-1])
+            };
+        }
+    }
+    dp[m][n]
+}
+
 fn cmd_new(args: fard_v0_5_language_gate::cli::fardrun_cli::NewArgs) -> Result<()> {
     let name = &args.name;
     let template = args.template.as_str();
@@ -2910,6 +2930,14 @@ impl Env {
         g.insert(k, v);
     }
 
+    fn keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self.inner.vars.lock().unwrap().keys().cloned().collect();
+        if let Some(ref parent) = self.inner.parent {
+            keys.extend(parent.keys());
+        }
+        keys
+    }
+
     fn get(&self, k: &str) -> Option<Val> {
         // lock only for local lookup; drop before recursing to parent
         if let Some(v) = self.inner.vars.lock().unwrap().get(k).cloned() {
@@ -3186,7 +3214,31 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             Ok(Val::Text(result))
         },
         Expr::Null => Ok(Val::Unit),
-        Expr::Var(n) => env.get(n).ok_or_else(|| anyhow!("unbound var: {n}")),
+        Expr::Var(n) => env.get(n).ok_or_else(|| {
+            // Suggest stdlib import if name matches a known module
+            let stdlib_modules = [
+                "str","list","math","io","json","hash","http","re","map","set",
+                "result","option","ffi","witness","process","env","net","trace",
+                "float","bigint","bits","path","datetime","uuid","base64","csv",
+                "compress","crypto","graph","linalg","type","promise","chan",
+                "mutex","ast","eval","cell","grow","flow","cast","rec","record",
+            ];
+            if stdlib_modules.contains(&n.as_str()) {
+                anyhow!("unbound var: {n} -- did you forget to import? Try: import(\"std/{n}\") as {n}")
+            } else {
+                // Find similar names in env using edit distance
+                let env_keys: Vec<String> = env.keys();
+                let suggestion = env_keys.iter()
+                    .filter(|k| edit_distance(k, n) <= 2 && !k.is_empty())
+                    .min_by_key(|k| edit_distance(k, n))
+                    .cloned();
+                if let Some(s) = suggestion {
+                    anyhow!("unbound var: {n} -- did you mean '{s}'?")
+                } else {
+                    anyhow!("unbound var: {n}")
+                }
+            }
+        }),
         Expr::List(xs) => {
             let mut out = Vec::new();
             for x in xs {
@@ -3223,7 +3275,20 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 Val::Record(m) => m
                     .get(k)
                     .cloned()
-                    .ok_or_else(|| anyhow!("EXPORT_MISSING missing field {k}")),
+                    .ok_or_else(|| {
+                        // Suggest similar field names
+                        let keys: Vec<&String> = m.keys().collect();
+                        let suggestion = keys.iter()
+                            .filter(|candidate| edit_distance(candidate, k) <= 2)
+                            .min_by_key(|candidate| edit_distance(candidate, k))
+                            .map(|s| s.as_str());
+                        if let Some(s) = suggestion {
+                            anyhow!("no member '{k}' -- did you mean '{s}'?")
+                        } else {
+                            let available: Vec<&str> = keys.iter().map(|s| s.as_str()).take(8).collect();
+                            anyhow!("no member '{k}' -- available: {}", available.join(", "))
+                        }
+                    }),
                 // Method-style dispatch: val.method looks up k in the stdlib
                 // module for that value type and returns a BoundMethod that
                 // prepends the receiver when called. xs.map(f) -> map(xs, f).
