@@ -1,0 +1,63 @@
+// sqlite@1.6.0 — SQLite client for FARD via FFI
+// Requires: fard-db native dylib built from examples/fard-db/native
+// Usage: build dylib first with: cd examples/fard-db/native && cargo build --release
+import("std/ffi")  as ffi
+import("std/str")  as str
+import("std/rec")  as rec
+import("std/type") as type
+
+fn find_dylib() {
+  let candidates = [
+    "examples/fard-db/native/target/release/libfard_db_native.dylib",
+    "examples/fard-db/native/target/release/libfard_db_native.so",
+    "/usr/local/lib/libfard_db_native.dylib",
+    "/usr/local/lib/libfard_db_native.so"
+  ]
+  import("std/list") as list
+  import("std/io")   as io
+  let found = list.find(candidates, fn(p) { io.file_exists(p) })
+  if rec.has(found, "some") then found.some
+  else "libfard_db_native"
+}
+
+fn open(path) {
+  let dylib = ffi.load(find_dylib())
+  if rec.has(dylib, "err") then
+    { ok: false, error: dylib.err, db: null }
+  else
+    let handle = dylib.ok
+    let result = ffi.call(handle, "fdb_open", [path])
+    if rec.has(result, "err") then
+      { ok: false, error: result.err, db: null }
+    else if result.ok == -1 then
+      { ok: false, error: "fdb_open failed", db: null }
+    else
+      { ok: true, error: null, db: { handle: handle, path: path } }
+}
+
+fn set(db, key, value) {
+  let result = ffi.call(db.handle, "fdb_set", [key, value])
+  if rec.has(result, "err") then { ok: false, error: result.err }
+  else { ok: result.ok == 1, error: null }
+}
+
+fn get(db, key) {
+  let result = ffi.call_str(db.handle, "fdb_get", [key])
+  if rec.has(result, "err") then { ok: false, value: null, error: result.err }
+  else if str.len(result.ok) == 0 then { ok: false, value: null, error: "not found" }
+  else { ok: true, value: result.ok, error: null }
+}
+
+fn delete(db, key) {
+  let result = ffi.call(db.handle, "fdb_delete", [key])
+  if rec.has(result, "err") then { ok: false, error: result.err }
+  else { ok: result.ok >= 0, error: null }
+}
+
+fn count(db) {
+  let result = ffi.call(db.handle, "fdb_count", [])
+  if rec.has(result, "err") then -1
+  else result.ok
+}
+
+{ open: open, set: set, get: get, delete: delete, count: count }

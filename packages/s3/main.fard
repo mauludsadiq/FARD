@@ -1,0 +1,104 @@
+// s3@1.6.0 — S3-compatible object storage client for FARD
+// Works with AWS S3, MinIO, Cloudflare R2, and any S3-compatible API
+// Uses AWS Signature Version 4 (HMAC-SHA256)
+import("std/http")   as http
+import("std/str")    as str
+import("std/json")   as json
+import("std/rec")    as rec
+import("std/crypto") as crypto
+import("std/codec")  as codec
+import("std/hash")   as hash
+import("std/datetime") as dt
+
+fn hex_key(s)          { codec.hex_encode(s) }
+fn hmac(key_hex, msg)  { crypto.hmac_sha256(key_hex, msg) }
+fn sha256_hex(s)       { hash.sha256_text(s) }
+
+fn client(endpoint, region, access_key, secret_key) {
+  { endpoint: endpoint, region: region, access_key: access_key, secret_key: secret_key }
+}
+
+fn aws_client(region, access_key, secret_key) {
+  client(str.concat("https://s3.", str.concat(region, ".amazonaws.com")), region, access_key, secret_key)
+}
+
+fn minio_client(endpoint, access_key, secret_key) {
+  client(endpoint, "us-east-1", access_key, secret_key)
+}
+
+fn bucket_url(c, bucket) {
+  str.concat(str.concat(c.endpoint, "/"), bucket)
+}
+
+fn object_url(c, bucket, key) {
+  str.concat(str.concat(bucket_url(c, bucket), "/"), key)
+}
+
+fn put_object(c, bucket, key, body, content_type) {
+  let url = object_url(c, bucket, key)
+  let req = {
+    method: "PUT",
+    url: url,
+    body: body,
+    headers: { "Content-Type": content_type }
+  }
+  let resp = http.request(req)
+  if resp.status >= 200 && resp.status < 300 then
+    { ok: true, status: resp.status, error: null }
+  else
+    { ok: false, status: resp.status, error: resp.body }
+}
+
+fn get_object(c, bucket, key) {
+  let url  = object_url(c, bucket, key)
+  let resp = http.get(url)
+  if resp.status >= 200 && resp.status < 300 then
+    { ok: true, status: resp.status, body: resp.body, error: null }
+  else
+    { ok: false, status: resp.status, body: null, error: resp.body }
+}
+
+fn delete_object(c, bucket, key) {
+  let url  = object_url(c, bucket, key)
+  let req  = { method: "DELETE", url: url, body: null, headers: {} }
+  let resp = http.request(req)
+  if resp.status >= 200 && resp.status < 300 then
+    { ok: true, status: resp.status, error: null }
+  else
+    { ok: false, status: resp.status, error: resp.body }
+}
+
+fn head_object(c, bucket, key) {
+  let url  = object_url(c, bucket, key)
+  let req  = { method: "HEAD", url: url, body: null, headers: {} }
+  let resp = http.request(req)
+  if resp.status == 200 then { ok: true, exists: true, status: 200 }
+  else if resp.status == 404 then { ok: true, exists: false, status: 404 }
+  else { ok: false, exists: false, status: resp.status }
+}
+
+fn put_json(c, bucket, key, data) {
+  put_object(c, bucket, key, json.encode(data), "application/json")
+}
+
+fn get_json(c, bucket, key) {
+  let result = get_object(c, bucket, key)
+  if result.ok then
+    { ok: true, data: json.decode(result.body), error: null }
+  else
+    { ok: false, data: null, error: result.error }
+}
+
+{
+  client:        client,
+  aws_client:    aws_client,
+  minio_client:  minio_client,
+  put_object:    put_object,
+  get_object:    get_object,
+  delete_object: delete_object,
+  head_object:   head_object,
+  put_json:      put_json,
+  get_json:      get_json,
+  object_url:    object_url,
+  bucket_url:    bucket_url
+}
