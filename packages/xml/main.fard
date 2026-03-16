@@ -1,0 +1,149 @@
+// xml@1.6.0 — XML parsing and generation for FARD
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn node(tag, attrs, children, text) { { tag: tag, attrs: attrs, children: children, text: text } }
+fn elem(tag, children)              { node(tag, {}, children, null) }
+fn elem_attrs(tag, attrs, children) { node(tag, attrs, children, null) }
+fn text_node(tag, text)             { node(tag, {}, [], text) }
+fn text_node_attrs(tag, attrs, text){ node(tag, attrs, [], text) }
+
+fn escape(s) {
+  str.replace(str.replace(str.replace(str.replace(s,
+    "&", "&amp;"), "<", "&lt;"), ">", "&gt;"), "\"", "&quot;")
+}
+
+fn attrs_to_str(attrs) {
+  let keys = rec.keys(attrs)
+  if list.len(keys) == 0 then ""
+  else str.join(list.map(keys, fn(k) {
+    str.concat(str.concat(str.concat(" ", k), "=\""), str.concat(escape(rec.get(attrs, k)), "\""))
+  }), "")
+}
+
+fn render_children_block(nd, indent) {
+  let pad   = str.repeat(" ", indent * 2)
+  let open  = str.concat("<", str.concat(nd.tag, str.concat(attrs_to_str(nd.attrs), ">")))
+  let close = str.concat("</", str.concat(nd.tag, ">"))
+  let kids  = str.join(list.map(nd.children, fn(c) { render_node(c, indent + 1) }), "\n")
+  str.concat(pad, str.concat(open, str.concat("\n", str.concat(kids, str.concat("\n", str.concat(pad, close))))))
+}
+
+fn render_node(nd, indent) {
+  let pad   = str.repeat(" ", indent * 2)
+  let open  = str.concat("<", str.concat(nd.tag, str.concat(attrs_to_str(nd.attrs), ">")))
+  let close = str.concat("</", str.concat(nd.tag, ">"))
+  if nd.text != null then str.concat(pad, str.concat(open, str.concat(escape(nd.text), close)))
+  else if list.len(nd.children) > 0 then render_children_block(nd, indent)
+  else str.concat(pad, str.concat("<", str.concat(nd.tag, str.concat(attrs_to_str(nd.attrs), "/>"))))
+}
+
+fn render(nd) { render_node(nd, 0) }
+fn to_xml(nd) { str.concat("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n", render(nd)) }
+
+fn find_close(s, tag, start) {
+  let close = str.concat("</", str.concat(tag, ">"))
+  let clen  = str.len(close)
+  let result = while { i: start, done: false }
+    fn(st) { st.done == false && st.i < str.len(s) }
+    fn(st) {
+      if str.slice(s, st.i, st.i + clen) == close then { i: st.i, done: true }
+      else { i: st.i + 1, done: false }
+    }
+  result.value.i
+}
+
+fn parse_tag_name(s, start) {
+  let result = while { i: start, done: false }
+    fn(st) { st.done == false && st.i < str.len(s) }
+    fn(st) {
+      let c = str.slice(s, st.i, st.i + 1)
+      if c == " " || c == ">" || c == "/" || c == "\t" || c == "\n" then { i: st.i, done: true }
+      else { i: st.i + 1, done: false }
+    }
+  { name: str.slice(s, start, result.value.i), end: result.value.i }
+}
+
+fn close_len(tag) { str.len(str.concat("</", str.concat(tag, ">"))) }
+
+fn parse_content(s, tag, cs, ep) {
+  let cp      = find_close(s, tag, cs)
+  let content = str.trim(str.slice(s, cs, cp))
+  let end     = cp + close_len(tag)
+  if str.starts_with(content, "<") then
+    { node: node(tag, {}, do_parse_children(s, cs, cp, ep), null), end: end }
+  else
+    { node: node(tag, {}, [], content), end: end }
+}
+
+fn parse_after_tag(s, tag_name, after, ep) {
+  let c = str.slice(s, after, after + 1)
+  if c == "/" then { node: node(tag_name, {}, [], null), end: after + 2 }
+  else parse_content(s, tag_name, after + 1, ep)
+}
+
+fn parse_from_open(s, i1, ep) {
+  let tag_r = parse_tag_name(s, i1 + 1)
+  parse_after_tag(s, tag_r.name, tag_r.end, ep)
+}
+
+fn parse_elem(s, start, ep) {
+  if start >= str.len(s) then null
+  else if str.slice(s, start, start + 1) != "<" then null
+  else if str.slice(s, start + 1, start + 2) == "/" then null
+  else if str.slice(s, start + 1, start + 2) == "?" then null
+  else if str.slice(s, start + 1, start + 2) == "!" then null
+  else parse_from_open(s, start, ep)
+}
+
+fn apply_child(st, end_pos, r) {
+  if r == null then { i: end_pos, children: st.children, done: true }
+  else { i: r.end, children: list.concat([st.children, [r.node]]), done: false }
+}
+
+fn try_child(s, st, end_pos, ep) {
+  apply_child(st, end_pos, ep(s, st.i))
+}
+
+fn advance_child(s, st, end_pos, ep) {
+  if st.i >= end_pos then { i: end_pos, children: st.children, done: true }
+  else if str.slice(s, st.i, st.i + 1) != "<" then { i: end_pos, children: st.children, done: true }
+  else if str.slice(s, st.i + 1, st.i + 2) == "/" then { i: end_pos, children: st.children, done: true }
+  else try_child(s, st, end_pos, ep)
+}
+
+fn do_parse_children(s, start, end_pos, ep) {
+  let result = while { i: start, children: [], done: false }
+    fn(st) { st.done == false && st.i < end_pos }
+    fn(st) { advance_child(s, st, end_pos, ep) }
+  result.value.children
+}
+
+fn make_parser() { fn(s, start) { parse_elem(s, start, make_parser()) } }
+
+fn parse(src) {
+  let r = make_parser()(str.trim(src), 0)
+  if r == null then null else r.node
+}
+
+fn get_text(nd)       { if nd == null then null else nd.text }
+fn get_attr(nd, name) { if nd == null then null else if rec.has(nd.attrs, name) then rec.get(nd.attrs, name) else null }
+fn get_children(nd)   { if nd == null then [] else nd.children }
+
+fn find_child(nd, tag) {
+  let found = list.find(get_children(nd), fn(c) { c.tag == tag })
+  if rec.has(found, "some") then found.some else null
+}
+
+fn find_all(nd, tag) { list.filter(get_children(nd), fn(c) { c.tag == tag }) }
+fn child_text(nd, tag) { get_text(find_child(nd, tag)) }
+
+{
+  node: node, elem: elem, elem_attrs: elem_attrs,
+  text_node: text_node, text_node_attrs: text_node_attrs,
+  render: render, to_xml: to_xml, escape: escape,
+  parse: parse, get_text: get_text, get_attr: get_attr,
+  get_children: get_children, find_child: find_child,
+  find_all: find_all, child_text: child_text
+}
