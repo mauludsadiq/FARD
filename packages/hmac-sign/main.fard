@@ -1,0 +1,70 @@
+// hmac-sign@1.6.0 — Request signing utilities for FARD
+// HMAC-SHA256 signatures for API requests, webhooks, and message authentication
+import("std/str")    as str
+import("std/json")   as json
+import("std/codec")  as codec
+import("std/crypto") as crypto
+import("std/rec")    as rec
+import("std/datetime") as dt
+
+fn hex_key(secret) { codec.hex_encode(secret) }
+
+fn sign(message, secret) {
+  crypto.hmac_sha256(hex_key(secret), message)
+}
+
+fn verify(message, secret, expected_hex) {
+  let actual = sign(message, secret)
+  actual == expected_hex
+}
+
+fn sign_request(method, path, body, secret) {
+  let canonical = str.concat(str.concat(str.concat(method, "\n"), path), str.concat("\n", body))
+  sign(canonical, secret)
+}
+
+fn verify_request(method, path, body, secret, signature) {
+  let canonical = str.concat(str.concat(str.concat(method, "\n"), path), str.concat("\n", body))
+  verify(canonical, secret, signature)
+}
+
+fn sign_webhook(payload, secret) {
+  let sig = sign(payload, secret)
+  str.concat("sha256=", sig)
+}
+
+fn verify_webhook(payload, secret, header_value) {
+  let expected = str.concat("sha256=", sign(payload, secret))
+  expected == header_value
+}
+
+fn sign_with_timestamp(message, secret) {
+  let ts        = str.from_int(dt.now())
+  let signed_msg = str.concat(str.concat(ts, "."), message)
+  let sig       = sign(signed_msg, secret)
+  { signature: sig, timestamp: ts, message: message }
+}
+
+fn verify_with_timestamp(message, secret, signature, timestamp, max_age_secs) {
+  let now       = dt.now()
+  let ts_int    = str.to_int(timestamp)
+  let age       = now - ts_int
+  if age > max_age_secs then
+    { ok: false, error: "signature expired" }
+  else
+    let signed_msg = str.concat(str.concat(timestamp, "."), message)
+    let expected   = sign(signed_msg, secret)
+    if expected == signature then { ok: true, error: null }
+    else { ok: false, error: "signature mismatch" }
+}
+
+{
+  sign:                  sign,
+  verify:                verify,
+  sign_request:          sign_request,
+  verify_request:        verify_request,
+  sign_webhook:          sign_webhook,
+  verify_webhook:        verify_webhook,
+  sign_with_timestamp:   sign_with_timestamp,
+  verify_with_timestamp: verify_with_timestamp
+}

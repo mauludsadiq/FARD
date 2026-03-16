@@ -1,0 +1,65 @@
+// jwt@1.6.0 — JWT encode/decode/verify for FARD (HS256)
+import("std/str")    as str
+import("std/json")   as json
+import("std/codec")  as codec
+import("std/crypto") as crypto
+import("std/list")   as list
+import("std/rec")    as rec
+import("std/datetime") as dt
+
+fn b64url_encode(s)     { codec.base64url_encode(s) }
+fn b64url_decode(s)     { codec.base64url_decode(s) }
+fn b64url_encode_hex(h) { codec.base64url_encode_hex(h) }
+fn hex_key(secret)      { codec.hex_encode(secret) }
+
+fn sign(input, secret_hex) {
+  b64url_encode_hex(crypto.hmac_sha256(secret_hex, input))
+}
+
+fn make_signing_input(h, p) {
+  str.concat(str.concat(h, "."), p)
+}
+
+fn encode(claims, secret) {
+  let header  = b64url_encode(json.encode({ alg: "HS256", typ: "JWT" }))
+  let payload = b64url_encode(json.encode(claims))
+  let input   = make_signing_input(header, payload)
+  str.concat(str.concat(input, "."), sign(input, hex_key(secret)))
+}
+
+fn verify_parts(parts, secret) {
+  let h        = list.get(parts, 0)
+  let p        = list.get(parts, 1)
+  let sig_b64  = list.get(parts, 2)
+  let expected = sign(make_signing_input(h, p), hex_key(secret))
+  if expected != sig_b64 then
+    { ok: false, error: "signature verification failed", claims: null }
+  else
+    { ok: true, error: null, claims: json.decode(b64url_decode(p)) }
+}
+
+fn verify(token, secret) {
+  let parts = str.split(token, ".")
+  if list.len(parts) != 3 then { ok: false, error: "invalid token format", claims: null }
+  else verify_parts(parts, secret)
+}
+
+fn decode_payload(token) {
+  let parts = str.split(token, ".")
+  if list.len(parts) != 3 then { ok: false, error: "invalid token format", claims: null }
+  else { ok: true, error: null, claims: json.decode(b64url_decode(list.get(parts, 1))) }
+}
+
+fn is_expired(claims) {
+  if rec.has(claims, "exp") then dt.now() > rec.get(claims, "exp")
+  else false
+}
+
+fn verify_full(token, secret) {
+  let result = verify(token, secret)
+  if result.ok == false then result
+  else if is_expired(result.claims) then { ok: false, error: "token expired", claims: null }
+  else result
+}
+
+{ encode: encode, verify: verify, verify_full: verify_full, decode_payload: decode_payload, is_expired: is_expired }

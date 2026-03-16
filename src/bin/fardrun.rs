@@ -2747,6 +2747,7 @@ enum Builtin {
     CryptoHmacSha256,
     CodecBase64UrlEncode,
     CodecBase64UrlDecode,
+    CodecBase64UrlEncodeHex,
     RandUuidV4,
     StrSplit,
     StrUpper,
@@ -4737,6 +4738,13 @@ fn call_builtin(
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode expects 1 arg"); }
             let input = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
             Ok(Val::Text(valuecore::base64url::encode(input.as_bytes())))
+        }
+        Builtin::CodecBase64UrlEncodeHex => {
+            // base64url_encode_hex(hex_str) -> base64url of the raw bytes represented by hex
+            if args.len() != 1 { bail!("ERROR_RUNTIME base64url_encode_hex expects 1 arg"); }
+            let hex_str = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME base64url_encode_hex expects text") };
+            let bytes = hex_decode(&hex_str)?;
+            Ok(Val::Text(valuecore::base64url::encode(&bytes)))
         }
         Builtin::CodecBase64UrlDecode => {
             if args.len() != 1 { bail!("ERROR_RUNTIME base64url_decode expects 1 arg"); }
@@ -9104,6 +9112,7 @@ Ok(m)
             "std/codec" => {
                 let mut m = BTreeMap::new();
                 m.insert("base64url_encode".to_string(), Val::Builtin(Builtin::CodecBase64UrlEncode));
+                m.insert("base64url_encode_hex".to_string(), Val::Builtin(Builtin::CodecBase64UrlEncodeHex));
                 m.insert("base64url_decode".to_string(), Val::Builtin(Builtin::CodecBase64UrlDecode));
                 m.insert("hex_encode".to_string(), Val::Builtin(Builtin::CodecHexEncode));
                 m.insert("hex_decode".to_string(), Val::Builtin(Builtin::CodecHexDecode));
