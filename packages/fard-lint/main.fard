@@ -1,0 +1,73 @@
+// fard-lint@1.6.0 — Custom lint rules for FARD programs
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn warning(rule, message, line) {
+  { level: "warning", rule: rule, message: message, line: line }
+}
+
+fn error(rule, message, line) {
+  { level: "error", rule: rule, message: message, line: line }
+}
+
+fn lint_line(line, line_num) {
+  let trimmed = str.trim(line)
+  let issues  = []
+  let issues2 = if str.len(trimmed) > 120 then
+    list.concat([issues, [warning("line-length", "line exceeds 120 chars", line_num)]])
+  else issues
+  let issues3 = if str.contains(trimmed, "TODO") || str.contains(trimmed, "FIXME") then
+    list.concat([issues2, [warning("todo-comment", str.concat("found TODO/FIXME: ", trimmed), line_num)]])
+  else issues2
+  let issues4 = if str.starts_with(trimmed, "//") == false && str.contains(trimmed, "  ") && str.len(trimmed) > 0 then
+    issues3
+  else issues3
+  issues4
+}
+
+fn lint_source(src) {
+  let lines  = str.split_lines(src)
+  let issues = list.flat_map(list.range(0, list.len(lines)), fn(i) {
+    lint_line(list.get(lines, i), i + 1)
+  })
+  issues
+}
+
+fn check_unused_imports(src) {
+  let lines   = str.split_lines(src)
+  let imports = list.filter(lines, fn(l) { str.contains(l, "import(") && str.contains(l, " as ") })
+  list.flat_map(imports, fn(imp) {
+    let parts = str.split(imp, " as ")
+    let alias = str.trim(list.get(parts, list.len(parts) - 1))
+    let used  = list.any(lines, fn(l) {
+      str.contains(l, str.concat(alias, ".")) || str.contains(l, str.concat(alias, "("))
+    })
+    if used == false then
+      [warning("unused-import", str.concat("import alias unused: ", alias), 0)]
+    else []
+  })
+}
+
+fn lint(src) {
+  let source_issues = lint_source(src)
+  let import_issues = check_unused_imports(src)
+  let all_issues    = list.concat([source_issues, import_issues])
+  let errors        = list.filter(all_issues, fn(i) { i.level == "error" })
+  let warnings      = list.filter(all_issues, fn(i) { i.level == "warning" })
+  {
+    ok:       list.len(errors) == 0,
+    errors:   list.len(errors),
+    warnings: list.len(warnings),
+    issues:   all_issues
+  }
+}
+
+fn rule(name, check_fn) { { name: name, check: check_fn } }
+
+fn run_rules(src, rules) {
+  list.flat_map(rules, fn(r) { r.check(src) })
+}
+
+{ lint: lint, lint_source: lint_source, check_unused_imports: check_unused_imports,
+  warning: warning, error: error, rule: rule, run_rules: run_rules }

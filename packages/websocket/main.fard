@@ -1,0 +1,83 @@
+// websocket@1.6.0 — WebSocket utilities for FARD
+// Note: Full WebSocket requires native runtime support.
+// This package provides WebSocket frame encoding/decoding and
+// HTTP upgrade request building for use with std/net.
+import("std/str")   as str
+import("std/json")  as json
+import("std/codec") as codec
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/hash")  as hash
+
+fn upgrade_request(host, path, key) {
+  let headers = str.join([
+    str.concat("GET ", str.concat(path, " HTTP/1.1")),
+    str.concat("Host: ", host),
+    "Upgrade: websocket",
+    "Connection: Upgrade",
+    str.concat("Sec-WebSocket-Key: ", key),
+    "Sec-WebSocket-Version: 13",
+    "",
+    ""
+  ], "\r\n")
+  headers
+}
+
+fn accept_key(client_key) {
+  let magic  = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+  let concat = str.concat(client_key, magic)
+  codec.base64url_encode(hash.sha256_text(concat))
+}
+
+fn text_frame(payload) {
+  let len  = str.len(payload)
+  let b0   = 129
+  let b1   = len
+  { opcode: 1, payload: payload, masked: false, fin: true, length: len }
+}
+
+fn close_frame() {
+  { opcode: 8, payload: "", masked: false, fin: true, length: 0 }
+}
+
+fn ping_frame(data) {
+  { opcode: 9, payload: data, masked: false, fin: true, length: str.len(data) }
+}
+
+fn pong_frame(data) {
+  { opcode: 10, payload: data, masked: false, fin: true, length: str.len(data) }
+}
+
+fn is_text_frame(frame)  { frame.opcode == 1 }
+fn is_binary_frame(frame){ frame.opcode == 2 }
+fn is_close_frame(frame) { frame.opcode == 8 }
+fn is_ping_frame(frame)  { frame.opcode == 9 }
+fn is_pong_frame(frame)  { frame.opcode == 10 }
+
+fn send_json(payload) {
+  text_frame(json.encode(payload))
+}
+
+fn message(type, data) {
+  { type: type, data: data }
+}
+
+fn text_message(s)  { message("text",   s) }
+fn json_message(v)  { message("json",   json.encode(v)) }
+fn close_message()  { message("close",  "") }
+
+{
+  upgrade_request: upgrade_request,
+  accept_key:      accept_key,
+  text_frame:      text_frame,
+  close_frame:     close_frame,
+  ping_frame:      ping_frame,
+  pong_frame:      pong_frame,
+  is_text_frame:   is_text_frame,
+  is_close_frame:  is_close_frame,
+  is_ping_frame:   is_ping_frame,
+  send_json:       send_json,
+  text_message:    text_message,
+  json_message:    json_message,
+  close_message:   close_message
+}

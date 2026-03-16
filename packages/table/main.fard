@@ -1,0 +1,109 @@
+// table@1.6.0 — In-memory tabular data for FARD (DataFrame-style)
+import("std/list") as list
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/type") as type
+
+fn from_rows(rows) { { rows: rows } }
+
+fn from_csv_rows(headers, data_rows) {
+  let rows = list.map(data_rows, fn(row) {
+    list.fold(list.range(0, list.len(headers)), {}, fn(acc, i) {
+      rec.set(acc, list.get(headers, i), if i < list.len(row) then list.get(row, i) else null)
+    })
+  })
+  from_rows(rows)
+}
+
+fn rows(tbl)  { tbl.rows }
+fn count(tbl) { list.len(tbl.rows) }
+
+fn columns(tbl) {
+  if list.len(tbl.rows) == 0 then []
+  else rec.keys(list.get(tbl.rows, 0))
+}
+
+fn col(tbl, name) {
+  list.map(tbl.rows, fn(row) { if rec.has(row, name) then rec.get(row, name) else null })
+}
+
+fn select(tbl, col_names) {
+  from_rows(list.map(tbl.rows, fn(row) {
+    list.fold(col_names, {}, fn(acc, c) {
+      rec.set(acc, c, if rec.has(row, c) then rec.get(row, c) else null)
+    })
+  }))
+}
+
+fn filter(tbl, pred) {
+  from_rows(list.filter(tbl.rows, pred))
+}
+
+fn map_rows(tbl, f) {
+  from_rows(list.map(tbl.rows, f))
+}
+
+fn add_column(tbl, name, f) {
+  from_rows(list.map(tbl.rows, fn(row) { rec.set(row, name, f(row)) }))
+}
+
+fn group_by(tbl, col_name) {
+  let grouped = list.fold(tbl.rows, {}, fn(acc, row) {
+    let key      = if rec.has(row, col_name) then
+      let v = rec.get(row, col_name)
+      let t = type.of(v)
+      if t == "text" then v else str.from_int(v)
+    else "null"
+    let existing = if rec.has(acc, key) then rec.get(acc, key) else []
+    rec.set(acc, key, list.concat([existing, [row]]))
+  })
+  let keys = rec.keys(grouped)
+  list.map(keys, fn(k) { { key: k, rows: from_rows(rec.get(grouped, k)) } })
+}
+
+fn sort_by_col(tbl, col_name) {
+  from_rows(list.sort_by(tbl.rows, fn(a, b) {
+    let av = if rec.has(a, col_name) then rec.get(a, col_name) else 0
+    let bv = if rec.has(b, col_name) then rec.get(b, col_name) else 0
+    let ta = type.of(av)
+    if ta == "int" || ta == "float" then av - bv else 0
+  }))
+}
+
+fn head(tbl, n) { from_rows(list.take(tbl.rows, n)) }
+fn tail(tbl, n) { from_rows(list.drop(tbl.rows, list.len(tbl.rows) - n)) }
+
+fn join(tbl_a, tbl_b, key) {
+  from_rows(list.flat_map(tbl_a.rows, fn(row_a) {
+    let val = if rec.has(row_a, key) then rec.get(row_a, key) else null
+    let matches = list.filter(tbl_b.rows, fn(row_b) {
+      if rec.has(row_b, key) then rec.get(row_b, key) == val else false
+    })
+    list.map(matches, fn(row_b) { rec.merge(row_a, row_b) })
+  }))
+}
+
+fn to_csv(tbl) {
+  if list.len(tbl.rows) == 0 then ""
+  else
+    let headers = columns(tbl)
+    let hdr_row = str.join(headers, ",")
+    let data = list.map(tbl.rows, fn(row) {
+      str.join(list.map(headers, fn(h) {
+        let v = if rec.has(row, h) then rec.get(row, h) else ""
+        let t = type.of(v)
+        if t == "text" then v
+        else if t == "int" then str.from_int(v)
+        else if t == "float" then str.from_float(v)
+        else if t == "bool" then if v then "true" else "false"
+        else ""
+      }), ",")
+    })
+    str.join(list.concat([[hdr_row], data]), "\n")
+}
+
+{ from_rows: from_rows, from_csv_rows: from_csv_rows, rows: rows,
+  count: count, columns: columns, col: col, select: select,
+  filter: filter, map_rows: map_rows, add_column: add_column,
+  group_by: group_by, sort_by_col: sort_by_col, head: head, tail: tail,
+  join: join, to_csv: to_csv }

@@ -1,0 +1,145 @@
+// parse@1.6.0 — Parser combinators for structured text formats
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+// A parser is a fn(input) -> {ok, value, rest} | {ok: false, error, rest}
+fn success(value, rest) { { ok: true, value: value, rest: rest } }
+fn failure(error, rest) { { ok: false, error: error, rest: rest } }
+
+fn char_at(s, i) {
+  if i >= str.len(s) then null
+  else str.slice(s, i, i + 1)
+}
+
+fn literal(s) {
+  fn(input) {
+    if str.starts_with(input, s) then
+      success(s, str.slice(input, str.len(s), str.len(input)))
+    else
+      failure(str.concat("expected ", s), input)
+  }
+}
+
+fn any_char() {
+  fn(input) {
+    if str.len(input) == 0 then failure("unexpected end of input", input)
+    else success(str.slice(input, 0, 1), str.slice(input, 1, str.len(input)))
+  }
+}
+
+fn digit() {
+  fn(input) {
+    if str.len(input) == 0 then failure("expected digit", input)
+    else
+      let c = str.slice(input, 0, 1)
+      let digits = ["0","1","2","3","4","5","6","7","8","9"]
+      if list.any(digits, fn(d) { d == c }) then
+        success(c, str.slice(input, 1, str.len(input)))
+      else failure(str.concat("expected digit got ", c), input)
+  }
+}
+
+fn alpha() {
+  fn(input) {
+    if str.len(input) == 0 then failure("expected alpha", input)
+    else
+      let c = str.slice(input, 0, 1)
+      let code = str.char_code(c)
+      if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) then
+        success(c, str.slice(input, 1, str.len(input)))
+      else failure(str.concat("expected alpha got ", c), input)
+  }
+}
+
+fn many(p) {
+  fn(input) {
+    let result = while { input: input, values: [], done: false }
+      fn(s) { s.done == false }
+      fn(s) {
+        let r = p(s.input)
+        if r.ok then { input: r.rest, values: list.concat([s.values, [r.value]]), done: false }
+        else { input: s.input, values: s.values, done: true }
+      }
+    success(result.value.values, result.value.input)
+  }
+}
+
+fn many1(p) {
+  fn(input) {
+    let first = p(input)
+    if first.ok == false then first
+    else
+      let rest_parser = many(p)
+      let rest_result = rest_parser(first.rest)
+      success(list.concat([[first.value], rest_result.value]), rest_result.rest)
+  }
+}
+
+fn sequence(parsers) {
+  fn(input) {
+    list.fold(parsers, { ok: true, values: [], rest: input, error: null }, fn(acc, p) {
+      if acc.ok == false then acc
+      else
+        let r = p(acc.rest)
+        if r.ok then { ok: true, values: list.concat([acc.values, [r.value]]), rest: r.rest, error: null }
+        else { ok: false, values: acc.values, rest: acc.rest, error: r.error }
+    })
+  }
+}
+
+fn choice(parsers) {
+  fn(input) {
+    let result = list.find(parsers, fn(p) { p(input).ok })
+    if rec.has(result, "some") then result.some(input)
+    else failure("no parser matched", input)
+  }
+}
+
+fn map_parser(p, f) {
+  fn(input) {
+    let r = p(input)
+    if r.ok then success(f(r.value), r.rest)
+    else r
+  }
+}
+
+fn integer() {
+  map_parser(many1(digit()), fn(digits) {
+    import("std/int") as int
+    int.parse(str.join(digits, "")).v
+  })
+}
+
+fn whitespace() {
+  many(fn(input) {
+    if str.len(input) == 0 then failure("end", input)
+    else
+      let c = str.slice(input, 0, 1)
+      if c == " " || c == "\t" || c == "\n" then
+        success(c, str.slice(input, 1, str.len(input)))
+      else failure("not whitespace", input)
+  })
+}
+
+fn word() {
+  map_parser(many1(alpha()), fn(chars) { str.join(chars, "") })
+}
+
+fn quoted_string() {
+  fn(input) {
+    if str.starts_with(input, "\"") == false then failure("expected quote", input)
+    else
+      let inner_end = str.index_of(str.slice(input, 1, str.len(input)), "\"")
+      if inner_end == -1 then failure("unclosed string", input)
+      else
+        let value = str.slice(input, 1, inner_end + 1)
+        let rest  = str.slice(input, inner_end + 2, str.len(input))
+        success(value, rest)
+  }
+}
+
+{ literal: literal, any_char: any_char, digit: digit, alpha: alpha,
+  many: many, many1: many1, sequence: sequence, choice: choice,
+  map_parser: map_parser, integer: integer, whitespace: whitespace,
+  word: word, quoted_string: quoted_string, success: success, failure: failure }

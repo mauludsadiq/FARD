@@ -1,0 +1,61 @@
+// smtp@1.6.0 — Email composition and SMTP client for FARD
+// Sends via process.spawn with curl or sendmail
+import("std/str")     as str
+import("std/list")    as list
+import("std/process") as process
+
+fn message(from, to, subject, body) {
+  { from: from, to: to, subject: subject, body: body,
+    cc: [], bcc: [], headers: {}, html: null }
+}
+
+fn with_cc(msg, cc)      { rec.set(msg, "cc", cc) }
+fn with_bcc(msg, bcc)    { rec.set(msg, "bcc", bcc) }
+fn with_html(msg, html)  { rec.set(msg, "html", html) }
+
+fn format_rfc2822(msg) {
+  import("std/rec") as rec
+  let lines = [
+    str.concat("From: ", msg.from),
+    str.concat("To: ", if type.of(msg.to) == "list" then str.join(msg.to, ", ") else msg.to),
+    str.concat("Subject: ", msg.subject),
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    msg.body
+  ]
+  str.join(lines, "\r\n")
+}
+
+fn send_curl(msg, smtp_url, username, password) {
+  import("std/rec") as rec
+  import("std/type") as type
+  let to_addr = if type.of(msg.to) == "list" then list.get(msg.to, 0) else msg.to
+  let raw     = format_rfc2822(msg)
+  let result  = process.spawn("curl", [
+    "--silent", "--url", smtp_url,
+    "--user", str.concat(str.concat(username, ":"), password),
+    "--mail-from", msg.from,
+    "--mail-rcpt", to_addr,
+    "--upload-file", "-"
+  ], raw)
+  if result.code == 0 then { ok: true, error: null }
+  else { ok: false, error: result.stderr }
+}
+
+fn send_sendmail(msg) {
+  import("std/type") as type
+  let to_addr = if type.of(msg.to) == "list" then list.get(msg.to, 0) else msg.to
+  let raw     = format_rfc2822(msg)
+  let result  = process.spawn("sendmail", ["-t"], raw)
+  if result.code == 0 then { ok: true, error: null }
+  else { ok: false, error: result.stderr }
+}
+
+fn preview(msg) {
+  format_rfc2822(msg)
+}
+
+{ message: message, with_cc: with_cc, with_bcc: with_bcc,
+  with_html: with_html, format_rfc2822: format_rfc2822,
+  send_curl: send_curl, send_sendmail: send_sendmail, preview: preview }
