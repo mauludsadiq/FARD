@@ -1,0 +1,145 @@
+// queue@1.6.0 — Persistent FIFO queue for FARD
+// Queue state is a record — pass it through like any other value.
+// Every enqueue/dequeue is a witnessed artifact.
+// Backed by a JSON file for persistence across runs.
+import("std/io")   as io
+import("std/json") as json
+import("std/rec")  as rec
+import("std/list") as list
+import("std/str")  as str
+import("std/uuid") as uuid
+
+// Create a new in-memory queue
+fn new() {
+  { items: [], size: 0 }
+}
+
+// Load queue from file
+fn open(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then
+    let data = json.decode(result.ok)
+    { items: rec.get(data, "items"), size: list.len(rec.get(data, "items")), path: path }
+  else
+    { items: [], size: 0, path: path }
+}
+
+// Save queue to file
+fn save(q) {
+  if rec.has(q, "path") then
+    let _ = io.write_file(q.path, json.encode({ items: q.items }))
+    q
+  else q
+}
+
+// Enqueue an item — adds to back
+fn enqueue(q, item) {
+  let new_items = list.concat([q.items, [item]])
+  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items))
+  save(new_q)
+}
+
+// Enqueue with a unique ID attached
+fn enqueue_id(q, item) {
+  let tagged = rec.set(item, "_qid", uuid.v4())
+  enqueue(q, tagged)
+}
+
+// Dequeue from front — returns {item, queue} or {item: null, queue}
+fn do_dequeue(q) {
+  let item      = list.get(q.items, 0)
+  let new_items = list.drop(q.items, 1)
+  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items))
+  { item: item, queue: save(new_q) }
+}
+
+fn dequeue(q) {
+  if list.len(q.items) == 0 then { item: null, queue: q }
+  else do_dequeue(q)
+}
+
+// Peek at front without removing
+fn peek(q) {
+  if list.len(q.items) == 0 then null
+  else list.get(q.items, 0)
+}
+
+// Peek at back without removing
+fn peek_back(q) {
+  let n = list.len(q.items)
+  if n == 0 then null
+  else list.get(q.items, n - 1)
+}
+
+// Check if empty
+fn is_empty(q) { list.len(q.items) == 0 }
+
+// Size of queue
+fn size(q) { list.len(q.items) }
+
+// Drain all items — returns {items, queue}
+fn drain(q) {
+  let items = q.items
+  let new_q = rec.set(rec.set(q, "items", []), "size", 0)
+  { items: items, queue: save(new_q) }
+}
+
+// Process n items from front, return {processed, queue}
+fn process_n(q, n, f) {
+  let to_process = list.take(q.items, n)
+  let remaining  = list.drop(q.items, n)
+  let results    = list.map(to_process, f)
+  let new_q      = rec.set(rec.set(q, "items", remaining), "size", list.len(remaining))
+  { processed: results, queue: save(new_q) }
+}
+
+// Filter items in queue by predicate
+fn filter_queue(q, pred) {
+  let new_items = list.filter(q.items, pred)
+  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items))
+  save(new_q)
+}
+
+// Enqueue multiple items at once
+fn enqueue_all(q, items) {
+  list.fold(items, q, fn(acc, item) { enqueue(acc, item) })
+}
+
+// Dequeue all items one at a time, applying f to each
+fn consume_all(q, f) {
+  let result = while { q: q, results: [], done: false }
+    fn(s) { s.done == false && is_empty(s.q) == false }
+    fn(s) {
+      let d = dequeue(s.q)
+      { q: d.queue, results: list.concat([s.results, [f(d.item)]]), done: false }
+    }
+  { results: result.value.results, queue: result.value.q }
+}
+
+// Clear all items
+fn clear(q) {
+  let new_q = rec.set(rec.set(q, "items", []), "size", 0)
+  save(new_q)
+}
+
+// All items as list (non-destructive)
+fn to_list(q) { q.items }
+
+{
+  new:         new,
+  open:        open,
+  enqueue:     enqueue,
+  enqueue_id:  enqueue_id,
+  enqueue_all: enqueue_all,
+  dequeue:     dequeue,
+  peek:        peek,
+  peek_back:   peek_back,
+  is_empty:    is_empty,
+  size:        size,
+  drain:       drain,
+  process_n:   process_n,
+  filter_queue: filter_queue,
+  consume_all: consume_all,
+  clear:       clear,
+  to_list:     to_list
+}
