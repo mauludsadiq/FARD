@@ -1,0 +1,167 @@
+// crypto-extra@1.6.0 — Additional cryptographic utilities for FARD
+// Built on std/crypto, std/hash, std/codec, std/rand
+import("std/crypto") as crypto
+import("std/hash")   as hash
+import("std/codec")  as codec
+import("std/str")    as str
+import("std/list")   as list
+import("std/rand")   as rand
+import("std/bytes")  as bytes
+
+// --- Hashing ---
+
+// SHA-256 of a text string, returns hex
+fn sha256(s) { hash.sha256_text(s) }
+
+// SHA-256 of bytes, returns hex
+fn sha256_bytes(b) { hash.sha256_bytes(b) }
+
+// SHA-512 of a text string, returns hex
+fn sha512(s) { crypto.sha512(s) }
+
+// Double SHA-256 (Bitcoin-style)
+fn sha256d(s) {
+  let first  = hash.sha256_text(s)
+  hash.sha256_text(first)
+}
+
+// Hash a list of strings into one digest
+fn hash_all(items) {
+  let combined = str.join(items, "")
+  hash.sha256_text(combined)
+}
+
+// --- HMAC ---
+
+// HMAC-SHA256 with text key and message
+fn hmac(key, message) {
+  crypto.hmac_sha256(codec.hex_encode(key), message)
+}
+
+// HMAC-SHA256 with hex key
+fn hmac_hex(key_hex, message) {
+  crypto.hmac_sha256(key_hex, message)
+}
+
+// Verify HMAC — constant-time safe comparison
+fn hmac_verify(key, message, expected_hex) {
+  let actual = hmac(key, message)
+  actual == expected_hex
+}
+
+// --- Key derivation ---
+
+// Derive a subkey from a master key and context string
+fn derive_key(master_key, context) {
+  hmac(master_key, str.concat("derive:", context))
+}
+
+// Derive multiple subkeys
+fn derive_keys(master_key, contexts) {
+  list.map(contexts, fn(ctx) { derive_key(master_key, ctx) })
+}
+
+// --- Signing ---
+
+// Sign a message with HMAC-SHA256
+fn sign(message, secret) {
+  hmac(secret, message)
+}
+
+// Verify a signature
+fn verify_sig(message, secret, signature) {
+  sign(message, secret) == signature
+}
+
+// Sign a record as JSON
+fn sign_record(data, secret) {
+  import("std/json") as json
+  let canonical = json.canonicalize(json.encode(data))
+  sign(canonical, secret)
+}
+
+// --- Secure random ---
+
+// Generate a random hex string of n bytes
+fn random_hex(n_bytes) {
+  let ids = list.map(list.range(0, n_bytes), fn(_) { rand.uuid_v4() })
+  str.slice(str.replace(str.join(ids, ""), "-", ""), 0, n_bytes * 2)
+}
+
+// Generate a random token (URL-safe, 32 bytes)
+fn random_token() {
+  let u1 = rand.uuid_v4()
+  let u2 = rand.uuid_v4()
+  str.replace(str.replace(str.concat(u1, u2), "-", ""), "-", "")
+}
+
+// --- Password utilities ---
+
+// Hash a password with a salt using HMAC-SHA256
+fn hash_password(password, salt) {
+  hmac(salt, str.concat("password:", password))
+}
+
+// Verify a password against a stored hash
+fn verify_password(password, salt, stored_hash) {
+  hash_password(password, salt) == stored_hash
+}
+
+// Generate a random salt
+fn random_salt() {
+  rand.uuid_v4()
+}
+
+// --- Merkle tree ---
+
+// Compute merkle root of a list of strings
+fn merkle(items) {
+  let leaves = list.map(items, fn(item) {
+    codec.hex_decode(hash.sha256_text(item))
+  })
+  crypto.merkle_root(leaves)
+}
+
+// --- AES encryption helpers ---
+
+// Encrypt text with AES-256-GCM
+fn encrypt(plaintext, key_hex, nonce_hex) {
+  crypto.aes_encrypt(plaintext, key_hex, nonce_hex)
+}
+
+// Decrypt text with AES-256-GCM
+fn decrypt(ciphertext, key_hex, nonce_hex) {
+  crypto.aes_decrypt(ciphertext, key_hex, nonce_hex)
+}
+
+// Encrypt with random nonce, return {ciphertext, nonce}
+fn encrypt_with_nonce(plaintext, key_hex) {
+  let nonce = str.slice(str.replace(rand.uuid_v4(), "-", ""), 0, 24)
+  let ct    = encrypt(plaintext, key_hex, nonce)
+  { ciphertext: ct, nonce: nonce }
+}
+
+{
+  sha256:           sha256,
+  sha256_bytes:     sha256_bytes,
+  sha512:           sha512,
+  sha256d:          sha256d,
+  hash_all:         hash_all,
+  hmac:             hmac,
+  hmac_hex:         hmac_hex,
+  hmac_verify:      hmac_verify,
+  derive_key:       derive_key,
+  derive_keys:      derive_keys,
+  sign:             sign,
+  verify_sig:       verify_sig,
+  sign_record:      sign_record,
+  random_hex:       random_hex,
+  random_token:     random_token,
+  hash_password:    hash_password,
+  verify_password:  verify_password,
+  random_salt:      random_salt,
+  merkle:           merkle,
+  encrypt:          encrypt,
+  decrypt:          decrypt,
+  encrypt_with_nonce: encrypt_with_nonce
+}
