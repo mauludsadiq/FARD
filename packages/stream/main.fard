@@ -1,0 +1,150 @@
+// stream@1.6.0 — Lazy sequences for FARD
+// Streams are {seed, step, limit} records processed without full materialization.
+import("std/list") as list
+import("std/grow") as grow
+import("std/str")  as str
+import("std/rec")  as rec
+import("std/type") as type
+
+fn from_seed(seed, step_fn, limit) { { seed: seed, step: step_fn, limit: limit } }
+
+fn from_list(xs) {
+  from_seed({ items: xs, i: 0 }, fn(s) {
+    if s.i >= list.len(s.items) then null
+    else { value: list.get(s.items, s.i), next: { items: s.items, i: s.i + 1 } }
+  }, list.len(xs))
+}
+
+fn range(start, step_size) {
+  from_seed(start, fn(n) { { value: n, next: n + step_size } }, 1000000)
+}
+
+fn range_to(start, end) {
+  from_seed(start, fn(n) {
+    if n >= end then null
+    else { value: n, next: n + 1 }
+  }, end - start)
+}
+
+fn unfold_step(s, stream, n) {
+  let r = stream.step(s.seed)
+  if r == null then null
+  else { value: r.value, seed: { seed: r.next, count: s.count + 1 } }
+}
+
+fn take(stream, n) {
+  grow.unfold(
+    { seed: stream.seed, count: 0 },
+    n,
+    fn(s) {
+      if s.count >= n then null
+      else unfold_step(s, stream, n)
+    }
+  )
+}
+
+fn drop(stream, n) {
+  let new_seed = list.fold(list.range(0, n), stream.seed, fn(seed, _) {
+    let r = stream.step(seed)
+    if r == null then seed else r.next
+  })
+  from_seed(new_seed, stream.step, stream.limit - n)
+}
+
+fn map_step(step_fn, f, seed) {
+  let r = step_fn(seed)
+  if r == null then null
+  else { value: f(r.value), next: r.next }
+}
+
+fn map(stream, f) {
+  from_seed(stream.seed, fn(seed) { map_step(stream.step, f, seed) }, stream.limit)
+}
+
+fn filter_advance(step_fn, pred, s) {
+  let r = step_fn(s.seed)
+  if r == null then { seed: s.seed, found: true, value: null, next: s.seed }
+  else if pred(r.value) then { seed: s.seed, found: true, value: r.value, next: r.next }
+  else { seed: r.next, found: false, value: null, next: r.next }
+}
+
+fn filter_step(step_fn, pred, seed) {
+  let result = while { seed: seed, found: false, value: null, next: seed }
+    fn(s) { s.found == false }
+    fn(s) { filter_advance(step_fn, pred, s) }
+  if result.value.value == null then null
+  else { value: result.value.value, next: result.value.next }
+}
+
+fn filter(stream, pred) {
+  from_seed(stream.seed, fn(seed) { filter_step(stream.step, pred, seed) }, stream.limit)
+}
+
+fn fold_step(s, step_fn, f, limit) {
+  let r = step_fn(s.seed)
+  if r == null then { seed: s.seed, acc: s.acc, count: limit }
+  else { seed: r.next, acc: f(s.acc, r.value), count: s.count + 1 }
+}
+
+fn fold(stream, init, f) {
+  let result = while { seed: stream.seed, acc: init, count: 0 }
+    fn(s) { s.count < stream.limit }
+    fn(s) { fold_step(s, stream.step, f, stream.limit) }
+  result.value.acc
+}
+
+fn to_list(stream)     { take(stream, stream.limit) }
+fn collect(stream, n)  { take(stream, n) }
+fn sum(stream)         { fold(stream, 0, fn(acc, x) { acc + x }) }
+fn count_where(stream, pred) { fold(stream, 0, fn(acc, x) { if pred(x) then acc + 1 else acc }) }
+
+fn find_step(s, stream) {
+  let r = stream.step(s.seed)
+  if r == null then { seed: s.seed, found: { none: null }, count: stream.limit }
+  else if s.pred(r.value) then { seed: r.next, found: { some: r.value }, count: s.count + 1 }
+  else { seed: r.next, found: null, count: s.count + 1 }
+}
+
+fn find(stream, pred) {
+  let result = while { seed: stream.seed, found: null, count: 0, pred: pred }
+    fn(s) { s.found == null && s.count < stream.limit }
+    fn(s) { find_step(s, stream) }
+  result.value.found
+}
+
+fn zip_step(step_a, step_b, s) {
+  let ra = step_a(s.sa)
+  let rb = step_b(s.sb)
+  if ra == null || rb == null then null
+  else { value: [ra.value, rb.value], next: { sa: ra.next, sb: rb.next } }
+}
+
+fn zip(stream_a, stream_b) {
+  let lim = if stream_a.limit < stream_b.limit then stream_a.limit else stream_b.limit
+  from_seed(
+    { sa: stream_a.seed, sb: stream_b.seed },
+    fn(s) { zip_step(stream_a.step, stream_b.step, s) },
+    lim
+  )
+}
+
+fn lines(text) { from_list(str.split_lines(text)) }
+
+{
+  from_seed:   from_seed,
+  from_list:   from_list,
+  range:       range,
+  range_to:    range_to,
+  take:        take,
+  drop:        drop,
+  map:         map,
+  filter:      filter,
+  fold:        fold,
+  to_list:     to_list,
+  collect:     collect,
+  sum:         sum,
+  count_where: count_where,
+  find:        find,
+  zip:         zip,
+  lines:       lines
+}
