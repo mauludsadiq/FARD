@@ -1,0 +1,55 @@
+// fard-bench@1.6.0 — Microbenchmarking for FARD
+// Witnessed benchmark results with timing
+import("std/str")      as str
+import("std/list")     as list
+import("std/time")     as time
+import("std/json")     as json
+import("std/float")    as float
+import("std/math")     as math
+
+fn run_once(f) {
+  let start  = time.now_ms()
+  let result = f(null)
+  let end    = time.now_ms()
+  { result: result, elapsed_ms: end - start }
+}
+
+fn bench(name, f, iterations) {
+  let times = list.map(list.range(0, iterations), fn(i) {
+    let start  = time.now_ms()
+    let _      = f(i)
+    let end    = time.now_ms()
+    end - start
+  })
+  let total = list.fold(times, 0, fn(acc, t) { acc + t })
+  let avg   = if iterations > 0 then total / iterations else 0
+  let min_t = list.fold(times, 999999999, fn(acc, t) { if t < acc then t else acc })
+  let max_t = list.fold(times, 0, fn(acc, t) { if t > acc then t else acc })
+  {
+    name:       name,
+    iterations: iterations,
+    total_ms:   total,
+    avg_ms:     avg,
+    min_ms:     min_t,
+    max_ms:     max_t,
+    ops_per_sec: if avg > 0 then 1000 / avg else 0
+  }
+}
+
+fn bench_compare(name_a, f_a, name_b, f_b, iterations) {
+  let result_a = bench(name_a, f_a, iterations)
+  let result_b = bench(name_b, f_b, iterations)
+  let faster = if result_a.avg_ms <= result_b.avg_ms then name_a else name_b
+  {
+    a:      result_a,
+    b:      result_b,
+    faster: faster,
+    ratio:  if result_b.avg_ms > 0 then result_a.avg_ms / result_b.avg_ms else 0
+  }
+}
+
+fn format_result(r) {
+  str.concat(str.concat(str.concat(r.name, ": "), str.from_int(r.avg_ms)), str.concat("ms avg (", str.concat(str.from_int(r.iterations), " iterations)")))
+}
+
+{ bench: bench, bench_compare: bench_compare, run_once: run_once, format_result: format_result }
