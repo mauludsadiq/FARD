@@ -1,0 +1,181 @@
+// csv-stream@1.6.0 — Streaming CSV processing for large files
+// Processes CSV line by line without materializing the full dataset.
+// Built on std/stream pattern: {seed, step, limit}
+import("std/io")   as io
+import("std/csv")  as csv
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+
+// Parse a single CSV line into fields
+fn parse_line(line) {
+  list.get(csv.parse(line), 0)
+}
+
+// Create a stream from CSV text
+fn from_text(src) {
+  let lines   = str.split_lines(src)
+  let headers = if list.len(lines) > 0 then parse_line(list.get(lines, 0)) else []
+  let data    = list.drop(lines, 1)
+  let non_empty = list.filter(data, fn(l) { str.len(str.trim(l)) > 0 })
+  {
+    seed:    { lines: non_empty, i: 0, headers: headers },
+    headers: headers,
+    step:    fn(s) {
+      if s.i >= list.len(s.lines) then null
+      else
+        let fields = parse_line(list.get(s.lines, s.i))
+        let row    = list.fold(list.range(0, list.len(s.headers)), {}, fn(acc, j) {
+          rec.set(acc, list.get(s.headers, j), if j < list.len(fields) then list.get(fields, j) else null)
+        })
+        { value: row, next: { lines: s.lines, i: s.i + 1, headers: s.headers } }
+    },
+    limit: list.len(non_empty)
+  }
+}
+
+// Create a stream from a CSV file
+fn from_file(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "err") then null
+  else from_text(result.ok)
+}
+
+// Take first n rows
+fn take(stream, n) {
+  let result = while { seed: stream.seed, rows: [], count: 0 }
+    fn(s) { s.count < n && s.count < stream.limit }
+    fn(s) {
+      let r = stream.step(s.seed)
+      if r == null then { seed: s.seed, rows: s.rows, count: stream.limit }
+      else { seed: r.next, rows: list.concat([s.rows, [r.value]]), count: s.count + 1 }
+    }
+  result.value.rows
+}
+
+// Filter rows by predicate
+fn filter(stream, pred) {
+  {
+    seed:  stream.seed,
+    headers: stream.headers,
+    step: fn(s) {
+      let result = while { seed: s, found: false, value: null, next: s }
+        fn(st) { st.found == false }
+        fn(st) {
+          let r = stream.step(st.seed)
+          if r == null then { seed: st.seed, found: true, value: null, next: st.seed }
+          else if pred(r.value) then { seed: st.seed, found: true, value: r.value, next: r.next }
+          else { seed: r.next, found: false, value: null, next: r.next }
+        }
+      if result.value.value == null then null
+      else { value: result.value.value, next: result.value.next }
+    },
+    limit: stream.limit
+  }
+}
+
+// Map over rows
+fn map(stream, f) {
+  {
+    seed:    stream.seed,
+    headers: stream.headers,
+    step:    fn(s) {
+      let r = stream.step(s)
+      if r == null then null
+      else { value: f(r.value), next: r.next }
+    },
+    limit: stream.limit
+  }
+}
+
+// Fold/reduce stream
+fn fold(stream, init, f) {
+  let result = while { seed: stream.seed, acc: init, count: 0 }
+    fn(s) { s.count < stream.limit }
+    fn(s) {
+      let r = stream.step(s.seed)
+      if r == null then { seed: s.seed, acc: s.acc, count: stream.limit }
+      else { seed: r.next, acc: f(s.acc, r.value), count: s.count + 1 }
+    }
+  result.value.acc
+}
+
+// Collect all rows into a list
+fn to_list(stream) { take(stream, stream.limit) }
+
+// Count rows matching predicate without materializing
+fn count_where(stream, pred) {
+  fold(stream, 0, fn(acc, row) { if pred(row) then acc + 1 else acc })
+}
+
+// Count total rows
+fn count(stream) { stream.limit }
+
+// Get column values as list
+fn column(stream, col_name) {
+  fold(stream, [], fn(acc, row) {
+    let val = if rec.has(row, col_name) then rec.get(row, col_name) else null
+    list.concat([acc, [val]])
+  })
+}
+
+// Sum a numeric column
+fn sum_column(stream, col_name) {
+  fold(stream, 0, fn(acc, row) {
+    if rec.has(row, col_name) == false then acc
+    else
+      let v = rec.get(row, col_name)
+      let t = type.of(v)
+      if t == "int" then acc + v
+      else acc
+  })
+}
+
+// Group by a column value
+fn group_by(stream, col_name) {
+  fold(stream, {}, fn(acc, row) {
+    let key = if rec.has(row, col_name) then
+      let v = rec.get(row, col_name)
+      let t = type.of(v)
+      if t == "text" then v else str.from_int(0)
+    else "null"
+    let existing = if rec.has(acc, key) then rec.get(acc, key) else []
+    rec.set(acc, key, list.concat([existing, [row]]))
+  })
+}
+
+// Write stream to CSV text
+fn to_csv(stream) {
+  let rows    = to_list(stream)
+  let headers = stream.headers
+  if list.len(rows) == 0 then str.join(headers, ",")
+  else
+    let hdr = str.join(headers, ",")
+    let data = list.map(rows, fn(row) {
+      str.join(list.map(headers, fn(h) {
+        let v = if rec.has(row, h) then rec.get(row, h) else ""
+        let t = type.of(v)
+        if t == "text" then v
+        else if t == "int" then str.from_int(v)
+        else ""
+      }), ",")
+    })
+    str.join(list.concat([[hdr], data]), "\n")
+}
+
+{
+  from_text:   from_text,
+  from_file:   from_file,
+  take:        take,
+  filter:      filter,
+  map:         map,
+  fold:        fold,
+  to_list:     to_list,
+  count:       count,
+  count_where: count_where,
+  column:      column,
+  sum_column:  sum_column,
+  group_by:    group_by,
+  to_csv:      to_csv
+}
