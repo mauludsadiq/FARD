@@ -1,0 +1,145 @@
+// async@1.6.0 — Non-blocking async utilities for FARD
+// Built on std/promise and std/chan
+import("std/promise") as promise
+import("std/chan")    as chan
+import("std/list")   as list
+import("std/time")   as time
+import("std/rec")    as rec
+
+// Run all tasks concurrently, return list of results in order
+fn all(fns) {
+  let promises = list.map(fns, fn(f) { promise.spawn(f) })
+  list.map(promises, fn(p) { promise.await(p) })
+}
+
+// Run all tasks concurrently, return first result that completes
+fn race(fns) {
+  let result_chan = chan.new()
+  let promises = list.map(fns, fn(f) {
+    promise.spawn(fn() {
+      let r = f(null)
+      chan.send(result_chan, r)
+      r
+    })
+  })
+  let result = chan.recv(result_chan)
+  if rec.has(result, "some") then result.some else null
+}
+
+// Parallel map with all goroutines at once
+fn par_map(xs, f) {
+  let promises = list.map(xs, fn(x) { promise.spawn(fn() { f(x) }) })
+  list.map(promises, fn(p) { promise.await(p) })
+}
+
+// Parallel map with bounded concurrency (pool size n)
+fn par_map_n(xs, f, n) {
+  let chunks = list.chunk(xs, n)
+  list.flat_map(chunks, fn(chunk) {
+    let promises = list.map(chunk, fn(x) { promise.spawn(fn() { f(x) }) })
+    list.map(promises, fn(p) { promise.await(p) })
+  })
+}
+
+// Run f, retry up to max_attempts times with delay_ms between attempts
+fn retry(f, max_attempts, delay_ms) {
+  let result = while { attempt: 0, done: false, value: null, error: null }
+    fn(s) { s.done == false && s.attempt < max_attempts }
+    fn(s) {
+      let r = f(s.attempt)
+      if rec.has(r, "ok") && rec.get(r, "ok") == true then
+        { attempt: s.attempt + 1, done: true, value: r, error: null }
+      else if s.attempt + 1 >= max_attempts then
+        { attempt: s.attempt + 1, done: true, value: null, error: r }
+      else
+        let _ = time.sleep_ms(delay_ms)
+        { attempt: s.attempt + 1, done: false, value: null, error: r }
+    }
+  if result.value.value != null then result.value.value
+  else { ok: false, error: result.value.error }
+}
+
+// Run f with exponential backoff retry
+fn retry_backoff(f, max_attempts) {
+  let result = while { attempt: 0, done: false, value: null, delay: 100 }
+    fn(s) { s.done == false && s.attempt < max_attempts }
+    fn(s) {
+      let r = f(s.attempt)
+      if rec.has(r, "ok") && rec.get(r, "ok") == true then
+        { attempt: s.attempt + 1, done: true, value: r, delay: s.delay }
+      else
+        let _ = time.sleep_ms(s.delay)
+        { attempt: s.attempt + 1, done: false, value: null, delay: s.delay * 2 }
+    }
+  if result.value.value != null then result.value.value
+  else { ok: false, error: "max retries exceeded" }
+}
+
+// Spawn f and return result or timeout_val after timeout_ms
+fn with_timeout(f, timeout_ms, timeout_val) {
+  let result_chan = chan.new()
+  let _ = promise.spawn(fn() {
+    let r = f(null)
+    chan.send(result_chan, { ok: true, value: r })
+    r
+  })
+  let _ = promise.spawn(fn() {
+    time.sleep_ms(timeout_ms)
+    chan.send(result_chan, { ok: false, value: timeout_val })
+    null
+  })
+  let result = chan.recv(result_chan)
+  if rec.has(result, "some") then result.some.value else timeout_val
+}
+
+// Run tasks sequentially, stop on first error
+fn sequence(fns) {
+  list.fold(fns, { ok: true, results: [], error: null }, fn(acc, f) {
+    if acc.ok == false then acc
+    else
+      let r = f(null)
+      if rec.has(r, "ok") && rec.get(r, "ok") == false then
+        { ok: false, results: acc.results, error: r }
+      else
+        { ok: true, results: list.concat([acc.results, [r]]), error: null }
+  })
+}
+
+// Run tasks in parallel, collect successes and failures separately
+fn settle(fns) {
+  let results = all(fns)
+  let fulfilled = list.filter(results, fn(r) { rec.has(r, "ok") && rec.get(r, "ok") == true })
+  let rejected  = list.filter(results, fn(r) { rec.has(r, "ok") && rec.get(r, "ok") == false })
+  { fulfilled: fulfilled, rejected: rejected, total: list.len(results) }
+}
+
+// Delay execution by ms milliseconds
+fn sleep(ms) {
+  time.sleep_ms(ms)
+  null
+}
+
+// Spawn a background task (fire and forget)
+fn spawn(f) {
+  promise.spawn(f)
+}
+
+// Await a promise
+fn await(p) {
+  promise.await(p)
+}
+
+{
+  all:           all,
+  race:          race,
+  par_map:       par_map,
+  par_map_n:     par_map_n,
+  retry:         retry,
+  retry_backoff: retry_backoff,
+  with_timeout:  with_timeout,
+  sequence:      sequence,
+  settle:        settle,
+  sleep:         sleep,
+  spawn:         spawn,
+  await:         await
+}
