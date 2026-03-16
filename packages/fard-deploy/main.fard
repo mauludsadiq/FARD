@@ -1,0 +1,205 @@
+// fard-deploy@1.6.0 — Deployment utilities for FARD
+// Every deployment step is a witnessed artifact.
+// Supports: SSH, rsync, Docker, systemd, health checks, rollback
+import("std/process") as process
+import("std/io")      as io
+import("std/str")     as str
+import("std/list")    as list
+import("std/rec")     as rec
+import("std/json")    as json
+import("std/time")    as time
+import("std/hash")    as hash
+import("std/http")    as http
+
+// --- Shell execution ---
+fn run(cmd, args) {
+  let r = process.spawn(cmd, args, "")
+  { ok: r.code == 0, code: r.code, stdout: str.trim(r.stdout), stderr: str.trim(r.stderr) }
+}
+
+fn sh(script) { run("sh", ["-c", script]) }
+
+// --- Target definition ---
+fn target(host, user, port, dir) {
+  { host: host, user: user, port: port, dir: dir }
+}
+
+fn local_target(dir) {
+  { host: "localhost", user: "", port: 0, dir: dir }
+}
+
+fn ssh_addr(t) {
+  if str.len(t.user) > 0 then str.concat(t.user, str.concat("@", t.host))
+  else t.host
+}
+
+// --- SSH ---
+fn ssh_run(t, cmd) {
+  let addr    = ssh_addr(t)
+  let port_arg = if t.port > 0 then str.concat("-p ", str.from_int(t.port)) else ""
+  let full_cmd = if str.len(port_arg) > 0
+    then str.concat(str.concat("ssh ", str.concat(port_arg, str.concat(" ", addr))), str.concat(" '", str.concat(cmd, "'")))
+    else str.concat(str.concat("ssh ", addr), str.concat(" '", str.concat(cmd, "'")))
+  sh(full_cmd)
+}
+
+fn ssh_copy(local_path, t, remote_path) {
+  let addr = ssh_addr(t)
+  let dest = str.concat(str.concat(addr, ":"), remote_path)
+  run("scp", ["-r", local_path, dest])
+}
+
+// --- Rsync ---
+fn rsync(src, t, dst) {
+  let addr = str.concat(ssh_addr(t), str.concat(":", dst))
+  run("rsync", ["-avz", "--delete", src, addr])
+}
+
+fn rsync_local(src, dst) {
+  run("rsync", ["-avz", "--delete", src, dst])
+}
+
+// --- Docker ---
+fn docker_build(tag, context) {
+  run("docker", ["build", "-t", tag, context])
+}
+
+fn docker_push(tag) {
+  run("docker", ["push", tag])
+}
+
+fn docker_pull(tag) {
+  run("docker", ["pull", tag])
+}
+
+fn docker_run(tag, name, args) {
+  let base_args = ["run", "-d", "--name", name]
+  run("docker", list.concat([base_args, args, [tag]]))
+}
+
+fn docker_stop(name) {
+  run("docker", ["stop", name])
+}
+
+fn docker_rm(name) {
+  run("docker", ["rm", "-f", name])
+}
+
+fn docker_restart(name) {
+  run("docker", ["restart", name])
+}
+
+fn docker_logs(name, n) {
+  run("docker", ["logs", "--tail", str.from_int(n), name])
+}
+
+fn docker_compose_up(file) {
+  run("docker-compose", ["-f", file, "up", "-d"])
+}
+
+fn docker_compose_down(file) {
+  run("docker-compose", ["-f", file, "down"])
+}
+
+// --- Systemd ---
+fn systemctl(action, service) {
+  run("systemctl", [action, service])
+}
+
+fn service_start(name)   { systemctl("start",   name) }
+fn service_stop(name)    { systemctl("stop",    name) }
+fn service_restart(name) { systemctl("restart", name) }
+fn service_status(name)  { systemctl("status",  name) }
+fn service_enable(name)  { systemctl("enable",  name) }
+
+// --- Health checks ---
+fn health_check(url) {
+  let resp = http.get(url)
+  if resp.status >= 200 && resp.status < 300 then
+    { ok: true, status: resp.status, url: url }
+  else
+    { ok: false, status: resp.status, url: url }
+}
+
+fn health_check_retry(url, attempts, delay_ms) {
+  let result = while { attempt: 0, ok: false, status: 0, done: false }
+    fn(s) { s.done == false && s.attempt < attempts }
+    fn(s) {
+      let r = health_check(url)
+      if r.ok then { attempt: s.attempt + 1, ok: true, status: r.status, done: true }
+      else
+        let _ = process.spawn("sleep", [str.concat("0.", str.from_int(delay_ms))], "")
+        { attempt: s.attempt + 1, ok: false, status: r.status, done: false }
+    }
+  { ok: result.value.ok, attempts: result.value.attempt, status: result.value.status }
+}
+
+// --- Deployment manifest ---
+fn manifest(name, version, steps) {
+  {
+    name:      name,
+    version:   version,
+    steps:     steps,
+    timestamp: time.now()
+  }
+}
+
+fn run_manifest(m) {
+  let start   = time.now()
+  let results = list.fold(m.steps, { ok: true, results: [], stopped_at: null }, fn(acc, step) {
+    if acc.ok == false then acc
+    else apply_deploy_step(acc, step)
+  })
+  let end = time.now()
+  {
+    name:       m.name,
+    version:    m.version,
+    ok:         results.ok,
+    stopped_at: results.stopped_at,
+    results:    results.results,
+    duration:   end - start,
+    digest:     hash.sha256_text(json.encode(m))
+  }
+}
+
+fn apply_deploy_step(acc, step) {
+  let r = step(null)
+  if r.ok then { ok: true, results: list.concat([acc.results, [r]]), stopped_at: null }
+  else { ok: false, results: list.concat([acc.results, [r]]), stopped_at: r.name }
+}
+
+fn save_manifest_result(result, path) {
+  let _ = io.write_file(path, json.encode(result))
+  path
+}
+
+{
+  target:               target,
+  local_target:         local_target,
+  ssh_run:              ssh_run,
+  ssh_copy:             ssh_copy,
+  rsync:                rsync,
+  rsync_local:          rsync_local,
+  docker_build:         docker_build,
+  docker_push:          docker_push,
+  docker_pull:          docker_pull,
+  docker_run:           docker_run,
+  docker_stop:          docker_stop,
+  docker_rm:            docker_rm,
+  docker_restart:       docker_restart,
+  docker_logs:          docker_logs,
+  docker_compose_up:    docker_compose_up,
+  docker_compose_down:  docker_compose_down,
+  service_start:        service_start,
+  service_stop:         service_stop,
+  service_restart:      service_restart,
+  service_status:       service_status,
+  service_enable:       service_enable,
+  health_check:         health_check,
+  health_check_retry:   health_check_retry,
+  manifest:             manifest,
+  run_manifest:         run_manifest,
+  save_manifest_result: save_manifest_result,
+  sh:                   sh,
+  run:                  run
+}
