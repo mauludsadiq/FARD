@@ -1,0 +1,93 @@
+// base64@1.6.0 — Base64 encoding and decoding utilities for FARD
+import("std/base64") as b64
+import("std/codec")  as codec
+import("std/bytes")  as bytes
+import("std/str")    as str
+import("std/list")   as list
+
+// Standard base64 encode
+fn encode(s) { b64.encode(s) }
+
+// Standard base64 decode
+fn decode(s) { bytes.to_str(b64.decode(s)) }
+
+// Base64url encode (URL-safe, no padding)
+fn encode_url(s) { codec.base64url_encode(s) }
+
+// Base64url decode
+fn decode_url(s) { bytes.to_str(codec.base64url_decode(s)) }
+
+// Base64url encode from hex string
+fn encode_url_hex(hex) { codec.base64url_encode_hex(hex) }
+
+// Check if string is valid base64
+fn is_valid(s) {
+  let chars = str.chars(s)
+  let valid_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+  list.all(chars, fn(c) { str.contains(valid_chars, c) })
+}
+
+// Check if string is valid base64url
+fn is_valid_url(s) {
+  let chars = str.chars(s)
+  let valid_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+  list.all(chars, fn(c) { str.contains(valid_chars, c) })
+}
+
+// Encode and get length
+fn encode_with_len(s) {
+  let encoded = b64.encode(s)
+  { encoded: encoded, len: str.len(encoded) }
+}
+
+// Safe encode — returns {ok, value}
+fn safe_encode(s) {
+  { ok: true, value: b64.encode(s) }
+}
+
+fn safe_decode(s) {
+  if is_valid(s) then { ok: true, value: b64.decode(s) }
+  else { ok: false, value: null, error: "invalid base64 string" }
+}
+
+// Encode bytes from hex string
+fn encode_hex(hex) {
+  b64.encode(codec.hex_decode(hex))
+}
+
+// Strip padding from base64 string
+fn strip_padding(s) {
+  let chars = str.chars(s)
+  let result = while { i: list.len(chars) - 1, done: false }
+    fn(st) { st.done == false && st.i >= 0 }
+    fn(st) {
+      if list.get(chars, st.i) == "=" then { i: st.i - 1, done: false }
+      else { i: st.i, done: true }
+    }
+  str.slice(s, 0, result.value.i + 1)
+}
+
+// Add padding to base64 string
+fn add_padding(s) {
+  let rem = str.len(s) % 4
+  if rem == 0 then s
+  else if rem == 2 then str.concat(s, "==")
+  else if rem == 3 then str.concat(s, "=")
+  else s
+}
+
+{
+  encode:          encode,
+  decode:          decode,
+  encode_url:      encode_url,
+  decode_url:      decode_url,
+  encode_url_hex:  encode_url_hex,
+  is_valid:        is_valid,
+  is_valid_url:    is_valid_url,
+  encode_with_len: encode_with_len,
+  safe_encode:     safe_encode,
+  safe_decode:     safe_decode,
+  encode_hex:      encode_hex,
+  strip_padding:   strip_padding,
+  add_padding:     add_padding
+}

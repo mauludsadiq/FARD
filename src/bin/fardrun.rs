@@ -2635,7 +2635,7 @@ enum Builtin {
     // std/bits
     BitAnd, BitOr, BitXor, BitNot, BitShl, BitShr, BitPopcount,
     // std/bytes
-    BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList,
+    BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList, BytesToStr,
     // std/io
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
     IoReadStdin, IoListDir, IoMakeDir, IoReadStdinLines,
@@ -6179,6 +6179,19 @@ fn call_builtin(
                 _ => bail!("ERROR_BADARG bytes.of_str expects string"),
             }
         }
+        Builtin::BytesToStr => {
+            if args.len() != 1 { bail!("ERROR_BADARG bytes.to_str expects 1 arg"); }
+            match &args[0] {
+                Val::Bytes(bs) => {
+                    match String::from_utf8(bs.clone()) {
+                        Ok(s)  => Ok(Val::Text(s)),
+                        Err(_) => bail!("ERROR_BADARG bytes.to_str: bytes are not valid UTF-8"),
+                    }
+                }
+                Val::Text(s) => Ok(Val::Text(s.clone())),
+                _ => bail!("ERROR_BADARG bytes.to_str expects bytes"),
+            }
+        }
         Builtin::BytesMerkleRoot => {
             // merkle_root(list_of_bytes) -> bytes
             if args.len() != 1 { bail!("ERROR_BADARG bytes.merkle_root expects 1 arg"); }
@@ -9100,6 +9113,7 @@ Ok(m)
             "std/bytes" => {
                 let mut m = BTreeMap::new();
                 m.insert("concat".to_string(),      Val::Builtin(Builtin::BytesConcat));
+                m.insert("to_str".to_string(),       Val::Builtin(Builtin::BytesToStr));
                 m.insert("len".to_string(),          Val::Builtin(Builtin::BytesLen));
                 m.insert("get".to_string(),          Val::Builtin(Builtin::BytesGet));
                 m.insert("of_list".to_string(),      Val::Builtin(Builtin::BytesOfList));
