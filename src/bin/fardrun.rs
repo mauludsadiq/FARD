@@ -386,12 +386,15 @@ fn main() -> Result<()> {
     }
     if want_repl {
         use rustyline::error::ReadlineError;
-        use rustyline::{DefaultEditor, Result as RlResult};
+        use rustyline::DefaultEditor;
 
         println!("FARD v{} REPL", env!("CARGO_PKG_VERSION"));
-        println!("  :quit or Ctrl-D to exit");
-        println!("  :help for commands");
-        println!("  Up/Down arrow for history");
+        println!("  :quit / :q      exit");
+        println!("  :help           show commands");
+        println!("  :reset          clear environment");
+        println!("  :vars           show defined names");
+        println!("  :time <expr>    time an expression");
+        println!("  {{...}}          multi-line auto-continuation");
         println!("");
 
         let mut rl = DefaultEditor::new().expect("readline init failed");
@@ -408,24 +411,94 @@ fn main() -> Result<()> {
             Tracer::new(&t, &t.join("repl_trace.ndjson")).expect("tracer")
         });
 
+        let mut pending = String::new();
+
         loop {
-            let readline = rl.readline("fard> ");
+            let prompt = if pending.is_empty() { "fard> " } else { "....  " };
+            let readline = rl.readline(prompt);
             let line = match readline {
                 Ok(l) => {
-                    if !l.trim().is_empty() {
+                    if !l.trim().is_empty() && pending.is_empty() {
                         let _ = rl.add_history_entry(l.as_str());
                     }
                     l
                 }
-                Err(ReadlineError::Interrupted) => { println!("^C"); continue; }
+                Err(ReadlineError::Interrupted) => {
+                    if !pending.is_empty() {
+                        pending.clear();
+                        println!("^C (input cleared)");
+                    } else {
+                        println!("^C");
+                    }
+                    continue;
+                }
                 Err(ReadlineError::Eof) => { println!(""); break; }
                 Err(_) => break,
             };
             let line = line.trim_end_matches(|c: char| c == '\n' || c == '\r');
-            if line == ":quit" || line == ":q" { break; }
-            if line.trim().is_empty() { continue; }
+
+            // REPL commands (only when not in continuation)
+            if pending.is_empty() {
+                if line == ":quit" || line == ":q" { break; }
+                if line.trim().is_empty() { continue; }
+                if line == ":help" {
+                    println!("Commands:");
+                    println!("  :quit / :q          exit the REPL");
+                    println!("  :reset              clear all bindings");
+                    println!("  :vars               list defined names");
+                    println!("  :time <expr>        time expression evaluation");
+                    println!("");
+                    println!("Language:");
+                    println!("  let x = expr        bind a name");
+                    println!("  fn f(x) {{ expr }}    define a function");
+                    println!("  import(\"std/list\") as list");
+                    println!("  Open {{ and press Enter for multi-line input");
+                    continue;
+                }
+                if line == ":reset" {
+                    env = Env::new();
+                    loader = ModuleLoader::new(Path::new("."));
+                    println!("environment reset");
+                    continue;
+                }
+                if line == ":vars" {
+                    let mut keys = env.keys();
+                    if keys.is_empty() {
+                        println!("(no bindings)");
+                    } else {
+                        keys.sort();
+                        for k in keys { println!("  {k}"); }
+                    }
+                    continue;
+                }
+            }
+
+            // Accumulate multi-line input
+            if !pending.is_empty() { pending.push('\n'); }
+            pending.push_str(line);
+
+            // Check brace/paren balance
+            let open_braces  = pending.chars().filter(|&c| c == '{').count();
+            let close_braces = pending.chars().filter(|&c| c == '}').count();
+            let open_parens  = pending.chars().filter(|&c| c == '(').count();
+            let close_parens = pending.chars().filter(|&c| c == ')').count();
+            if open_braces > close_braces || open_parens > close_parens {
+                continue; // wait for more input
+            }
+
+            let input = pending.clone();
+            pending.clear();
+
+            // :time prefix
+            let (timed, eval_input) = if input.trim_start().starts_with(":time ") {
+                (true, input.trim_start()[6..].to_string())
+            } else {
+                (false, input.clone())
+            };
+
             let file = "<repl>".to_string();
-            match Parser::from_src(line, &file) {
+            let t_start = std::time::Instant::now();
+            match Parser::from_src(&eval_input, &file) {
                 Err(e) => { eprintln!("parse error: {e}"); continue; }
                 Ok(mut p) => {
                     match p.parse_module() {
@@ -434,6 +507,10 @@ fn main() -> Result<()> {
                             match loader.eval_items(items, &mut env, &mut tracer, Path::new(".")) {
                                 Err(e) => { eprintln!("error: {}", e.root_cause()); }
                                 Ok(v) => {
+                                    let elapsed = t_start.elapsed();
+                                    if timed {
+                                        println!("time: {:.3}ms", elapsed.as_secs_f64() * 1000.0);
+                                    }
                                     if !matches!(v, Val::Unit) {
                                         if let Some(j) = v.to_json() {
                                             println!("{}", canon_json(&j).unwrap_or_else(|_| "?".to_string()));
