@@ -38,6 +38,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 thread_local! {
+    static VM_FNS: std::cell::RefCell<Vec<VmCompiledFn>> = std::cell::RefCell::new(Vec::new());
+    static VM_SELF_SLOTS: std::cell::RefCell<std::collections::HashMap<usize, (usize, Val)>> = std::cell::RefCell::new(std::collections::HashMap::<usize, (usize, Val)>::new());
+
     static PROGRAM_ARGS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![]);
 }
 fn set_program_args(args: Vec<String>) {
@@ -370,6 +373,34 @@ entry = \"main.fard\"\n", name))?;
     println!("  fardrun run --program main.fard --out ./out");
     Ok(())
 }
+
+
+fn expr_contains_var(expr: &Expr, name: &str) -> bool {
+    match expr {
+        Expr::Var(n) => n == name,
+        Expr::Int(_) | Expr::FloatLit(_) | Expr::Bool(_) | Expr::Str(_) | Expr::Null => false,
+        Expr::Let(_, e1, e2) => expr_contains_var(e1, name) || expr_contains_var(e2, name),
+        Expr::LetPat(_, e1, e2) => expr_contains_var(e1, name) || expr_contains_var(e2, name),
+        Expr::If(c, t, f) => expr_contains_var(c, name) || expr_contains_var(t, name) || expr_contains_var(f, name),
+        Expr::Bin(_, a, b) => expr_contains_var(a, name) || expr_contains_var(b, name),
+        Expr::Unary(_, e) => expr_contains_var(e, name),
+        Expr::Call(f, args) => expr_contains_var(f, name) || args.iter().any(|a| expr_contains_var(a, name)),
+        Expr::Fn(_, body) | Expr::Lambda(_, body) => expr_contains_var(body, name),
+        Expr::Get(e, _) => expr_contains_var(e, name),
+        Expr::List(xs) => xs.iter().any(|x| expr_contains_var(x, name)),
+        Expr::Rec(kvs) => kvs.iter().any(|(_, v)| expr_contains_var(v, name)),
+        Expr::Try(e) | Expr::Return(e) => expr_contains_var(e, name),
+        Expr::Match(e, arms) => expr_contains_var(e, name) || arms.iter().any(|a| expr_contains_var(&a.body, name)),
+        Expr::While(a, b, c) => expr_contains_var(a, name) || expr_contains_var(b, name) || expr_contains_var(c, name),
+        Expr::Using(_, e1, e2) => expr_contains_var(e1, name) || expr_contains_var(e2, name),
+        Expr::Index(a, b) => expr_contains_var(a, name) || expr_contains_var(b, name),
+        Expr::NamedCall(f, args) => expr_contains_var(f, name) || args.iter().any(|(_, v)| expr_contains_var(v, name)),
+        Expr::StrInterp(_) => false,
+    }
+}
+
+
+
 
 fn main() -> Result<()> {
     let (run, want_version, want_repl, test_args, publish_args, install_args, new_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
@@ -2758,6 +2789,8 @@ enum Val {
     Mtx(Arc<Mutex<Val>>),
     Big(Box<BigInt>),
     Promise(Arc<Mutex<Option<Result<Val, String>>>>),
+    /// VM-compiled function — executed by the bytecode VM, not the tree-walker
+    VmFunc(usize),  // index into a Vec<CompiledFn> held by the VM
 }
 
 impl Val {
@@ -2779,6 +2812,7 @@ impl Val {
             Val::Mtx(..) => "mutex",
             Val::Big(..) => "bigint",
             Val::Promise(..) => "promise",
+            Val::VmFunc(_) => "vm-func",
         }
     }
 }
@@ -3194,7 +3228,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) | Val::Promise(..) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) | Val::Promise(..) | Val::VmFunc(_) => None,
         }
     }
 }
@@ -3505,6 +3539,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::Mtx(..) => "mutex",
                         Val::Big(..) => "bigint",
                         Val::Promise(..) => "promise",
+                        Val::VmFunc(_) => "vm-func",
                     })
                 }
             }
@@ -3925,6 +3960,18 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
     loop {
         match cur_f {
             Val::Builtin(b) => return call_builtin(b, cur_args, tracer, loader),
+            Val::VmFunc(fn_idx) => {
+                // Use VM_FNS without cloning — borrow for the duration of this call
+                return VM_FNS.with(|cell| {
+                    let fns = cell.borrow();
+                    // SAFETY: we hold the borrow for the duration of vm_exec_fn
+                    // No other thread modifies VM_FNS during execution (single-threaded eval)
+                    let fns_ptr: *const Vec<VmCompiledFn> = &*fns;
+                    drop(fns);
+                    let fns_ref = unsafe { &*fns_ptr };
+                    vm_exec_fn(fns_ref, fn_idx, cur_args, tracer, loader)
+                });
+            }
             Val::Func(fun) => {
                 if fun.params.len() != cur_args.len() {
                     bail!("arity mismatch: expected {} args, got {}", fun.params.len(), cur_args.len());
@@ -4029,6 +4076,554 @@ fn eval_tco(expr: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut Module
         other => Ok(TcoResult::Done(eval(other, env, tracer, loader)?)),
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FARD BYTECODE VM
+// Compiles Expr trees to flat bytecode + executes in a register VM.
+// Eliminates Arc<Mutex<HashMap>> env lookups — uses integer slot indices.
+// Falls back to tree-walker for unsupported expressions.
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone)]
+enum VmOp {
+    LoadInt(i64),
+    LoadFloat(f64),
+    LoadBool(bool),
+    LoadNull,
+    LoadStr(String),
+    LoadSlot(usize),
+    StoreSlot(usize),
+    Add, Sub, Mul, Div, Mod,
+    Eq, Ne, Lt, Le, Gt, Ge,
+    Neg, Not,
+    Jump(usize),
+    JumpIfFalse(usize),
+    JumpIfTrue(usize),
+    Pop,
+    MakeList(usize),
+    MakeRec(usize),
+    GetField(String),
+    MakeClosure(usize),   // fn_idx into VmProgram.fns
+    VmCall(usize),        // n_args
+    Return,
+    TryOp,
+    Halt,
+}
+
+#[derive(Debug, Clone)]
+struct VmCompiledFn {
+    code: Vec<VmOp>,
+    n_slots: usize,
+    n_params: usize,
+    slot_names: Vec<String>,
+    self_slot: Option<usize>,
+    free_vars: Vec<(usize, Val)>,  // sparse: (slot_idx, val) for non-param free vars
+}
+
+struct VmCompiler {
+    code: Vec<VmOp>,
+    slot_names: Vec<String>,
+}
+
+impl VmCompiler {
+    fn new() -> Self { Self { code: Vec::new(), slot_names: Vec::new() } }
+
+    fn slot_of(&mut self, name: &str) -> usize {
+        if let Some(i) = self.slot_names.iter().rposition(|s| s == name) { return i; }
+        let i = self.slot_names.len();
+        self.slot_names.push(name.to_string());
+        i
+    }
+
+    fn emit(&mut self, op: VmOp) -> usize {
+        let i = self.code.len();
+        self.code.push(op);
+        i
+    }
+
+    fn patch(&mut self, idx: usize, target: usize) {
+        match &mut self.code[idx] {
+            VmOp::Jump(t) | VmOp::JumpIfFalse(t) | VmOp::JumpIfTrue(t) => *t = target,
+            _ => {}
+        }
+    }
+
+    fn compile(&mut self, expr: &Expr, fns: &mut Vec<VmCompiledFn>) -> Result<()> {
+        match expr {
+            Expr::Int(n)      => { self.emit(VmOp::LoadInt(*n)); }
+            Expr::FloatLit(f) => { self.emit(VmOp::LoadFloat(*f)); }
+            Expr::Bool(b)     => { self.emit(VmOp::LoadBool(*b)); }
+            Expr::Null        => { self.emit(VmOp::LoadNull); }
+            Expr::Str(s)      => { self.emit(VmOp::LoadStr(s.clone())); }
+
+            Expr::Var(name) => {
+                let slot = self.slot_of(name);
+                self.emit(VmOp::LoadSlot(slot));
+            }
+
+            Expr::Let(name, e1, e2) => {
+                self.compile(e1, fns)?;
+                let slot = self.slot_of(name);
+                self.emit(VmOp::StoreSlot(slot));
+                self.compile(e2, fns)?;
+            }
+
+            Expr::If(cond, then_e, else_e) => {
+                self.compile(cond, fns)?;
+                let jf = self.emit(VmOp::JumpIfFalse(0));
+                self.compile(then_e, fns)?;
+                let jmp = self.emit(VmOp::Jump(0));
+                let else_start = self.code.len();
+                self.patch(jf, else_start);
+                self.compile(else_e, fns)?;
+                self.patch(jmp, self.code.len());
+            }
+
+            Expr::Bin(op, a, b) => {
+                if op == "&&" {
+                    self.compile(a, fns)?;
+                    let jf = self.emit(VmOp::JumpIfFalse(0));
+                    self.emit(VmOp::Pop);
+                    self.compile(b, fns)?;
+                    self.patch(jf, self.code.len());
+                    return Ok(());
+                }
+                if op == "||" {
+                    self.compile(a, fns)?;
+                    let jt = self.emit(VmOp::JumpIfTrue(0));
+                    self.emit(VmOp::Pop);
+                    self.compile(b, fns)?;
+                    self.patch(jt, self.code.len());
+                    return Ok(());
+                }
+                self.compile(a, fns)?;
+                self.compile(b, fns)?;
+                let bin_op = match op.as_str() {
+                    "+"  => VmOp::Add, "-"  => VmOp::Sub, "*"  => VmOp::Mul,
+                    "/"  => VmOp::Div, "%"  => VmOp::Mod,
+                    "==" => VmOp::Eq,  "!=" => VmOp::Ne,
+                    "<"  => VmOp::Lt,  "<=" => VmOp::Le,
+                    ">"  => VmOp::Gt,  ">=" => VmOp::Ge,
+                    _    => bail!("vm: unsupported binary op: {op}"),
+                };
+                self.emit(bin_op);
+            }
+
+            Expr::Unary(op, e) => {
+                self.compile(e, fns)?;
+                match op.as_str() {
+                    "-" => { self.emit(VmOp::Neg); }
+                    "!" => { self.emit(VmOp::Not); }
+                    _   => bail!("vm: unsupported unary op"),
+                }
+            }
+
+            Expr::Get(obj, field) => {
+                self.compile(obj, fns)?;
+                self.emit(VmOp::GetField(field.clone()));
+            }
+
+            Expr::List(items) => {
+                for item in items { self.compile(item, fns)?; }
+                self.emit(VmOp::MakeList(items.len()));
+            }
+
+            Expr::Rec(kvs) => {
+                for (k, v) in kvs {
+                    self.emit(VmOp::LoadStr(k.clone()));
+                    self.compile(v, fns)?;
+                }
+                self.emit(VmOp::MakeRec(kvs.len()));
+            }
+
+            Expr::Call(f_expr, args) => {
+                self.compile(f_expr, fns)?;
+                for arg in args { self.compile(arg, fns)?; }
+                self.emit(VmOp::VmCall(args.len()));
+            }
+
+            Expr::Fn(params, body) | Expr::Lambda(params, body) => {
+                let mut inner = VmCompiler::new();
+                for p in params.iter() {
+                    match p {
+                        Pat::Bind(name) => { inner.slot_of(name); }
+                        _ => bail!("vm: fn param must be simple bind"),
+                    }
+                }
+                inner.compile(body, fns)?;
+                inner.emit(VmOp::Return);
+                let fn_idx = fns.len();
+                let n_slots = inner.slot_names.len();
+                fns.push(VmCompiledFn {
+                    code: inner.code,
+                    n_slots,
+                    n_params: params.len(),
+                    slot_names: inner.slot_names,
+                    self_slot: None,
+                    free_vars: Vec::new(),
+                });
+                self.emit(VmOp::MakeClosure(fn_idx));
+            }
+
+            Expr::Try(e) => {
+                self.compile(e, fns)?;
+                self.emit(VmOp::TryOp);
+            }
+
+            Expr::Return(e) => {
+                self.compile(e, fns)?;
+                self.emit(VmOp::Return);
+            }
+
+            // Unsupported — fall back to tree-walker
+            _ => bail!("vm: unsupported expr"),
+        }
+        Ok(())
+    }
+}
+
+fn vm_arith_add(a: Val, b: Val) -> Result<Val> {
+    match (a, b) {
+        (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_add(y))),
+        (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x + y)),
+        (Val::Text(x), Val::Text(y))   => Ok(Val::Text(x + &y)),
+        _ => bail!("vm: type error in +"),
+    }
+}
+fn vm_arith_sub(a: Val, b: Val) -> Result<Val> {
+    match (a, b) {
+        (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_sub(y))),
+        (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x - y)),
+        _ => bail!("vm: type error in -"),
+    }
+}
+fn vm_arith_mul(a: Val, b: Val) -> Result<Val> {
+    match (a, b) {
+        (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_mul(y))),
+        (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x * y)),
+        _ => bail!("vm: type error in *"),
+    }
+}
+fn vm_arith_div(a: Val, b: Val) -> Result<Val> {
+    match (a, b) {
+        (Val::Int(_, ), Val::Int(0))   => bail!("ERROR_DIV_ZERO"),
+        (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x / y)),
+        (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x / y)),
+        _ => bail!("vm: type error in /"),
+    }
+}
+fn vm_arith_mod(a: Val, b: Val) -> Result<Val> {
+    match (a, b) {
+        (Val::Int(_, ), Val::Int(0)) => bail!("ERROR_DIV_ZERO"),
+        (Val::Int(x), Val::Int(y))   => Ok(Val::Int(x % y)),
+        _ => bail!("vm: type error in %"),
+    }
+}
+fn vm_val_eq(a: &Val, b: &Val) -> bool {
+    match (a, b) {
+        (Val::Int(x), Val::Int(y))     => x == y,
+        (Val::Float(x), Val::Float(y)) => x == y,
+        (Val::Bool(x), Val::Bool(y))   => x == y,
+        (Val::Text(x), Val::Text(y))   => x == y,
+        (Val::Unit, Val::Unit)         => true,
+        _ => false,
+    }
+}
+fn vm_val_lt(a: &Val, b: &Val) -> Result<bool> {
+    match (a, b) {
+        (Val::Int(x), Val::Int(y))     => Ok(x < y),
+        (Val::Float(x), Val::Float(y)) => Ok(x < y),
+        (Val::Text(x), Val::Text(y))   => Ok(x < y),
+        _ => bail!("vm: type error in <"),
+    }
+}
+
+fn vm_exec_fn(
+    fns: &Vec<VmCompiledFn>,
+    fn_idx: usize,
+    args: Vec<Val>,
+    tracer: &mut Tracer,
+    loader: &mut ModuleLoader,
+) -> Result<Val> {
+    let f = &fns[fn_idx];
+    if args.len() != f.n_params {
+        bail!("arity mismatch: expected {} args, got {}", f.n_params, args.len());
+    }
+    let f = &fns[fn_idx];
+    let n_slots = f.n_slots.max(args.len());
+    let mut slots = vec![Val::Unit; n_slots];
+    // Populate free variables (sparse — only non-param, non-Unit slots)
+    for (slot_idx, val) in &f.free_vars {
+        if *slot_idx < slots.len() {
+            slots[*slot_idx] = val.clone();
+        }
+    }
+    // Params override initial vals
+    for (i, a) in args.into_iter().enumerate() { slots[i] = a; }
+    // Self-reference slot (cheap — just an index)
+    if let Some(self_slot) = f.self_slot {
+        if self_slot >= slots.len() { slots.resize(self_slot + 1, Val::Unit); }
+        slots[self_slot] = Val::VmFunc(fn_idx);
+    }
+
+    let code = fns[fn_idx].code.clone();
+    let mut stack: Vec<Val> = Vec::with_capacity(32);
+    let mut ip = 0usize;
+
+    loop {
+        match &code[ip] {
+            VmOp::LoadInt(n)   => { stack.push(Val::Int(*n)); ip += 1; }
+            VmOp::LoadFloat(f) => { stack.push(Val::Float(*f)); ip += 1; }
+            VmOp::LoadBool(b)  => { stack.push(Val::Bool(*b)); ip += 1; }
+            VmOp::LoadNull     => { stack.push(Val::Unit); ip += 1; }
+            VmOp::LoadStr(s)   => { stack.push(Val::Text(s.clone())); ip += 1; }
+
+            VmOp::LoadSlot(i) => {
+                let v = slots.get(*i).cloned().unwrap_or(Val::Unit);
+                stack.push(v); ip += 1;
+            }
+            VmOp::StoreSlot(i) => {
+                let v = stack.pop().unwrap_or(Val::Unit);
+                if *i >= slots.len() { slots.resize(*i + 1, Val::Unit); }
+                slots[*i] = v; ip += 1;
+            }
+
+            VmOp::Add => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_add(a, b)?); ip += 1; }
+            VmOp::Sub => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_sub(a, b)?); ip += 1; }
+            VmOp::Mul => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_mul(a, b)?); ip += 1; }
+            VmOp::Div => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_div(a, b)?); ip += 1; }
+            VmOp::Mod => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_mod(a, b)?); ip += 1; }
+            VmOp::Eq  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_eq(&a, &b))); ip += 1; }
+            VmOp::Ne  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(!vm_val_eq(&a, &b))); ip += 1; }
+            VmOp::Lt  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&a, &b)?)); ip += 1; }
+            VmOp::Le  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&a, &b)? || vm_val_eq(&a, &b))); ip += 1; }
+            VmOp::Gt  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&b, &a)?)); ip += 1; }
+            VmOp::Ge  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&b, &a)? || vm_val_eq(&a, &b))); ip += 1; }
+            VmOp::Neg => { let a = stack.pop().unwrap(); match a { Val::Int(n) => stack.push(Val::Int(-n)), Val::Float(f) => stack.push(Val::Float(-f)), _ => bail!("vm: neg type error") } ip += 1; }
+            VmOp::Not => { let a = stack.pop().unwrap(); match a { Val::Bool(b) => stack.push(Val::Bool(!b)), _ => bail!("vm: not type error") } ip += 1; }
+
+            VmOp::Jump(target)        => { ip = *target; }
+            VmOp::JumpIfFalse(target) => {
+                match stack.last() {
+                    Some(Val::Bool(false)) => { ip = *target; }
+                    Some(Val::Bool(true))  => { ip += 1; }
+                    _ => bail!("vm: JumpIfFalse requires bool"),
+                }
+            }
+            VmOp::JumpIfTrue(target) => {
+                match stack.last() {
+                    Some(Val::Bool(true))  => { ip = *target; }
+                    Some(Val::Bool(false)) => { ip += 1; }
+                    _ => bail!("vm: JumpIfTrue requires bool"),
+                }
+            }
+
+            VmOp::Pop => { stack.pop(); ip += 1; }
+
+            VmOp::MakeList(n) => {
+                let len = stack.len();
+                let items: Vec<Val> = stack.drain(len - n ..).collect();
+                stack.push(Val::List(items)); ip += 1;
+            }
+
+            VmOp::MakeRec(n) => {
+                let len = stack.len();
+                let pairs: Vec<Val> = stack.drain(len - n * 2 ..).collect();
+                let mut m = BTreeMap::new();
+                let mut i = 0;
+                while i + 1 < pairs.len() {
+                    let k = match &pairs[i] { Val::Text(s) => s.clone(), _ => bail!("vm: record key must be text") };
+                    m.insert(k, pairs[i+1].clone());
+                    i += 2;
+                }
+                stack.push(Val::Record(m)); ip += 1;
+            }
+
+            VmOp::GetField(field) => {
+                let obj = stack.pop().unwrap();
+                match obj {
+                    Val::Record(m) => {
+                        let v = m.get(field).cloned().ok_or_else(|| anyhow!("no member '{field}'"))?;
+                        stack.push(v);
+                    }
+                    _ => bail!("vm: GetField on non-record"),
+                }
+                ip += 1;
+            }
+
+            VmOp::MakeClosure(fn_idx) => {
+                stack.push(Val::VmFunc(*fn_idx)); ip += 1;
+            }
+
+            VmOp::VmCall(n_args) => {
+                let len = stack.len();
+                let args: Vec<Val> = stack.drain(len - n_args ..).collect();
+                let fv = stack.pop().unwrap();
+                let result = vm_dispatch_call(fns, fv, args, tracer, loader)?;
+                stack.push(result); ip += 1;
+            }
+
+            VmOp::TryOp => {
+                let v = stack.pop().unwrap();
+                match &v {
+                    Val::Record(m) => {
+                        match m.get("t").and_then(|t| if let Val::Text(s) = t { Some(s.as_str()) } else { None }) {
+                            Some("ok")  => { stack.push(m.get("v").cloned().unwrap_or(Val::Unit)); }
+                            Some("err") => { return Ok(mk_result_err(m.get("e").cloned().unwrap_or(Val::Unit))); }
+                            _ => bail!("vm: ? requires result record with t=ok or t=err"),
+                        }
+                    }
+                    _ => bail!("vm: ? requires result record"),
+                }
+                ip += 1;
+            }
+
+            VmOp::Return => { return Ok(stack.pop().unwrap_or(Val::Unit)); }
+            VmOp::Halt   => { break; }
+        }
+    }
+    Ok(stack.pop().unwrap_or(Val::Unit))
+}
+
+fn vm_dispatch_call(
+    fns: &Vec<VmCompiledFn>,
+    fv: Val,
+    args: Vec<Val>,
+    tracer: &mut Tracer,
+    loader: &mut ModuleLoader,
+) -> Result<Val> {
+    match fv {
+        Val::VmFunc(fn_idx) => {
+            vm_exec_fn(fns, fn_idx, args, tracer, loader)
+        }
+        Val::Func(f)        => call(Val::Func(f), args, tracer, loader),
+        Val::Builtin(b)     => call_builtin(b, args, tracer, loader),
+        Val::BoundMethod(recv, func) => {
+            let mut full = vec![*recv];
+            full.extend(args);
+            vm_dispatch_call(&vec![], *func, full, tracer, loader)
+        }
+        _ => bail!("vm: call on non-function"),
+    }
+}
+
+/// Try to compile and run expr in the VM.
+/// Returns None if expr uses unsupported features — caller falls back to tree-walker.
+fn try_vm_eval(
+    expr: &Expr,
+    env: &mut Env,
+    tracer: &mut Tracer,
+    loader: &mut ModuleLoader,
+) -> Option<Result<Val>> {
+    let mut fns: Vec<VmCompiledFn> = Vec::new();
+    let mut compiler = VmCompiler::new();
+
+    // Pre-populate slots from current env so Var lookups work
+    let env_keys = env.keys();
+    for k in &env_keys {
+        compiler.slot_of(k);
+    }
+
+    if compiler.compile(expr, &mut fns).is_err() {
+        return None;
+    }
+    compiler.emit(VmOp::Return);
+
+    let n_slots = compiler.slot_names.len();
+    let slot_names = compiler.slot_names.clone();
+
+    fns.push(VmCompiledFn {
+        code: compiler.code,
+        n_slots,
+        n_params: 0,
+        slot_names: slot_names.clone(),
+                    self_slot: None,
+                    free_vars: Vec::new(),
+                });
+    let entry_idx = fns.len() - 1;
+
+    // Build initial slot values from env
+    let mut slots = vec![Val::Unit; n_slots];
+    for (i, name) in slot_names.iter().enumerate() {
+        if let Some(v) = env.get(name) {
+            slots[i] = v;
+        }
+    }
+
+    // Execute: inject pre-loaded slots directly
+    let code = fns[entry_idx].code.clone();
+    let mut stack: Vec<Val> = Vec::with_capacity(32);
+    let mut ip = 0usize;
+
+    let result = (|| {
+        loop {
+            match &code[ip] {
+                VmOp::LoadInt(n)   => { stack.push(Val::Int(*n)); ip += 1; }
+                VmOp::LoadFloat(f) => { stack.push(Val::Float(*f)); ip += 1; }
+                VmOp::LoadBool(b)  => { stack.push(Val::Bool(*b)); ip += 1; }
+                VmOp::LoadNull     => { stack.push(Val::Unit); ip += 1; }
+                VmOp::LoadStr(s)   => { stack.push(Val::Text(s.clone())); ip += 1; }
+
+                VmOp::LoadSlot(i) => {
+                    stack.push(slots.get(*i).cloned().unwrap_or(Val::Unit)); ip += 1;
+                }
+                VmOp::StoreSlot(i) => {
+                    let v = stack.pop().unwrap_or(Val::Unit);
+                    if *i >= slots.len() { slots.resize(*i + 1, Val::Unit); }
+                    slots[*i] = v; ip += 1;
+                }
+                VmOp::Add => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_add(a, b)?); ip += 1; }
+                VmOp::Sub => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_sub(a, b)?); ip += 1; }
+                VmOp::Mul => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_mul(a, b)?); ip += 1; }
+                VmOp::Div => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_div(a, b)?); ip += 1; }
+                VmOp::Mod => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(vm_arith_mod(a, b)?); ip += 1; }
+                VmOp::Eq  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_eq(&a, &b))); ip += 1; }
+                VmOp::Ne  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(!vm_val_eq(&a, &b))); ip += 1; }
+                VmOp::Lt  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&a, &b)?)); ip += 1; }
+                VmOp::Le  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&a, &b)? || vm_val_eq(&a, &b))); ip += 1; }
+                VmOp::Gt  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&b, &a)?)); ip += 1; }
+                VmOp::Ge  => { let b = stack.pop().unwrap(); let a = stack.pop().unwrap(); stack.push(Val::Bool(vm_val_lt(&b, &a)? || vm_val_eq(&a, &b))); ip += 1; }
+                VmOp::Neg => { let a = stack.pop().unwrap(); match a { Val::Int(n) => stack.push(Val::Int(-n)), Val::Float(f) => stack.push(Val::Float(-f)), _ => bail!("vm: neg type error") } ip += 1; }
+                VmOp::Not => { let a = stack.pop().unwrap(); match a { Val::Bool(b) => stack.push(Val::Bool(!b)), _ => bail!("vm: not type error") } ip += 1; }
+                VmOp::Jump(target)        => { ip = *target; }
+                VmOp::JumpIfFalse(target) => { match stack.last() { Some(Val::Bool(false)) => { ip = *target; } Some(Val::Bool(true)) => { ip += 1; } _ => bail!("vm: JumpIfFalse needs bool") } }
+                VmOp::JumpIfTrue(target)  => { match stack.last() { Some(Val::Bool(true))  => { ip = *target; } Some(Val::Bool(false)) => { ip += 1; } _ => bail!("vm: JumpIfTrue needs bool") } }
+                VmOp::Pop => { stack.pop(); ip += 1; }
+                VmOp::MakeList(n) => { let len = stack.len(); let items: Vec<Val> = stack.drain(len - n ..).collect(); stack.push(Val::List(items)); ip += 1; }
+                VmOp::MakeRec(n) => {
+                    let len = stack.len(); let pairs: Vec<Val> = stack.drain(len - n * 2 ..).collect();
+                    let mut m = BTreeMap::new(); let mut i = 0;
+                    while i + 1 < pairs.len() { let k = match &pairs[i] { Val::Text(s) => s.clone(), _ => bail!("vm: rec key must be text") }; m.insert(k, pairs[i+1].clone()); i += 2; }
+                    stack.push(Val::Record(m)); ip += 1;
+                }
+                VmOp::GetField(field) => {
+                    let obj = stack.pop().unwrap();
+                    match obj { Val::Record(m) => { let v = m.get(field).cloned().ok_or_else(|| anyhow!("no member '{field}'"))?; stack.push(v); } _ => bail!("vm: GetField on non-record") }
+                    ip += 1;
+                }
+                VmOp::MakeClosure(fn_idx) => { stack.push(Val::VmFunc(*fn_idx)); ip += 1; }
+                VmOp::VmCall(n_args) => {
+                    let len = stack.len(); let args: Vec<Val> = stack.drain(len - n_args ..).collect();
+                    let fv = stack.pop().unwrap();
+                    let result = vm_dispatch_call(&fns, fv, args, tracer, loader)?;
+                    stack.push(result); ip += 1;
+                }
+                VmOp::TryOp => {
+                    let v = stack.pop().unwrap();
+                    match &v { Val::Record(m) => { match m.get("t").and_then(|t| if let Val::Text(s) = t { Some(s.as_str()) } else { None }) { Some("ok") => { stack.push(m.get("v").cloned().unwrap_or(Val::Unit)); } Some("err") => { return Ok(mk_result_err(m.get("e").cloned().unwrap_or(Val::Unit))); } _ => bail!("vm: ? needs result") } } _ => bail!("vm: ? needs record") }
+                    ip += 1;
+                }
+                VmOp::Return => { return Ok(stack.pop().unwrap_or(Val::Unit)); }
+                VmOp::Halt   => { break; }
+            }
+        }
+        Ok(stack.pop().unwrap_or(Val::Unit))
+    })();
+
+    Some(result)
+}
+
+
 fn call_builtin(
     b: Builtin,
     args: Vec<Val>,
@@ -8622,12 +9217,99 @@ impl ModuleLoader {
                     env.set(name, v);
                 }
                 Item::Fn(name, params, _ret, body) => {
-                    let f = Val::Func(Func {
-                        params: params.into_iter().map(|(p, _)| p).collect(),
+                    let raw_params: Vec<Pat> = params.into_iter().map(|(p, _)| p).collect();
+                    // Try to compile to VM bytecode for pure functions with simple bind params
+                    let all_bind = raw_params.iter().all(|p| matches!(p, Pat::Bind(_)));
+                    let vm_val = if all_bind {
+                        let mut fns: Vec<VmCompiledFn> = Vec::new();
+                        let mut compiler = VmCompiler::new();
+                        // Pre-allocate param slots
+                        for p in &raw_params {
+                            if let Pat::Bind(n) = p { compiler.slot_of(n); }
+                        }
+                        // Pre-populate env slots so closures over outer vars work
+                        let env_keys = env.keys();
+                        for k in &env_keys {
+                            compiler.slot_of(k);
+                        }
+                        if compiler.compile(&body, &mut fns).is_ok() {
+                            compiler.emit(VmOp::Return);
+                            // Add self-name slot so recursive calls work
+                            let self_slot = compiler.slot_of(&name);
+                            let n_slots = compiler.slot_names.len();
+                            let slot_names = compiler.slot_names.clone();
+                            // Build free_vars: only slots actually referenced as Var in the body
+                            let n_params_local = raw_params.len();
+                            let mut free_vars: Vec<(usize, Val)> = Vec::new();
+                            for (i, sname) in slot_names.iter().enumerate() {
+                                if i >= n_params_local && sname != &name {
+                                    // Only include if the body actually uses this var
+                                    if expr_contains_var(&body, sname) {
+                                        if let Some(v) = env.get(sname) {
+                                            if !matches!(v, Val::Unit) {
+                                                free_vars.push((i, v));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            fns.push(VmCompiledFn {
+                                code: compiler.code,
+                                n_slots,
+                                n_params: raw_params.len(),
+                                slot_names,
+                                self_slot: Some(self_slot),
+                                free_vars,
+                            });
+                            let fn_idx = fns.len() - 1;
+                            // Store compiled fns in a thread-local for the VM to access
+                            VM_FNS.with(|cell| {
+                                let mut v = cell.borrow_mut();
+                                let base = v.len();
+                                // Remap fn_indices and record self-slot
+                                for mut f in fns {
+                                    for op in f.code.iter_mut() {
+                                        if let VmOp::MakeClosure(i) = op { *i += base; }
+                                    }
+                                    v.push(f);
+                                }
+                                let global_idx = base + fn_idx;
+                                // Register self-slot so vm_exec_fn pre-populates it
+                                VM_SELF_SLOTS.with(|ss| {
+                                    ss.borrow_mut().insert(global_idx, (self_slot, Val::VmFunc(global_idx)));
+                                });
+                                Some(Val::VmFunc(global_idx))
+                            })
+                        } else {
+                            None
+                        }
+                    } else { None };
+
+                    let f = vm_val.unwrap_or_else(|| Val::Func(Func {
+                        params: raw_params,
                         body,
                         env: env.clone(),
-                    });
-                    env.set(name, f);
+                    }));
+                    env.set(name.clone(), f.clone());
+                    // For VM fns: inject self-reference into the fn's own slot table
+                    // so recursive calls (Var("fib") -> LoadSlot(N)) resolve correctly
+                    if let Val::VmFunc(fn_idx) = &f {
+                        let fi = *fn_idx;
+                        VM_FNS.with(|cell| {
+                            let fns = cell.borrow();
+                            if let Some(compiled) = fns.get(fi) {
+                                // find slot index for own name
+                                if let Some(self_slot) = compiled.slot_names.iter().position(|s| s == &name) {
+                                    drop(fns);
+                                    // store initial_vals hint: slot N = VmFunc(fi)
+                                    // We do this via a separate thread-local
+                                    VM_SELF_SLOTS.with(|ss| {
+                                        ss.borrow_mut().insert(fi, (self_slot, Val::VmFunc(fi)));
+                                    });
+                                }
+                            }
+                        });
+                    }
                 }
                 Item::Export(ns) => exports = Some(ns),
                 Item::Test(_, _, _) => {
