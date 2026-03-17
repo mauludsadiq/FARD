@@ -20,6 +20,60 @@ enum Ty {
     Dynamic,        // unknown / from import — no errors propagate through this
 }
 
+/// A polymorphic type scheme: ∀(vars). ty
+/// vars are the generalized type variables
+#[derive(Clone, Debug)]
+struct Scheme {
+    vars: Vec<u32>,
+    ty: Ty,
+}
+
+impl Scheme {
+    fn mono(ty: Ty) -> Self { Scheme { vars: vec![], ty } }
+}
+
+impl Ty {
+    fn display(&self) -> String {
+        match self {
+            Ty::Int => "Int".to_string(),
+            Ty::Float => "Float".to_string(),
+            Ty::Bool => "Bool".to_string(),
+            Ty::Str => "Text".to_string(),
+            Ty::Null => "Null".to_string(),
+            Ty::Dynamic => "?".to_string(),
+            Ty::Var(n) => format!("t{}", n),
+            Ty::List(inner) => format!("List({})", inner.display()),
+            Ty::Func(params, ret) => {
+                let ps: Vec<String> = params.iter().map(|p| p.display()).collect();
+                format!("({}) -> {}", ps.join(", "), ret.display())
+            }
+            Ty::Rec(fields) => {
+                let fs: Vec<String> = fields.iter().map(|(k, v)| format!("{}: {}", k, v.display())).collect();
+                format!("{{ {} }}", fs.join(", "))
+            }
+        }
+    }
+
+    fn free_vars(&self) -> Vec<u32> {
+        match self {
+            Ty::Var(n) => vec![*n],
+            Ty::List(inner) => inner.free_vars(),
+            Ty::Func(params, ret) => {
+                let mut vs: Vec<u32> = params.iter().flat_map(|p| p.free_vars()).collect();
+                vs.extend(ret.free_vars());
+                vs.sort(); vs.dedup();
+                vs
+            }
+            Ty::Rec(fields) => {
+                let mut vs: Vec<u32> = fields.iter().flat_map(|(_, v)| v.free_vars()).collect();
+                vs.sort(); vs.dedup();
+                vs
+            }
+            _ => vec![],
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct TyError {
     msg: String,
@@ -75,14 +129,14 @@ impl Subst {
             (Ty::List(a), Ty::List(b)) => self.unify(a, b),
             (Ty::Func(ap, ar), Ty::Func(bp, br)) => {
                 if ap.len() != bp.len() {
-                    bail!("arity mismatch: {} vs {}", ap.len(), bp.len());
+                    bail!("arity mismatch: expected {} params, got {}", ap.len(), bp.len());
                 }
                 for (a, b) in ap.iter().zip(bp.iter()) {
                     self.unify(a, b)?;
                 }
                 self.unify(ar, br)
             }
-            _ => bail!("type mismatch: {:?} vs {:?}", a, b),
+            _ => bail!("type mismatch: {} vs {}", a.display(), b.display()),
         }
     }
 
@@ -102,7 +156,7 @@ struct Checker {
     subst: Subst,
     next_var: u32,
     errors: Vec<TyError>,
-    env: Vec<HashMap<String, Ty>>,
+    env: Vec<HashMap<String, Scheme>>,
 }
 
 impl Checker {
@@ -125,18 +179,57 @@ impl Checker {
     fn pop(&mut self) { self.env.pop(); }
 
     fn define(&mut self, name: &str, ty: Ty) {
+        self.define_scheme(name, Scheme::mono(ty));
+    }
+
+    fn define_scheme(&mut self, name: &str, scheme: Scheme) {
         if let Some(top) = self.env.last_mut() {
-            top.insert(name.to_string(), ty);
+            top.insert(name.to_string(), scheme);
         }
     }
 
-    fn lookup(&self, name: &str) -> Ty {
-        for scope in self.env.iter().rev() {
-            if let Some(t) = scope.get(name) {
-                return t.clone();
+    fn lookup(&mut self, name: &str) -> Ty {
+        let scheme = self.env.iter().rev()
+            .find_map(|scope| scope.get(name))
+            .cloned();
+        match scheme {
+            Some(s) => self.instantiate_scheme(&s),
+            None => Ty::Dynamic,
+        }
+    }
+
+    fn instantiate_scheme(&mut self, scheme: &Scheme) -> Ty {
+        if scheme.vars.is_empty() {
+            return scheme.ty.clone();
+        }
+        let mut inst_subst = Subst::new();
+        for &v in &scheme.vars {
+            let fresh = self.fresh();
+            inst_subst.bind(v, fresh);
+        }
+        inst_subst.apply(&scheme.ty)
+    }
+
+    fn generalize(&self, ty: &Ty) -> Scheme {
+        // Collect free vars in ty that are NOT free in the env
+        let ty_vars = self.subst.apply(ty).free_vars();
+        let env_vars = self.env_free_vars();
+        let generalized: Vec<u32> = ty_vars.into_iter()
+            .filter(|v| !env_vars.contains(v))
+            .collect();
+        Scheme { vars: generalized, ty: self.subst.apply(ty) }
+    }
+
+    fn env_free_vars(&self) -> Vec<u32> {
+        let mut vars = Vec::new();
+        for scope in &self.env {
+            for scheme in scope.values() {
+                let applied = self.subst.apply(&scheme.ty);
+                vars.extend(applied.free_vars());
             }
         }
-        Ty::Dynamic // unbound — from import or builtin
+        vars.sort(); vars.dedup();
+        vars
     }
 
     fn err(&mut self, msg: String, line: usize) {
@@ -690,7 +783,7 @@ impl Parser {
                 let body = self.parse_expr();
                 Expr::Let(name, Box::new(val), Box::new(body), line)
             }
-            _ => { self.eat(); Expr::Null(line) }
+            _ => { Expr::Null(line) }  // don't consume unknown tokens
         }
     }
 }
@@ -750,7 +843,7 @@ impl Checker {
                             ft.clone()
                         } else {
                             // field not found in known record — warn but return Dynamic
-                            self.err(format!("field '{}' not found in record", field), *line);
+                            self.err(format!("no field '{}' in record", field), *line);
                             Ty::Dynamic
                         }
                     }
@@ -799,7 +892,7 @@ impl Checker {
                     other => {
                         // calling a non-function non-dynamic — definite error
                         if !matches!(other, Ty::Var(_)) {
-                            self.err(format!("calling non-function: {:?}", other), *line);
+                            self.err(format!("calling non-function: {}", other.display()), *line);
                         }
                         Ty::Dynamic
                     }
@@ -839,7 +932,7 @@ impl Checker {
                 let ct = self.infer(cond);
                 let ct = self.subst.apply(&ct);
                 if !matches!(ct, Ty::Bool | Ty::Dynamic | Ty::Var(_)) {
-                    self.err(format!("if condition must be Bool, got {:?}", ct), *line);
+                    self.err(format!("if condition must be Bool, got {}", ct.display()), *line);
                 }
                 let tt = self.infer(then);
                 let et = self.infer(else_);
@@ -860,20 +953,36 @@ impl Checker {
                 let rt = self.subst.apply(&rt);
                 match op.as_str() {
                     "+" | "-" | "*" | "/" | "%" => {
-                        // numeric or dynamic
+                        // Error only on definitively non-numeric types
+                        let non_numeric = |t: &Ty| matches!(t,
+                            Ty::Bool | Ty::Null |
+                            Ty::List(_) | Ty::Rec(_) | Ty::Func(_, _)
+                        );
+                        // Text + Text is valid (string concat)
+                        let text_concat = op == "+" && matches!((&lt, &rt),
+                            (Ty::Str, Ty::Str) | (Ty::Str, Ty::Dynamic) |
+                            (Ty::Dynamic, Ty::Str));
+                        if text_concat {
+                            return Ty::Str;
+                        }
+                        if non_numeric(&lt) || non_numeric(&rt) {
+                            self.err(
+                                format!("operator '{}' requires numeric operands, got {} and {}", op, lt.display(), rt.display()),
+                                *line,
+                            );
+                            return Ty::Dynamic;
+                        }
                         match (&lt, &rt) {
                             (Ty::Dynamic, _) | (_, Ty::Dynamic) => Ty::Dynamic,
                             (Ty::Int, Ty::Int) => Ty::Int,
                             (Ty::Float, Ty::Float) => Ty::Float,
                             (Ty::Int, Ty::Float) | (Ty::Float, Ty::Int) => Ty::Float,
-                            (Ty::Var(_), _) | (_, Ty::Var(_)) => Ty::Dynamic,
-                            _ => {
-                                self.err(
-                                    format!("operator '{}' requires numeric operands, got {:?} and {:?}", op, lt, rt),
-                                    *line,
-                                );
-                                Ty::Dynamic
+                            // Var operands — unify together, return same type
+                            (Ty::Var(_), _) | (_, Ty::Var(_)) => {
+                                self.subst.unify(&lt, &rt).ok();
+                                self.subst.apply(&lt)
                             }
+                            _ => Ty::Dynamic,
                         }
                     }
                     "&&" | "||" => {
@@ -883,7 +992,7 @@ impl Checker {
                             (Ty::Var(_), _) | (_, Ty::Var(_)) => Ty::Bool,
                             _ => {
                                 self.err(
-                                    format!("operator '{}' requires Bool operands, got {:?} and {:?}", op, lt, rt),
+                                    format!("operator '{}' requires Bool operands, got {} and {}", op, lt.display(), rt.display()),
                                     *line,
                                 );
                                 Ty::Bool
@@ -900,8 +1009,10 @@ impl Checker {
                 let t = self.subst.apply(&t);
                 match op.as_str() {
                     "!" => {
-                        if !matches!(t, Ty::Bool | Ty::Dynamic | Ty::Var(_)) {
-                            self.err(format!("'!' requires Bool, got {:?}", t), *line);
+                        match &t {
+                            Ty::Bool | Ty::Dynamic => {}
+                            Ty::Var(_) => { self.subst.unify(&t, &Ty::Bool).ok(); }
+                            _ => { self.err(format!("'!' requires Bool, got {}", t.display()), *line); }
                         }
                         Ty::Bool
                     }
@@ -964,8 +1075,9 @@ fn main() {
                 checker.define(name, t);
             }
             TopItem::Fn(name, params, body, _line) => {
-                // Pre-register as Dynamic for recursion
-                checker.define(name, Ty::Dynamic);
+                // Pre-register with a fresh var for recursive self-reference
+                let self_var = checker.fresh();
+                checker.define(name, self_var.clone());
                 checker.push();
                 let param_tys: Vec<Ty> = params.iter().map(|p| {
                     let t = checker.fresh();
@@ -975,14 +1087,19 @@ fn main() {
                 let ret = checker.infer(body);
                 checker.pop();
                 let ft = Ty::Func(param_tys, Box::new(ret));
-                checker.define(name, ft);
+                // Unify self-reference var with actual fn type
+                checker.subst.unify(&self_var, &ft).ok();
+                let ft_applied = checker.subst.apply(&ft);
+                // Use monomorphic type (no generalization)
+                // Generalization requires type classes for numeric operators
+                checker.define(name, ft_applied);
             }
             TopItem::Test(label, expr, line) => {
                 let t = checker.infer(expr);
                 let t = checker.subst.apply(&t);
                 if !matches!(t, Ty::Bool | Ty::Dynamic | Ty::Var(_)) {
                     checker.err(
-                        format!("test '{}' body must return Bool, got {:?}", label, t),
+                        format!("test '{}' body must return Bool, got {}", label, t.display()),
                         *line,
                     );
                 }
