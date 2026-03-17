@@ -1,0 +1,166 @@
+// fard-watch@1.6.0 — File watching utilities for FARD
+// Poll-based file watching — checks mtime via stat
+// Every change event is a witnessed artifact
+import("std/process") as process
+import("std/int")     as int
+import("std/io")      as io
+import("std/str")     as str
+import("std/list")    as list
+import("std/rec")     as rec
+import("std/json")    as json
+import("std/time")    as time
+import("std/hash")    as hash
+
+// Get file modification time via stat
+fn mtime(path) {
+  let r = process.spawn("stat", ["-f", "%m", path], "")
+  if r.code == 0 then
+    let s = str.trim(r.stdout)
+    if str.len(s) > 0 then str.to_int(s) else 0
+  else 0
+}
+
+fn str_to_int(s) {
+  import("std/int") as int
+  int.parse(s).v
+}
+
+fn mtime_linux(path) {
+  let r = process.spawn("stat", ["-c", "%Y", path], "")
+  if r.code == 0 then str_to_int(str.trim(r.stdout))
+  else 0
+}
+
+fn file_exists(path) {
+  let r = io.file_exists(path)
+  r
+}
+
+fn file_hash(path) {
+  let r = io.read_file(path)
+  if rec.has(r, "ok") then hash.sha256_text(r.ok)
+  else null
+}
+
+// Snapshot of watched files
+fn snapshot(paths) {
+  list.fold(paths, {}, fn(acc, path) {
+    let mt   = mtime(path)
+    let h    = file_hash(path)
+    rec.set(acc, path, { mtime: mt, hash: h, exists: file_exists(path) })
+  })
+}
+
+// Compare two snapshots, return list of change events
+fn check_modified(path, old_snap, new_snap) {
+  let oe = rec.get(old_snap, path)
+  let ne = rec.get(new_snap, path)
+  if oe.hash != ne.hash then
+    [{ type: "modified", path: path, ts: time.now(), old_hash: oe.hash, new_hash: ne.hash }]
+  else []
+}
+
+fn diff_path(path, old_snap, new_snap) {
+  let had = rec.has(old_snap, path)
+  let has = rec.has(new_snap, path)
+  if had == false && has then [{ type: "created", path: path, ts: time.now() }]
+  else if had && has == false then [{ type: "deleted", path: path, ts: time.now() }]
+  else if had && has then check_modified(path, old_snap, new_snap)
+  else []
+}
+
+fn diff_snapshots(old_snap, new_snap) {
+  let all_paths = list.concat([rec.keys(old_snap), rec.keys(new_snap)])
+  let unique    = list.fold(all_paths, [], fn(acc, p) {
+    if list.any(acc, fn(x) { x == p }) then acc
+    else list.concat([acc, [p]])
+  })
+  list.flat_map(unique, fn(path) { diff_path(path, old_snap, new_snap) })
+}
+
+// Watch files once — return changes since last snapshot
+fn poll(paths, prev_snapshot) {
+  let new_snap = snapshot(paths)
+  let changes  = diff_snapshots(prev_snapshot, new_snap)
+  { changes: changes, snapshot: new_snap }
+}
+
+// Watch files for n iterations with delay_ms between polls
+fn watch(paths, n, delay_ms, on_change) {
+  let init_snap = snapshot(paths)
+  let result = while { i: 0, snap: init_snap, events: [] }
+    fn(s) { s.i < n }
+    fn(s) {
+      let _ = process.spawn("sleep", [str.concat("0.", str.from_int(delay_ms))], "")
+      let new_snap = snapshot(paths)
+      let changes  = diff_snapshots(s.snap, new_snap)
+      let new_events = if list.len(changes) > 0 then
+        let _ = on_change(changes)
+        list.concat([s.events, changes])
+      else s.events
+      { i: s.i + 1, snap: new_snap, events: new_events }
+    }
+  { events: result.value.events, total_polls: n }
+}
+
+// Watch a directory for new/changed files
+fn watch_dir(dir, pattern, n, delay_ms, on_change) {
+  let get_files = fn() {
+    let r = process.spawn("find", [dir, "-name", pattern, "-type", "f"], "")
+    if r.code == 0 then
+      let lines = list.filter(str.split_lines(str.trim(r.stdout)), fn(l) { str.len(l) > 0 })
+      lines
+    else []
+  }
+  let init_files = get_files()
+  let init_snap  = snapshot(init_files)
+  let result = while { i: 0, snap: init_snap, events: [] }
+    fn(s) { s.i < n }
+    fn(s) {
+      let _ = process.spawn("sleep", [str.concat("0.", str.from_int(delay_ms))], "")
+      let files    = get_files()
+      let new_snap = snapshot(files)
+      let changes  = diff_snapshots(s.snap, new_snap)
+      let new_events = if list.len(changes) > 0 then
+        let _ = on_change(changes)
+        list.concat([s.events, changes])
+      else s.events
+      { i: s.i + 1, snap: new_snap, events: new_events }
+    }
+  { events: result.value.events, total_polls: n }
+}
+
+// One-shot check — did any of these files change since the snapshot?
+fn any_changed(paths, prev_snapshot) {
+  let result = poll(paths, prev_snapshot)
+  { changed: list.len(result.changes) > 0, changes: result.changes, snapshot: result.snapshot }
+}
+
+// Build a watcher state for manual polling
+fn new_watcher(paths) {
+  { paths: paths, snapshot: snapshot(paths), events: [] }
+}
+
+fn tick(watcher) {
+  let result = poll(watcher.paths, watcher.snapshot)
+  {
+    paths:    watcher.paths,
+    snapshot: result.snapshot,
+    events:   list.concat([watcher.events, result.changes]),
+    changes:  result.changes
+  }
+}
+
+{
+  mtime:          mtime,
+  file_hash:      file_hash,
+  file_exists:    file_exists,
+  snapshot:       snapshot,
+  diff_snapshots: diff_snapshots,
+  poll:           poll,
+  watch:          watch,
+  watch_dir:      watch_dir,
+  any_changed:    any_changed,
+  new_watcher:    new_watcher,
+  tick:           tick
+}
