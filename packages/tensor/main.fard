@@ -1,0 +1,260 @@
+// tensor@1.6.0 — N-dimensional arrays for FARD
+// Built on std/linalg (Val::Bytes IEEE 754 floats) and std/list.
+// A tensor is { data: [float...], shape: [int...] }
+// Shape follows row-major (C) order — same as NumPy default.
+
+import("std/list")   as list
+import("std/linalg") as linalg
+import("std/float")  as float
+import("std/math")   as math
+import("std/rec")    as rec
+import("std/str")    as str
+import("std/int")    as ints
+
+fn zeros(shape) {
+  let n = list.fold(shape, 1, fn(acc, d) { acc * d })
+  { data: linalg.zeros(n), shape: shape }
+}
+
+fn ones(shape) {
+  let n = list.fold(shape, 1, fn(acc, d) { acc * d })
+  let one = float.from_int(1)
+  { data: list.repeat(one, n), shape: shape }
+}
+
+fn from_list(data, shape) {
+  { data: list.map(data, fn(x) { float.from_int(x) }), shape: shape }
+}
+
+fn from_float_list(data, shape) {
+  { data: data, shape: shape }
+}
+
+fn eye_2d(n) {
+  { data: linalg.eye(n), shape: [n, n] }
+}
+
+fn scalar(x) {
+  { data: [float.from_int(x)], shape: [] }
+}
+
+fn shape(t)  { t.shape }
+fn ndim(t)   { list.len(t.shape) }
+fn size(t)   { list.fold(t.shape, 1, fn(acc, d) { acc * d }) }
+
+fn stride_at(shape, i) {
+  list.fold(list.drop(shape, i + 1), 1, fn(s, d) { s * d })
+}
+
+fn flat_index(shape, indices) {
+  let ndims = list.len(shape)
+  list.fold(list.range(0, ndims), 0, fn(acc, i) {
+    acc + list.get(indices, i) * stride_at(shape, i)
+  })
+}
+
+fn get(t, indices) {
+  list.get(t.data, flat_index(t.shape, indices))
+}
+
+fn set(t, indices, val) {
+  { data: list.set(t.data, flat_index(t.shape, indices), val), shape: t.shape }
+}
+
+fn reshape(t, new_shape) {
+  let new_size = list.fold(new_shape, 1, fn(acc, d) { acc * d })
+  if size(t) != new_size then { error: "reshape: size mismatch" }
+  else { data: t.data, shape: new_shape }
+}
+
+fn flatten(t) { { data: t.data, shape: [size(t)] } }
+
+fn squeeze(t) {
+  { data: t.data, shape: list.filter(t.shape, fn(d) { !(d == 1) }) }
+}
+
+fn map_data(t, f) { { data: list.map(t.data, f), shape: t.shape } }
+
+fn add(a, b) {
+  { data: list.zip_with(a.data, b.data, fn(x, y) { float.add(x, y) }), shape: a.shape }
+}
+fn sub(a, b) {
+  { data: list.zip_with(a.data, b.data, fn(x, y) { float.sub(x, y) }), shape: a.shape }
+}
+fn mul(a, b) {
+  { data: list.zip_with(a.data, b.data, fn(x, y) { float.mul(x, y) }), shape: a.shape }
+}
+fn div(a, b) {
+  { data: list.zip_with(a.data, b.data, fn(x, y) { float.div(x, y) }), shape: a.shape }
+}
+
+fn scale(t, s) {
+  let sf = float.from_int(s)
+  map_data(t, fn(x) { float.mul(x, sf) })
+}
+
+fn scale_f(t, sf) { map_data(t, fn(x) { float.mul(x, sf) }) }
+fn neg(t)    { map_data(t, fn(x) { float.mul(x, float.from_int(-1)) }) }
+fn abs_t(t)  { map_data(t, fn(x) { float.abs(x) }) }
+fn sqrt_t(t) { map_data(t, fn(x) { float.sqrt(x) }) }
+fn exp_t(t)  { map_data(t, fn(x) { float.exp(x) }) }
+fn log_t(t)  { map_data(t, fn(x) { float.ln(x) }) }
+
+fn pow_t(t, p) {
+  let pf = float.from_int(p)
+  map_data(t, fn(x) { float.pow(x, pf) })
+}
+
+fn clamp_t(t, lo, hi) {
+  let lof = float.from_int(lo)
+  let hif = float.from_int(hi)
+  map_data(t, fn(x) {
+    if float.lt(x, lof) then lof
+    else if float.gt(x, hif) then hif
+    else x
+  })
+}
+
+fn relu(t) {
+  map_data(t, fn(x) { if float.lt(x, float.from_int(0)) then float.from_int(0) else x })
+}
+
+fn sigmoid(t) {
+  map_data(t, fn(x) {
+    float.div(float.from_int(1), float.add(float.from_int(1), float.exp(float.mul(float.from_int(-1), x))))
+  })
+}
+
+fn softmax(t) {
+  let ex    = map_data(t, fn(x) { float.exp(x) })
+  let total = list.fold(ex.data, float.from_int(0), fn(acc, v) { float.add(acc, v) })
+  map_data(ex, fn(x) { float.div(x, total) })
+}
+
+fn tanh_elem(x) {
+  let ep = float.exp(x)
+  let en = float.exp(float.mul(float.from_int(-1), x))
+  float.div(float.sub(ep, en), float.add(ep, en))
+}
+fn tanh_t(t) { map_data(t, tanh_elem) }
+
+fn sum(t) {
+  list.fold(t.data, float.from_int(0), fn(acc, x) { float.add(acc, x) })
+}
+
+fn mean(t) {
+  let n = size(t)
+  if n == 0 then float.from_int(0)
+  else float.div(sum(t), float.from_int(n))
+}
+
+fn max_val(t) {
+  list.fold(t.data, list.get(t.data, 0), fn(acc, x) { if float.gt(x, acc) then x else acc })
+}
+
+fn min_val(t) {
+  list.fold(t.data, list.get(t.data, 0), fn(acc, x) { if float.lt(x, acc) then x else acc })
+}
+
+fn argmax_step(data, acc, i) {
+  let v = list.get(data, i)
+  if float.gt(v, acc.best) then { idx: i, best: v } else acc
+}
+fn argmax(t) {
+  let result = list.fold(list.range(0, size(t)), { idx: 0, best: list.get(t.data, 0) }, fn(acc, i) {
+    argmax_step(t.data, acc, i)
+  })
+  result.idx
+}
+
+fn argmin_step(data, acc, i) {
+  let v = list.get(data, i)
+  if float.lt(v, acc.best) then { idx: i, best: v } else acc
+}
+fn argmin(t) {
+  let result = list.fold(list.range(0, size(t)), { idx: 0, best: list.get(t.data, 0) }, fn(acc, i) {
+    argmin_step(t.data, acc, i)
+  })
+  result.idx
+}
+
+fn norm(t) { float.sqrt(sum(mul(t, t))) }
+
+fn matmul(a, b) {
+  let rows_a = list.get(a.shape, 0)
+  let cols_a = list.get(a.shape, 1)
+  let cols_b = list.get(b.shape, 1)
+  let data = list.flat_map(list.range(0, rows_a), fn(i) {
+    list.map(list.range(0, cols_b), fn(j) {
+      list.fold(list.range(0, cols_a), float.from_int(0), fn(acc, k) {
+        float.add(acc, float.mul(
+          list.get(a.data, i * cols_a + k),
+          list.get(b.data, k * cols_b + j)
+        ))
+      })
+    })
+  })
+  { data: data, shape: [rows_a, cols_b] }
+}
+
+fn transpose(t) {
+  let rows = list.get(t.shape, 0)
+  let cols = list.get(t.shape, 1)
+  let data = list.flat_map(list.range(0, cols), fn(j) {
+    list.map(list.range(0, rows), fn(i) { list.get(t.data, i * cols + j) })
+  })
+  { data: data, shape: [cols, rows] }
+}
+
+fn dot(a, b) {
+  list.fold(list.range(0, size(a)), float.from_int(0), fn(acc, i) {
+    float.add(acc, float.mul(list.get(a.data, i), list.get(b.data, i)))
+  })
+}
+
+fn row(t, i) {
+  let cols = list.get(t.shape, 1)
+  { data: list.take(list.drop(t.data, i * cols), cols), shape: [cols] }
+}
+
+fn col_vec(t, j) {
+  let rows = list.get(t.shape, 0)
+  let cols = list.get(t.shape, 1)
+  { data: list.map(list.range(0, rows), fn(i) { list.get(t.data, i * cols + j) }), shape: [rows] }
+}
+
+fn concat_axis0(a, b) {
+  { data: list.concat([a.data, b.data]),
+    shape: [list.get(a.shape, 0) + list.get(b.shape, 0), list.get(a.shape, 1)] }
+}
+
+fn stack(tensors) {
+  let n = list.len(tensors)
+  let inner_size = size(list.get(tensors, 0))
+  { data: list.flat_map(tensors, fn(t) { t.data }), shape: [n, inner_size] }
+}
+
+fn to_float_list(t) { t.data }
+
+fn nested_chunk(t) {
+  let rows = list.get(t.shape, 0)
+  let rest = list.drop(t.shape, 1)
+  let chunk = list.fold(rest, 1, fn(acc, d) { acc * d })
+  list.map(list.range(0, rows), fn(i) {
+    to_nested_list({ data: list.take(list.drop(t.data, i * chunk), chunk), shape: rest })
+  })
+}
+fn to_nested_list(t) {
+  if list.len(t.shape) == 1 then t.data
+  else nested_chunk(t)
+}
+
+export { zeros, ones, from_list, from_float_list, eye_2d, scalar,
+         shape, ndim, size, get, set, reshape, flatten, squeeze,
+         add, sub, mul, div, scale, scale_f, neg, abs_t, sqrt_t,
+         exp_t, log_t, pow_t, clamp_t,
+         relu, sigmoid, softmax, tanh_t,
+         sum, mean, max_val, min_val, argmax, argmin, norm,
+         matmul, transpose, dot,
+         row, col_vec, concat_axis0, stack,
+         to_float_list, to_nested_list, map_data, flat_index }

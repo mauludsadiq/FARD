@@ -3,6 +3,8 @@ import("std/list")  as list
 import("std/math")  as math
 import("std/float") as float
 import("std/str")   as str
+import("std/rec")   as rec
+import("std/int")   as ints
 
 fn sum(xs) {
   list.fold(xs, 0, fn(acc, x) { acc + x })
@@ -14,17 +16,20 @@ fn mean(xs) {
   else sum(xs) / n
 }
 
+fn sq_diff(x, m) {
+  let d = float.sub(float.from_int(x), m)
+  float.mul(d, d)
+}
+fn variance_nonempty(xs, n) {
+  let m = mean(xs)
+  let sq_diffs = list.map(xs, fn(x) { sq_diff(x, m) })
+  let s = list.fold(sq_diffs, float.from_int(0), fn(acc, x) { float.add(acc, x) })
+  float.div(s, float.from_int(n))
+}
 fn variance(xs) {
   let n = list.len(xs)
   if n == 0 then float.from_int(0)
-  else
-    let m = mean(xs)
-    let sq_diffs = list.map(xs, fn(x) {
-      let d = float.sub(float.from_int(x), m)
-      float.mul(d, d)
-    })
-    let s = list.fold(sq_diffs, float.from_int(0), fn(acc, x) { float.add(acc, x) })
-    float.div(s, float.from_int(n))
+  else variance_nonempty(xs, n)
 }
 
 fn std_dev(xs) {
@@ -41,21 +46,18 @@ fn median(xs) {
   let mid = n / 2
   if n == 0 then float.from_int(0)
   else if n % 2 == 1 then float.from_int(list.get(s, mid))
-  else
-    let a = float.from_int(list.get(s, mid - 1))
-    let b = float.from_int(list.get(s, mid))
-    float.div(float.add(a, b), float.from_int(2))
+  else float.div(float.add(float.from_int(list.get(s, mid - 1)), float.from_int(list.get(s, mid))), float.from_int(2))
 }
 
+fn freq_insert(acc, x) {
+  let key = str.from_int(x)
+  let cur = if rec.has(acc, key) then rec.get(acc, key) else 0
+  rec.set(acc, key, cur + 1)
+}
 fn mode(xs) {
   let counts = list.fold(xs, {}, fn(acc, x) {
-    import("std/str") as str
-    import("std/rec") as rec
-    let key = str.from_int(x)
-    let cur = if rec.has(acc, key) then rec.get(acc, key) else 0
-    rec.set(acc, key, cur + 1)
+    freq_insert(acc, x)
   })
-  import("std/rec") as rec
   let keys   = rec.keys(counts)
   let best   = list.fold(keys, list.get(keys, 0), fn(acc, k) {
     if rec.get(counts, k) > rec.get(counts, acc) then k else acc
@@ -64,8 +66,7 @@ fn mode(xs) {
 }
 
 fn str_to_int_safe(s) {
-  import("std/int") as int
-  int.parse(s).v
+  ints.parse(s).v
 }
 
 fn min_val(xs) {
@@ -105,12 +106,7 @@ fn describe(xs) {
 }
 
 fn frequencies(xs) {
-  import("std/rec") as rec
-  list.fold(xs, {}, fn(acc, x) {
-    let key = str.from_int(x)
-    let cur = if rec.has(acc, key) then rec.get(acc, key) else 0
-    rec.set(acc, key, cur + 1)
-  })
+  list.fold(xs, {}, fn(acc, x) { freq_insert(acc, x) })
 }
 
 fn normalize(xs) {

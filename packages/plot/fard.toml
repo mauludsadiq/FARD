@@ -1,0 +1,4 @@
+name = "plot"
+version = "1.6.0"
+entry = "main.fard"
+description = "SVG chart generation with witnessed provenance"

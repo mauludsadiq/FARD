@@ -1,0 +1,4 @@
+name = "frame"
+version = "1.6.0"
+entry = "main.fard"
+description = "Typed columnar DataFrame for FARD"

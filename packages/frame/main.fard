@@ -1,0 +1,330 @@
+// frame@1.6.0 — Typed columnar DataFrame for FARD
+// A frame is { cols: { name: [values...] }, index: [row_ids...] }
+// Columnar storage for efficient column ops.
+
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/str")   as str
+import("std/type")  as type
+import("std/float") as float
+import("pkg:stats@1.6.0") as stats
+
+fn col_map_len(col_map, keys) {
+  if list.len(keys) == 0 then 0
+  else list.len(rec.get(col_map, list.get(keys, 0)))
+}
+fn new(col_map) {
+  let keys = rec.keys(col_map)
+  { cols: col_map, index: list.range(0, col_map_len(col_map, keys)) }
+}
+
+fn build_col_map(rows, keys) {
+  list.fold(keys, {}, fn(acc, k) {
+    rec.set(acc, k, list.map(rows, fn(row) {
+      if rec.has(row, k) then rec.get(row, k) else null
+    }))
+  })
+}
+fn from_rows_nonempty(rows) {
+  new(build_col_map(rows, rec.keys(list.get(rows, 0))))
+}
+fn from_rows(rows) {
+  if list.len(rows) == 0 then { cols: {}, index: [] }
+  else from_rows_nonempty(rows)
+}
+
+fn csv_col(rows, i) {
+  list.map(rows, fn(row) {
+    if i < list.len(row) then list.get(row, i) else null
+  })
+}
+fn from_csv(headers, rows) {
+  let col_map = list.fold(list.range(0, list.len(headers)), {}, fn(acc, i) {
+    rec.set(acc, list.get(headers, i), csv_col(rows, i))
+  })
+  new(col_map)
+}
+
+fn nrows(df)    { list.len(df.index) }
+fn ncols(df)    { list.len(rec.keys(df.cols)) }
+fn columns(df)  { rec.keys(df.cols) }
+fn shape(df)    { { rows: nrows(df), cols: ncols(df) } }
+fn has_col(df, name) { rec.has(df.cols, name) }
+
+fn col(df, name) {
+  if rec.has(df.cols, name) then rec.get(df.cols, name) else []
+}
+
+fn col_type(df, name) {
+  let c = col(df, name)
+  if list.len(c) == 0 then "empty"
+  else type.of(list.get(c, 0))
+}
+
+fn row_get_val(df, k, i) {
+  let vals = rec.get(df.cols, k)
+  if i < list.len(vals) then list.get(vals, i) else null
+}
+fn row(df, i) {
+  let keys = columns(df)
+  list.fold(keys, {}, fn(acc, k) {
+    rec.set(acc, k, row_get_val(df, k, i))
+  })
+}
+
+fn to_rows(df) {
+  list.map(list.range(0, nrows(df)), fn(i) { row(df, i) })
+}
+
+fn select(df, col_names) {
+  let new_cols = list.fold(col_names, {}, fn(acc, name) {
+    if rec.has(df.cols, name) then rec.set(acc, name, rec.get(df.cols, name))
+    else acc
+  })
+  { cols: new_cols, index: df.index }
+}
+
+fn drop_col(df, name) {
+  select(df, list.filter(columns(df), fn(c) { !(c == name) }))
+}
+
+fn rename(df, old_name, new_name) {
+  let new_cols = list.fold(columns(df), {}, fn(acc, k) {
+    if k == old_name then rec.set(acc, new_name, rec.get(df.cols, k))
+    else rec.set(acc, k, rec.get(df.cols, k))
+  })
+  { cols: new_cols, index: df.index }
+}
+
+fn filter_col(df, k, kept) {
+  let vals = rec.get(df.cols, k)
+  list.map(kept, fn(i) { list.get(vals, i) })
+}
+fn filter(df, pred) {
+  let n = nrows(df)
+  let kept = list.filter(list.range(0, n), fn(i) { pred(row(df, i)) })
+  let new_cols = list.fold(columns(df), {}, fn(acc, k) {
+    rec.set(acc, k, filter_col(df, k, kept))
+  })
+  { cols: new_cols, index: list.range(0, list.len(kept)) }
+}
+
+fn where_col(df, name, pred) {
+  filter(df, fn(r) { pred(rec.get(r, name)) })
+}
+
+fn head(df, n) {
+  let capped = if n > nrows(df) then nrows(df) else n
+  let new_cols = list.fold(columns(df), {}, fn(acc, k) {
+    rec.set(acc, k, list.take(rec.get(df.cols, k), capped))
+  })
+  { cols: new_cols, index: list.range(0, capped) }
+}
+
+fn tail(df, n) {
+  let total = nrows(df)
+  let start = if n > total then 0 else total - n
+  let new_cols = list.fold(columns(df), {}, fn(acc, k) {
+    rec.set(acc, k, list.drop(rec.get(df.cols, k), start))
+  })
+  { cols: new_cols, index: list.range(0, total - start) }
+}
+
+fn add_col(df, name, values) {
+  { cols: rec.set(df.cols, name, values), index: df.index }
+}
+
+fn map_col(df, name, f) {
+  add_col(df, name, list.map(col(df, name), f))
+}
+
+fn derive_col(df, name, f) {
+  let n = nrows(df)
+  add_col(df, name, list.map(list.range(0, n), fn(i) { f(row(df, i)) }))
+}
+
+fn apply(df, f) { from_rows(list.map(to_rows(df), f)) }
+
+fn sort_cmp(a, b) {
+  let t = type.of(a)
+  if t == "int" then a - b
+  else if t == "text" then if a < b then -1 else if a == b then 0 else 1
+  else 0
+}
+fn sort_by(df, col_name) {
+  let n = nrows(df)
+  let vals = col(df, col_name)
+  let indices = list.sort_by(list.range(0, n), fn(i, j) {
+    sort_cmp(list.get(vals, i), list.get(vals, j))
+  })
+  let new_cols = list.fold(columns(df), {}, fn(acc, k) {
+    rec.set(acc, k, list.map(indices, fn(i) { list.get(rec.get(df.cols, k), i) }))
+  })
+  { cols: new_cols, index: list.range(0, n) }
+}
+
+fn sort_by_desc(df, col_name) {
+  let sorted = sort_by(df, col_name)
+  let new_cols = list.fold(columns(sorted), {}, fn(acc, k) {
+    rec.set(acc, k, list.reverse(rec.get(sorted.cols, k)))
+  })
+  { cols: new_cols, index: sorted.index }
+}
+
+fn val_to_key(v) {
+  let t = type.of(v)
+  if t == "text" then v
+  else if t == "int" then str.from_int(v)
+  else "null"
+}
+fn group_insert(acc, v, i) {
+  let k = val_to_key(v)
+  let existing = if rec.has(acc, k) then rec.get(acc, k) else []
+  rec.set(acc, k, list.concat([existing, [i]]))
+}
+fn sub_col(df, c, indices) {
+  let c_vals = rec.get(df.cols, c)
+  list.map(indices, fn(i) { list.get(c_vals, i) })
+}
+fn make_sub_cols(df, indices) {
+  list.fold(columns(df), {}, fn(acc, c) {
+    rec.set(acc, c, sub_col(df, c, indices))
+  })
+}
+fn make_group(df, k, indices) {
+  { key: k, frame: { cols: make_sub_cols(df, indices), index: list.range(0, list.len(indices)) } }
+}
+fn group_by(df, col_name) {
+  let vals = col(df, col_name)
+  let n = nrows(df)
+  let groups = list.fold(list.range(0, n), {}, fn(acc, i) {
+    group_insert(acc, list.get(vals, i), i)
+  })
+  let keys = rec.keys(groups)
+  list.map(keys, fn(k) { make_group(df, k, rec.get(groups, k)) })
+}
+
+fn agg_mean(vals) {
+  let s = list.fold(vals, 0, fn(a, x) { a + x })
+  s / list.len(vals)
+}
+fn apply_agg(fn_name, vals) {
+  if fn_name == "sum"   then list.fold(vals, 0, fn(a, x) { a + x })
+  else if fn_name == "count" then list.len(vals)
+  else if fn_name == "mean"  then agg_mean(vals)
+  else if fn_name == "min" then list.fold(vals, list.get(vals, 0), fn(a, x) { if x < a then x else a })
+  else if fn_name == "max" then list.fold(vals, list.get(vals, 0), fn(a, x) { if x > a then x else a })
+  else null
+}
+fn agg_step(g, agg_map, agg_keys) {
+  list.fold(agg_keys, { key: g.key }, fn(acc, k) {
+    rec.set(acc, k, apply_agg(rec.get(agg_map, k), col(g.frame, k)))
+  })
+}
+fn agg(groups, agg_map) {
+  let agg_keys = rec.keys(agg_map)
+  from_rows(list.map(groups, fn(g) { agg_step(g, agg_map, agg_keys) }))
+}
+
+fn row_key(r, on) {
+  let v = if rec.has(r, on) then rec.get(r, on) else null
+  if type.of(v) == "text" then v else str.from_int(v)
+}
+fn build_key_map(rows, on) {
+  list.fold(rows, {}, fn(acc, r) {
+    rec.set(acc, row_key(r, on), r)
+  })
+}
+fn inner_join_row(lr, right_key_map, on) {
+  let k = row_key(lr, on)
+  if rec.has(right_key_map, k) then [rec.merge(lr, rec.get(right_key_map, k))]
+  else []
+}
+fn inner_join(left, right, on) {
+  let right_key_map = build_key_map(to_rows(right), on)
+  from_rows(list.flat_map(to_rows(left), fn(lr) {
+    inner_join_row(lr, right_key_map, on)
+  }))
+}
+
+fn left_join_row(lr, right_key_map, on) {
+  let k = row_key(lr, on)
+  if rec.has(right_key_map, k) then rec.merge(lr, rec.get(right_key_map, k))
+  else lr
+}
+fn left_join(left, right, on) {
+  let right_key_map = build_key_map(to_rows(right), on)
+  from_rows(list.map(to_rows(left), fn(lr) {
+    left_join_row(lr, right_key_map, on)
+  }))
+}
+
+fn concat(dfs) {
+  if list.len(dfs) == 0 then { cols: {}, index: [] }
+  else from_rows(list.flat_map(dfs, fn(df) { to_rows(df) }))
+}
+
+fn describe_col_vals(name, vals) {
+  let n = list.len(vals)
+  let t = type.of(list.get(vals, 0))
+  if t == "int" then stats.describe(vals)
+  else { count: n, column: name, type: t }
+}
+fn describe_col(df, name) {
+  let vals = list.filter(col(df, name), fn(v) { !(v == null) })
+  let n = list.len(vals)
+  if n == 0 then { count: 0, column: name }
+  else describe_col_vals(name, vals)
+}
+
+fn describe(df) {
+  list.fold(columns(df), {}, fn(acc, k) { rec.set(acc, k, describe_col(df, k)) })
+}
+
+fn vc_insert(acc, v) {
+  let k = if type.of(v) == "text" then v else str.from_int(v)
+  let cur = if rec.has(acc, k) then rec.get(acc, k) else 0
+  rec.set(acc, k, cur + 1)
+}
+fn value_counts(df, col_name) {
+  let vals = col(df, col_name)
+  let counts = list.fold(vals, {}, fn(acc, v) {
+    vc_insert(acc, v)
+  })
+  from_rows(list.map(rec.keys(counts), fn(k) { { value: k, count: rec.get(counts, k) } }))
+}
+
+fn csv_val(df, h, i) {
+  let v = list.get(rec.get(df.cols, h), i)
+  let t = type.of(v)
+  if t == "text" then v
+  else if t == "int" then str.from_int(v)
+  else if t == "bool" then if v then "true" else "false"
+  else if v == null then ""
+  else str.from_int(v)
+}
+fn to_csv(df) {
+  let hdrs = columns(df)
+  let n = nrows(df)
+  let lines = list.map(list.range(0, n), fn(i) {
+    str.join(list.map(hdrs, fn(h) { csv_val(df, h, i) }), ",")
+  })
+  str.join(list.concat([[str.join(hdrs, ",")], lines]), "\n")
+}
+
+fn print_summary(df) {
+  { shape: shape(df), columns: columns(df),
+    dtypes: list.fold(columns(df), {}, fn(acc, k) { rec.set(acc, k, col_type(df, k)) }) }
+}
+
+export { new, from_rows, from_csv,
+         nrows, ncols, columns, shape, has_col,
+         col, col_type, row, to_rows,
+         select, drop_col, rename,
+         filter, where_col, head, tail,
+         add_col, map_col, derive_col, apply,
+         sort_by, sort_by_desc,
+         group_by, agg,
+         inner_join, left_join, concat,
+         describe_col, describe, value_counts,
+         to_csv, print_summary }

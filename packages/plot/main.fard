@@ -1,0 +1,262 @@
+// plot@1.6.0 — SVG chart generation for FARD
+// Pure FARD string generation — no external dependencies.
+// Every chart is a pure function from data to SVG string.
+
+import("std/list")  as list
+import("std/str")   as str
+import("std/float") as float
+import("std/rec")   as rec
+import("std/type")  as type
+import("std/io")    as io
+
+let DEFAULT_W     = 800
+let DEFAULT_H     = 500
+let MARGIN_LEFT   = 60
+let MARGIN_RIGHT  = 30
+let MARGIN_TOP    = 40
+let MARGIN_BOTTOM = 60
+let PALETTE = ["#2563eb","#dc2626","#16a34a","#d97706","#7c3aed","#0891b2","#be185d","#065f46"]
+
+fn palette_color(i) { list.get(PALETTE, i % list.len(PALETTE)) }
+fn i2s(n) { str.from_int(n) }
+
+fn svg_open(w, h) {
+  str.concat("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"",
+    str.concat(i2s(w), str.concat("\" height=\"", str.concat(i2s(h), "\">"))))
+}
+
+fn attr(k, v) { str.concat(str.concat(str.concat(" ", k), "=\""), str.concat(v, "\"")) }
+
+fn rect_el(x, y, w, h, fill, stroke) {
+  str.concat("<rect", str.concat(str.concat(str.concat(str.concat(str.concat(str.concat(
+    attr("x", i2s(x)), attr("y", i2s(y))),
+    attr("width", i2s(w))), attr("height", i2s(h))),
+    attr("fill", fill)), attr("stroke", stroke)), "/>"))
+}
+
+fn line_el(x1, y1, x2, y2, color, sw) {
+  str.concat("<line", str.concat(str.concat(str.concat(str.concat(str.concat(str.concat(
+    attr("x1", i2s(x1)), attr("y1", i2s(y1))),
+    attr("x2", i2s(x2))), attr("y2", i2s(y2))),
+    attr("stroke", color)), attr("stroke-width", i2s(sw))), "/>"))
+}
+
+fn text_el(x, y, content, anchor, size, color) {
+  str.concat(str.concat("<text", str.concat(str.concat(str.concat(str.concat(
+    attr("x", i2s(x)), attr("y", i2s(y))),
+    attr("text-anchor", anchor)), attr("font-size", i2s(size))), attr("fill", color))), str.concat(">", str.concat(content, "</text>")))
+}
+
+fn circle_el(cx, cy, r, fill) {
+  str.concat("<circle", str.concat(str.concat(str.concat(
+    attr("cx", i2s(cx)), attr("cy", i2s(cy))),
+    attr("r", i2s(r))), str.concat(attr("fill", fill), "/>")))
+}
+
+fn polyline_el(pts, color, sw) {
+  str.concat("<polyline", str.concat(str.concat(str.concat(
+    attr("points", pts), attr("fill", "none")),
+    attr("stroke", color)), str.concat(attr("stroke-width", i2s(sw)), "/>")))
+}
+
+fn data_min(xs) { list.fold(xs, list.get(xs, 0), fn(acc, x) { if x < acc then x else acc }) }
+fn data_max(xs) { list.fold(xs, list.get(xs, 0), fn(acc, x) { if x > acc then x else acc }) }
+
+fn scale_y(val, y_min, y_max, plot_h, y_top) {
+  let range = y_max - y_min
+  let frac  = if range == 0 then 0 else (val - y_min) / range
+  y_top + plot_h - (frac * plot_h)
+}
+
+fn scale_x(i, n, plot_w, x_left) {
+  let offset = if n <= 1 then plot_w / 2 else (i * plot_w) / (n - 1)
+  x_left + offset
+}
+
+fn grid_line(x_left, plot_w, y_top, plot_h, y_min, y_max, step, i) {
+  let v = y_min + step * i
+  let y = scale_y(v, y_min, y_max, plot_h, y_top)
+  str.concat(
+    line_el(x_left, y, x_left + plot_w, y, "#e5e7eb", 1),
+    text_el(x_left - 8, y + 4, str.from_int(v), "end", 11, "#6b7280"))
+}
+fn draw_grid(x_left, y_top, plot_w, plot_h, y_min, y_max) {
+  let n = 5
+  let step = (y_max - y_min) / n
+  str.join(list.map(list.range(0, n + 1), fn(i) {
+    grid_line(x_left, plot_w, y_top, plot_h, y_min, y_max, step, i)
+  }), "")
+}
+
+fn draw_axes(x_left, y_top, plot_w, plot_h, title) {
+  str.concat(str.concat(
+    line_el(x_left, y_top, x_left, y_top + plot_h, "#374151", 2),
+    line_el(x_left, y_top + plot_h, x_left + plot_w, y_top + plot_h, "#374151", 2)),
+    if title == "" then ""
+    else text_el((x_left + x_left + plot_w) / 2, y_top - 15, title, "middle", 14, "#111827"))
+}
+
+fn legend_item(names, x, y, i) {
+  let color = palette_color(i)
+  str.concat(
+    rect_el(x, y + i * 20, 12, 12, color, "none"),
+    text_el(x + 16, y + i * 20 + 11, list.get(names, i), "start", 11, "#374151"))
+}
+fn draw_legend(names, x, y) {
+  str.join(list.map(list.range(0, list.len(names)), fn(i) {
+    legend_item(names, x, y, i)
+  }), "")
+}
+
+fn series_point(data, i, x_left, y_top, plot_w, plot_h, y_min, y_max) {
+  str.concat(i2s(scale_x(i, list.len(data), plot_w, x_left)), str.concat(",", i2s(scale_y(list.get(data, i), y_min, y_max, plot_h, y_top))))
+}
+fn render_series(s, si, x_left, y_top, plot_w, plot_h, y_min, y_max) {
+  let data  = rec.get(s, "data")
+  let color = palette_color(si)
+  let n     = list.len(data)
+  let pts   = str.join(list.map(list.range(0, n), fn(i) {
+    series_point(data, i, x_left, y_top, plot_w, plot_h, y_min, y_max)
+  }), " ")
+  str.concat(polyline_el(pts, color, 2),
+    str.join(list.map(list.range(0, n), fn(i) {
+      circle_el(scale_x(i, n, plot_w, x_left), scale_y(list.get(data, i), y_min, y_max, plot_h, y_top), 3, color)
+    }), ""))
+}
+fn line_chart(opts) {
+  let w      = if rec.has(opts, "width")  then rec.get(opts, "width")  else DEFAULT_W
+  let h      = if rec.has(opts, "height") then rec.get(opts, "height") else DEFAULT_H
+  let title  = if rec.has(opts, "title")  then rec.get(opts, "title")  else ""
+  let series = rec.get(opts, "series")
+  let labels = if rec.has(opts, "labels") then rec.get(opts, "labels") else []
+  let x_left = MARGIN_LEFT
+  let y_top  = MARGIN_TOP
+  let plot_w = w - MARGIN_LEFT - MARGIN_RIGHT
+  let plot_h = h - MARGIN_TOP - MARGIN_BOTTOM
+  let all    = list.flat_map(series, fn(s) { rec.get(s, "data") })
+  let mn     = data_min(all)
+  let mx     = data_max(all)
+  let pad    = if mx == mn then 1 else (mx - mn) / 10
+  let y_min  = mn - pad
+  let y_max  = mx + pad
+  let grid   = draw_grid(x_left, y_top, plot_w, plot_h, y_min, y_max)
+  let axes   = draw_axes(x_left, y_top, plot_w, plot_h, title)
+  let xlbls  = if list.len(labels) == 0 then ""
+               else str.join(list.map(list.range(0, list.len(labels)), fn(i) {
+                 text_el(scale_x(i, list.len(labels), plot_w, x_left),
+                   y_top + plot_h + 18, list.get(labels, i), "middle", 11, "#6b7280")
+               }), "")
+  let lines  = str.join(list.map(list.range(0, list.len(series)), fn(si) {
+    render_series(list.get(series, si), si, x_left, y_top, plot_w, plot_h, y_min, y_max)
+  }), "")
+  let legend = draw_legend(list.map(series, fn(s) { rec.get(s, "name") }), x_left + plot_w + 5, y_top)
+  str.concat(str.concat(str.concat(str.concat(str.concat(str.concat(
+    svg_open(w, h),
+    rect_el(0, 0, w, h, "white", "#e5e7eb")),
+    grid), axes), xlbls), str.concat(lines, legend)), "</svg>")
+}
+
+fn render_bar(data, labels, i, n, plot_w, plot_h, x_left, y_top, bar_w, y_max, color) {
+  let val   = list.get(data, i)
+  let bar_h = (val * plot_h) / (if y_max == 0 then 1 else y_max)
+  let bx    = x_left + (i * plot_w) / n + 2
+  let by    = y_top + plot_h - bar_h
+  str.concat(
+    rect_el(bx, by, bar_w, bar_h, color, "none"),
+    text_el(bx + bar_w / 2, y_top + plot_h + 18, list.get(labels, i), "middle", 11, "#6b7280"))
+}
+fn bar_chart(opts) {
+  let w      = if rec.has(opts, "width")  then rec.get(opts, "width")  else DEFAULT_W
+  let h      = if rec.has(opts, "height") then rec.get(opts, "height") else DEFAULT_H
+  let title  = if rec.has(opts, "title")  then rec.get(opts, "title")  else ""
+  let data   = rec.get(opts, "data")
+  let labels = if rec.has(opts, "labels") then rec.get(opts, "labels") else list.map(list.range(0, list.len(data)), fn(i) { str.from_int(i) })
+  let color  = if rec.has(opts, "color")  then rec.get(opts, "color")  else list.get(PALETTE, 0)
+  let x_left = MARGIN_LEFT
+  let y_top  = MARGIN_TOP
+  let plot_w = w - MARGIN_LEFT - MARGIN_RIGHT
+  let plot_h = h - MARGIN_TOP - MARGIN_BOTTOM
+  let mx     = data_max(data)
+  let y_max  = mx + mx / 10
+  let n      = list.len(data)
+  let bar_w  = (plot_w / n) - 4
+  let grid   = draw_grid(x_left, y_top, plot_w, plot_h, 0, y_max)
+  let axes   = draw_axes(x_left, y_top, plot_w, plot_h, title)
+  let bars   = str.join(list.map(list.range(0, n), fn(i) {
+    render_bar(data, labels, i, n, plot_w, plot_h, x_left, y_top, bar_w, y_max, color)
+  }), "")
+  str.concat(str.concat(str.concat(str.concat(
+    svg_open(w, h),
+    rect_el(0, 0, w, h, "white", "#e5e7eb")),
+    str.concat(grid, axes)), bars), "</svg>")
+}
+
+fn render_dot(xs, ys, i, x_left, y_top, plot_w, plot_h, x_min, x_max, x_pad, y_min, y_max, y_pad, radius, color) {
+  let xv = list.get(xs, i)
+  let yv = list.get(ys, i)
+  let px = x_left + ((xv - x_min + x_pad) * plot_w) / (x_max - x_min + 2 * x_pad)
+  let py = y_top + plot_h - ((yv - y_min + y_pad) * plot_h) / (y_max - y_min + 2 * y_pad)
+  circle_el(px, py, radius, color)
+}
+fn scatter(opts) {
+  let w      = if rec.has(opts, "width")  then rec.get(opts, "width")  else DEFAULT_W
+  let h      = if rec.has(opts, "height") then rec.get(opts, "height") else DEFAULT_H
+  let title  = if rec.has(opts, "title")  then rec.get(opts, "title")  else ""
+  let xs     = rec.get(opts, "x")
+  let ys     = rec.get(opts, "y")
+  let color  = if rec.has(opts, "color")  then rec.get(opts, "color")  else list.get(PALETTE, 0)
+  let radius = if rec.has(opts, "radius") then rec.get(opts, "radius") else 4
+  let x_left = MARGIN_LEFT
+  let y_top  = MARGIN_TOP
+  let plot_w = w - MARGIN_LEFT - MARGIN_RIGHT
+  let plot_h = h - MARGIN_TOP - MARGIN_BOTTOM
+  let x_min  = data_min(xs)
+  let x_max  = data_max(xs)
+  let y_min  = data_min(ys)
+  let y_max  = data_max(ys)
+  let x_pad  = if x_max == x_min then 1 else (x_max - x_min) / 10
+  let y_pad  = if y_max == y_min then 1 else (y_max - y_min) / 10
+  let axes   = draw_axes(x_left, y_top, plot_w, plot_h, title)
+  let grid   = draw_grid(x_left, y_top, plot_w, plot_h, y_min - y_pad, y_max + y_pad)
+  let n      = list.len(xs)
+  let dots   = str.join(list.map(list.range(0, n), fn(i) {
+    render_dot(xs, ys, i, x_left, y_top, plot_w, plot_h, x_min, x_max, x_pad, y_min, y_max, y_pad, radius, color)
+  }), "")
+  str.concat(str.concat(str.concat(str.concat(
+    svg_open(w, h),
+    rect_el(0, 0, w, h, "white", "#e5e7eb")),
+    str.concat(grid, axes)), dots), "</svg>")
+}
+
+fn hist_bin_count(data, bins, mn, bw, b) {
+  let lo = mn + b * bw
+  let hi = lo + bw
+  list.len(list.filter(data, fn(x) {
+    if b == bins - 1 then x >= lo && x <= hi else x >= lo && x < hi
+  }))
+}
+fn histogram(opts) {
+  let data  = rec.get(opts, "data")
+  let bins  = if rec.has(opts, "bins")  then rec.get(opts, "bins")  else 10
+  let title = if rec.has(opts, "title") then rec.get(opts, "title") else ""
+  let w     = if rec.has(opts, "width") then rec.get(opts, "width") else DEFAULT_W
+  let h     = if rec.has(opts, "height") then rec.get(opts, "height") else DEFAULT_H
+  let color = if rec.has(opts, "color") then rec.get(opts, "color") else list.get(PALETTE, 0)
+  let mn    = data_min(data)
+  let mx    = data_max(data)
+  let rng   = if mx == mn then 1 else mx - mn
+  let bw    = rng / bins
+  let counts = list.map(list.range(0, bins), fn(b) {
+    hist_bin_count(data, bins, mn, bw, b)
+  })
+  bar_chart({ data: counts,
+              labels: list.map(list.range(0, bins), fn(b) { str.from_int(mn + b * bw) }),
+              title: title, width: w, height: h, color: color })
+}
+
+fn save(svg_str, path) {
+  io.write_file(path, svg_str) | { ok: true, path: path }
+}
+
+export { line_chart, bar_chart, scatter, histogram, save,
+         palette_color, data_min, data_max, scale_y, scale_x }
