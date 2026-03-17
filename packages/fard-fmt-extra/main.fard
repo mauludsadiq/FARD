@@ -1,0 +1,214 @@
+// fard-fmt-extra@1.6.0 — Formatting utilities for FARD
+// Number formatting, table rendering, pretty printing, duration, bytes
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/json") as json
+import("std/type") as type
+
+// --- Number formatting ---
+
+fn pad_left(s, width, char) {
+  let n = width - str.len(s)
+  if n <= 0 then s
+  else str.concat(str.repeat(char, n), s)
+}
+
+fn pad_right(s, width, char) {
+  let n = width - str.len(s)
+  if n <= 0 then s
+  else str.concat(s, str.repeat(char, n))
+}
+
+fn pad_center(s, width, char) {
+  let n = width - str.len(s)
+  if n <= 0 then s
+  else
+    let left  = n / 2
+    let right = n - left
+    str.concat(str.concat(str.repeat(char, left), s), str.repeat(char, right))
+}
+
+fn fmt_int(n, width) {
+  pad_left(str.from_int(n), width, " ")
+}
+
+fn fmt_float(n, decimals) {
+  let s    = str.from_float(n)
+  let parts = str.split(s, ".")
+  let int_part = list.get(parts, 0)
+  let dec_part = if list.len(parts) > 1 then list.get(parts, 1) else "0"
+  let dec_trimmed = if str.len(dec_part) > decimals then str.slice(dec_part, 0, decimals)
+                    else str.concat(dec_part, str.repeat("0", decimals - str.len(dec_part)))
+  str.concat(str.concat(int_part, "."), dec_trimmed)
+}
+
+fn fmt_thousands(n) {
+  let s     = str.from_int(n)
+  let chars = str.chars(s)
+  let len   = str.len(s)
+  list.fold(list.range(0, len), "", fn(acc, i) {
+    let c         = list.get(chars, i)
+    let remaining = len - i - 1
+    if remaining > 0 && remaining % 3 == 0 then str.concat(str.concat(acc, c), ",")
+    else str.concat(acc, c)
+  })
+}
+
+fn fmt_percent(n, total) {
+  if total == 0 then "0%"
+  else str.concat(str.from_int((n * 100) / total), "%")
+}
+
+// --- Bytes formatting ---
+fn fmt_bytes(n) {
+  if n < 1024 then str.concat(str.from_int(n), " B")
+  else if n < 1048576 then str.concat(str.from_int(n / 1024), " KB")
+  else if n < 1073741824 then str.concat(str.from_int(n / 1048576), " MB")
+  else str.concat(str.from_int(n / 1073741824), " GB")
+}
+
+// --- Duration formatting ---
+fn fmt_mins_secs(ms) {
+  let mins = ms / 60000
+  let secs = (ms % 60000) / 1000
+  str.concat(str.concat(str.from_int(mins), "m"), str.concat(str.from_int(secs), "s"))
+}
+
+fn fmt_hrs_mins(ms) {
+  let hrs  = ms / 3600000
+  let mins = (ms % 3600000) / 60000
+  str.concat(str.concat(str.from_int(hrs), "h"), str.concat(str.from_int(mins), "m"))
+}
+
+fn fmt_duration_ms(ms) {
+  if ms < 1000 then str.concat(str.from_int(ms), "ms")
+  else if ms < 60000 then str.concat(str.from_int(ms / 1000), "s")
+  else if ms < 3600000 then fmt_mins_secs(ms)
+  else fmt_hrs_mins(ms)
+}
+
+fn fmt_duration_secs(s) { fmt_duration_ms(s * 1000) }
+
+// --- Table rendering ---
+fn col_widths(headers, rows) {
+  list.map(list.range(0, list.len(headers)), fn(i) {
+    let header_w = str.len(list.get(headers, i))
+    let max_w    = list.fold(rows, header_w, fn(acc, row) {
+      let val = if i < list.len(row) then str.len(str.from_int(0)) else 0
+      let v   = if i < list.len(row) then list.get(row, i) else ""
+      let vw  = str.len(if type.of(v) == "text" then v else str.from_int(0))
+      if vw > acc then vw else acc
+    })
+    max_w
+  })
+}
+
+fn render_row(cells, widths) {
+  let cols = list.map(list.range(0, list.len(cells)), fn(i) {
+    let cell = list.get(cells, i)
+    let w    = if i < list.len(widths) then list.get(widths, i) else str.len(cell)
+    pad_right(cell, w, " ")
+  })
+  str.concat("| ", str.concat(str.join(cols, " | "), " |"))
+}
+
+fn render_sep(widths) {
+  let dashes = list.map(widths, fn(w) { str.repeat("-", w + 2) })
+  str.concat("+", str.concat(str.join(dashes, "+"), "+"))
+}
+
+fn render_table(headers, rows) {
+  let str_rows = list.map(rows, fn(row) {
+    list.map(row, fn(v) {
+      let t = type.of(v)
+      if t == "text" then v
+      else if t == "int" then str.from_int(v)
+      else if t == "float" then str.from_float(v)
+      else if t == "bool" then if v then "true" else "false"
+      else ""
+    })
+  })
+  let widths = col_widths(headers, str_rows)
+  let sep    = render_sep(widths)
+  let hdr    = render_row(headers, widths)
+  let data   = list.map(str_rows, fn(row) { render_row(row, widths) })
+  str.join(list.concat([[sep, hdr, sep], data, [sep]]), "\n")
+}
+
+// --- Pretty printing ---
+fn pretty_json(data) {
+  json.encode(data)
+}
+
+fn indent_lines(s, n) {
+  let pad   = str.repeat(" ", n)
+  let lines = str.split_lines(s)
+  str.join(list.map(lines, fn(l) { str.concat(pad, l) }), "\n")
+}
+
+fn truncate(s, max_len, suffix) {
+  if str.len(s) <= max_len then s
+  else str.concat(str.slice(s, 0, max_len - str.len(suffix)), suffix)
+}
+
+fn word_wrap(s, width) {
+  let words  = str.split(s, " ")
+  let result = list.fold(words, { lines: [], cur: "" }, fn(acc, word) {
+    let new_cur = if str.len(acc.cur) == 0 then word
+                  else str.concat(str.concat(acc.cur, " "), word)
+    if str.len(new_cur) > width then
+      { lines: list.concat([acc.lines, [acc.cur]]), cur: word }
+    else
+      { lines: acc.lines, cur: new_cur }
+  })
+  let all = if str.len(result.cur) > 0 then list.concat([result.lines, [result.cur]])
+            else result.lines
+  str.join(all, "\n")
+}
+
+// --- List formatting ---
+fn fmt_list(items, bullet) {
+  str.join(list.map(items, fn(item) { str.concat(bullet, item) }), "\n")
+}
+
+fn fmt_numbered(items) {
+  str.join(list.map(list.range(0, list.len(items)), fn(i) {
+    str.concat(str.concat(str.from_int(i + 1), ". "), list.get(items, i))
+  }), "\n")
+}
+
+fn fmt_key_value(data, sep) {
+  let keys  = rec.keys(data)
+  let lines = list.map(keys, fn(k) {
+    let v = rec.get(data, k)
+    let t = type.of(v)
+    let vs = if t == "text" then v
+             else if t == "int" then str.from_int(v)
+             else if t == "bool" then if v then "true" else "false"
+             else json.encode(v)
+    str.concat(str.concat(k, sep), vs)
+  })
+  str.join(lines, "\n")
+}
+
+{
+  pad_left:         pad_left,
+  pad_right:        pad_right,
+  pad_center:       pad_center,
+  fmt_int:          fmt_int,
+  fmt_float:        fmt_float,
+  fmt_thousands:    fmt_thousands,
+  fmt_percent:      fmt_percent,
+  fmt_bytes:        fmt_bytes,
+  fmt_duration_ms:  fmt_duration_ms,
+  fmt_duration_secs: fmt_duration_secs,
+  render_table:     render_table,
+  pretty_json:      pretty_json,
+  indent_lines:     indent_lines,
+  truncate:         truncate,
+  word_wrap:        word_wrap,
+  fmt_list:         fmt_list,
+  fmt_numbered:     fmt_numbered,
+  fmt_key_value:    fmt_key_value
+}
