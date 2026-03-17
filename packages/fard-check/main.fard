@@ -1,0 +1,219 @@
+// fard-check@1.6.0 — Runtime type and schema checking for FARD
+// Every check is a witnessed artifact.
+// The correctness of your program's data is provable.
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/type") as type
+import("std/json") as json
+
+// --- Result types ---
+fn ok(value)       { { ok: true,  value: value, errors: [] } }
+fn err(errors)     { { ok: false, value: null,  errors: errors } }
+fn err_one(msg)    { err([msg]) }
+fn merge_errors(a, b) { list.concat([a.errors, b.errors]) }
+
+// --- Type checkers ---
+fn is_text(v)    { type.of(v) == "text" }
+fn is_int(v)     { type.of(v) == "int" }
+fn is_float(v)   { type.of(v) == "float" }
+fn is_bool(v)    { type.of(v) == "bool" }
+fn is_list(v)    { type.of(v) == "list" }
+fn is_record(v)  { type.of(v) == "record" }
+fn is_null(v)    { v == null }
+fn is_number(v)  { type.of(v) == "int" || type.of(v) == "float" }
+
+// --- Basic checks ---
+fn check_type(v, expected, path) {
+  let t = type.of(v)
+  if t == expected then ok(v)
+  else err_one(str.concat(str.concat(path, ": expected "), str.concat(expected, str.concat(" got ", t))))
+}
+
+fn check_not_null(v, path) {
+  if v != null then ok(v)
+  else err_one(str.concat(path, ": must not be null"))
+}
+
+fn check_min_len(v, min, path) {
+  let t = type.of(v)
+  let n = if t == "text" then str.len(v) else if t == "list" then list.len(v) else 0
+  if n >= min then ok(v)
+  else err_one(str.concat(path, str.concat(": min length ", str.concat(str.from_int(min), str.concat(" got ", str.from_int(n))))))
+}
+
+fn check_max_len(v, max, path) {
+  let t = type.of(v)
+  let n = if t == "text" then str.len(v) else if t == "list" then list.len(v) else 0
+  if n <= max then ok(v)
+  else err_one(str.concat(path, str.concat(": max length ", str.concat(str.from_int(max), str.concat(" got ", str.from_int(n))))))
+}
+
+fn check_min(v, min, path) {
+  if v >= min then ok(v)
+  else err_one(str.concat(path, str.concat(": min value ", str.concat(str.from_int(min), str.concat(" got ", str.from_int(v))))))
+}
+
+fn check_max(v, max, path) {
+  if v <= max then ok(v)
+  else err_one(str.concat(path, str.concat(": max value ", str.concat(str.from_int(max), str.concat(" got ", str.from_int(v))))))
+}
+
+fn check_one_of(v, options, path) {
+  if list.any(options, fn(o) { o == v }) then ok(v)
+  else err_one(str.concat(path, str.concat(": must be one of ", json.encode(options))))
+}
+
+fn check_matches(v, pred, msg, path) {
+  if pred(v) then ok(v)
+  else err_one(str.concat(path, str.concat(": ", msg)))
+}
+
+// --- Schema definition ---
+fn field(type_name, required) {
+  { type: type_name, required: required, min: null, max: null,
+    min_len: null, max_len: null, one_of: null }
+}
+
+fn required_field(type_name) { field(type_name, true) }
+fn optional_field(type_name) { field(type_name, false) }
+
+fn with_min(f, min)         { rec.set(f, "min", min) }
+fn with_max(f, max)         { rec.set(f, "max", max) }
+fn with_min_len(f, min)     { rec.set(f, "min_len", min) }
+fn with_max_len(f, max)     { rec.set(f, "max_len", max) }
+fn with_one_of(f, options)  { rec.set(f, "one_of", options) }
+
+// --- Schema validation ---
+fn run_field_checks(v, spec, path) {
+  let type_r = if rec.get(spec, "type") == "any" then ok(v) else check_type(v, rec.get(spec, "type"), path)
+  if type_r.ok == false then type_r
+  else check_field_constraints(v, spec, path)
+}
+
+fn check_field_constraints(v, spec, path) {
+  let min_r = if rec.get(spec, "min") != null then check_min(v, rec.get(spec, "min"), path) else ok(v)
+  if min_r.ok == false then min_r
+  else check_field_constraints2(v, spec, path)
+}
+
+fn check_field_constraints2(v, spec, path) {
+  let max_r = if rec.get(spec, "max") != null then check_max(v, rec.get(spec, "max"), path) else ok(v)
+  if max_r.ok == false then max_r
+  else check_field_constraints3(v, spec, path)
+}
+
+fn check_field_constraints3(v, spec, path) {
+  let ml_r = if rec.get(spec, "min_len") != null then check_min_len(v, rec.get(spec, "min_len"), path) else ok(v)
+  if ml_r.ok == false then ml_r
+  else check_field_constraints4(v, spec, path)
+}
+
+fn check_field_constraints4(v, spec, path) {
+  let xl_r = if rec.get(spec, "max_len") != null then check_max_len(v, rec.get(spec, "max_len"), path) else ok(v)
+  if xl_r.ok == false then xl_r
+  else if rec.get(spec, "one_of") != null then check_one_of(v, rec.get(spec, "one_of"), path)
+  else ok(v)
+}
+
+fn validate_field(data, name, spec, path) {
+  let full_path = str.concat(str.concat(path, "."), name)
+  if rec.has(data, name) == false then
+    if rec.get(spec, "required") then err_one(str.concat(full_path, ": required field missing"))
+    else ok(null)
+  else run_field_checks(rec.get(data, name), spec, full_path)
+}
+
+fn schema(field_names, fields) {
+  { field_names: field_names, fields: fields }
+}
+
+fn validate(data, s) {
+  let field_names = rec.get(s, "field_names")
+  let fields      = rec.get(s, "fields")
+  let results     = list.map(field_names, fn(name) {
+    validate_field(data, name, rec.get(fields, name), "")
+  })
+  let errors = list.flat_map(results, fn(r) { r.errors })
+  if list.len(errors) == 0 then ok(data)
+  else err(errors)
+}
+
+// --- List item validation ---
+fn validate_list(items, item_checker) {
+  let results = list.map(list.range(0, list.len(items)), fn(i) {
+    let path = str.concat("[", str.concat(str.from_int(i), "]"))
+    item_checker(list.get(items, i), path)
+  })
+  let errors = list.flat_map(results, fn(r) { r.errors })
+  if list.len(errors) == 0 then ok(items)
+  else err(errors)
+}
+
+// --- Pipeline validation ---
+fn pipe(v, checks) {
+  list.fold(checks, ok(v), fn(acc, check) {
+    if acc.ok == false then acc
+    else check(acc.value)
+  })
+}
+
+fn pipe_all(v, checks) {
+  let results = list.map(checks, fn(check) { check(v) })
+  let errors  = list.flat_map(results, fn(r) { r.errors })
+  if list.len(errors) == 0 then ok(v)
+  else err(errors)
+}
+
+// --- Assert (throws on failure) ---
+fn make_assert_msg(result, context) {
+  str.concat(str.concat(context, ": "), str.join(result.errors, ", "))
+}
+
+fn assert_ok(result, context) {
+  if result.ok then result
+  else { ok: false, value: null, errors: result.errors, message: make_assert_msg(result, context) }
+}
+
+// --- Summary ---
+fn summary(result) {
+  if result.ok then "OK"
+  else str.concat(str.from_int(list.len(result.errors)), str.concat(" error(s): ", str.join(result.errors, "; ")))
+}
+
+{
+  ok:              ok,
+  err:             err,
+  err_one:         err_one,
+  is_text:         is_text,
+  is_int:          is_int,
+  is_float:        is_float,
+  is_bool:         is_bool,
+  is_list:         is_list,
+  is_record:       is_record,
+  is_null:         is_null,
+  is_number:       is_number,
+  check_type:      check_type,
+  check_not_null:  check_not_null,
+  check_min_len:   check_min_len,
+  check_max_len:   check_max_len,
+  check_min:       check_min,
+  check_max:       check_max,
+  check_one_of:    check_one_of,
+  check_matches:   check_matches,
+  field:           field,
+  required_field:  required_field,
+  optional_field:  optional_field,
+  with_min:        with_min,
+  with_max:        with_max,
+  with_min_len:    with_min_len,
+  with_max_len:    with_max_len,
+  with_one_of:     with_one_of,
+  schema:          schema,
+  validate:        validate,
+  validate_list:   validate_list,
+  pipe:            pipe,
+  pipe_all:        pipe_all,
+  assert_ok:       assert_ok,
+  summary:         summary
+}
