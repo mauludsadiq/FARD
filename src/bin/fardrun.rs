@@ -2929,7 +2929,8 @@ impl Env {
     fn child(&self) -> Self {
         Self {
             inner: Arc::new(EnvInner {
-                vars: Mutex::new(HashMap::new()),
+                // Pre-allocate for typical fn call scope (4 params)
+                vars: Mutex::new(HashMap::with_capacity(4)),
                 parent: Some(self.clone()),
             }),
         }
@@ -2949,12 +2950,19 @@ impl Env {
     }
 
     fn get(&self, k: &str) -> Option<Val> {
-        // lock only for local lookup; drop before recursing to parent
-        if let Some(v) = self.inner.vars.lock().unwrap().get(k).cloned() {
-            return Some(v);
+        // Walk the scope chain without cloning Arc at each level
+        let mut current: *const EnvInner = &*self.inner;
+        loop {
+            // SAFETY: current always points to a live EnvInner owned by an Arc
+            let inner = unsafe { &*current };
+            if let Some(v) = inner.vars.lock().unwrap().get(k).cloned() {
+                return Some(v);
+            }
+            match &inner.parent {
+                Some(p) => current = &*p.inner,
+                None => return None,
+            }
         }
-        let parent = self.inner.parent.clone();
-        parent.as_ref().and_then(|p| p.get(k))
     }
 }
 impl Val {
