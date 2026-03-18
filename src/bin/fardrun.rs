@@ -2270,6 +2270,37 @@ impl Parser {
     fn parse_fn_block_inner(&mut self) -> Result<Expr> {
         let mut binds: Vec<(String, Expr)> = Vec::new();
         while self.eat_kw("let") {
+            // Support destructuring: let {a, b} = expr or let [a, b] = expr
+            let is_destructure = matches!(self.peek(), Tok::Sym(s) if s == "{" || s == "[");
+            if is_destructure {
+                let pat = self.parse_pat()?;
+                self.expect_sym("=")?;
+                let rhs = self.parse_expr()?;
+                binds.push(("__destruct__".to_string(), rhs.clone()));
+                // Desugar: bind temp var, then extract each field
+                let tmp = "__destruct_tmp__".to_string();
+                // We'll handle this via LetPat in the tail
+                // Push a special marker — handled below
+                // Actually: desugar directly into multiple binds
+                match pat {
+                    Pat::Obj { ref items, .. } => {
+                        let tmp_expr = Expr::Var(tmp.clone());
+                        // Remove the __destruct__ placeholder we just pushed
+                        binds.pop();
+                        binds.push((tmp.clone(), rhs));
+                        for (field, sub_pat) in items {
+                            let field_expr = Expr::Get(Box::new(Expr::Var(tmp.clone())), field.clone());
+                            match sub_pat {
+                                Pat::Bind(name) => binds.push((name.clone(), field_expr)),
+                                _ => binds.push((field.clone(), field_expr)),
+                            }
+                        }
+                    }
+                    Pat::Bind(name) => binds.push((name, rhs)),
+                    _ => binds.push(("_".to_string(), rhs)),
+                }
+                continue;
+            }
             let name = self.expect_ident()?;
             self.expect_sym("=")?;
             let rhs = self.parse_expr()?;
@@ -2606,6 +2637,35 @@ impl Parser {
                 }
                 self.i = __save;
                 self.expect_kw("let")?;
+                // Support destructuring: let {a, b} = expr
+                if matches!(self.peek(), Tok::Sym(s) if s == "{" || s == "[") {
+                    let pat = self.parse_pat()?;
+                    self.expect_sym("=")?;
+                    let rhs = self.parse_expr()?;
+                    // Desugar into a temp binding + field extractions
+                    let tmp = "__destruct_top__".to_string();
+                    items.push(Item::Let(tmp.clone(), rhs, None));
+                    match pat {
+                        Pat::Obj { items: fields, .. } => {
+                            for (field, sub_pat) in fields {
+                                let field_expr = Expr::Get(
+                                    Box::new(Expr::Var(tmp.clone())),
+                                    field.clone()
+                                );
+                                let bind_name = match sub_pat {
+                                    Pat::Bind(n) => n,
+                                    _ => field,
+                                };
+                                items.push(Item::Let(bind_name, field_expr, None));
+                            }
+                        }
+                        Pat::Bind(name) => {
+                            items.push(Item::Let(name, Expr::Var(tmp), None));
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
                 let name = self.expect_ident()?;
                 self.expect_sym("=")?;
                 let rhs = self.parse_expr()?;
@@ -2657,8 +2717,12 @@ impl Parser {
                             break;
                         }
                         let k = self.expect_ident()?;
-                        self.expect_sym(":")?;
-                        let sub = self.parse_pat()?;
+                        // Shorthand: {name} means {name: name}
+                        let sub = if self.eat_sym(":") {
+                            self.parse_pat()?
+                        } else {
+                            Pat::Bind(k.clone())
+                        };
                         items.push((k, sub));
                         if self.eat_sym("}") {
                             break;
