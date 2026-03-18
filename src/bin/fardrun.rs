@@ -3259,7 +3259,8 @@ enum Builtin {
     FfiCall,   // ffi.call(handle_id, symbol, args) -> {ok: val} | {err: text}
     FfiClose,  // ffi.close(handle_id) -> null
     FfiCallPure, // ffi.call_pure(handle_id, symbol, args) -> same as call but hashed into witness
-    FfiCallStr,  // ffi.call_str(handle_id, symbol, args) -> {ok: text} | {err: text}
+    FfiCallStr,
+    FfiCallChecked,  // ffi.call_str(handle_id, symbol, args) -> {ok: text} | {err: text}
     NetServe,   // net.serve(port, handler) -> never (blocking)
     NetRespond, // net.respond(req, status, headers, body) -> null (internal)
     CryptoSha512,         // crypto.sha512(bytes) -> text
@@ -6498,6 +6499,11 @@ fn call_builtin(
         }
         Builtin::FfiCall => {
             if args.len() != 3 { bail!("ERROR_BADARG ffi.call expects 3 args"); }
+            // Emit oracle boundary warning — ffi.call is non-deterministic
+            let _ = tracer.emit_raw(&format!(
+                r#"{{"t":"ffi_oracle","symbol":"{}","boundary":"non-deterministic"}}"#,
+                match args.get(1) { Some(Val::Text(s)) => s.as_str(), _ => "unknown" }
+            ));
             let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: handle must be text") };
             let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call: symbol must be text") };
             let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call: args must be list") };
@@ -6591,6 +6597,94 @@ fn call_builtin(
             Ok(Val::Record(m))
         }
 
+
+        Builtin::FfiCallChecked => {
+            // call_checked: call fn twice, assert identical outputs (determinism check)
+            // If deterministic — include in witness chain. If not — return error with evidence.
+            if args.len() < 3 || args.len() > 4 {
+                bail!("ERROR_BADARG ffi.call_checked expects 3-4 args: (handle, symbol, args[, reason])");
+            }
+            let handle = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call_checked: handle must be text") };
+            let symbol = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG ffi.call_checked: symbol must be text") };
+            let ffi_args = match &args[2] { Val::List(l) => l.clone(), _ => bail!("ERROR_BADARG ffi.call_checked: args must be list") };
+            let reason = match args.get(3) {
+                Some(Val::Text(s)) => s.clone(),
+                _ => "no reason provided".to_string(),
+            };
+
+            let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
+                Val::Int(n) => Ok(*n),
+                Val::Bool(b) => Ok(if *b { 1 } else { 0 }),
+                _ => Err(anyhow::anyhow!("ERROR_FFI call_checked: only int/bool args supported")),
+            }).collect();
+
+            let iargs = match int_args {
+                Err(e) => {
+                    let mut m = BTreeMap::new();
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                    return Ok(Val::Record(m));
+                }
+                Ok(v) => v,
+            };
+
+            // Helper closure to call the fn once
+            let call_once = |iargs: &[i64]| -> anyhow::Result<i64> {
+                FFI_LIBS.with(|libs| {
+                    let libs = libs.borrow();
+                    let lib = libs.get(&handle).ok_or_else(|| anyhow::anyhow!("ERROR_FFI handle not found: {}", handle))?;
+                    unsafe {
+                        match iargs.len() {
+                            0 => { let f: libloading::Symbol<unsafe extern "C" fn() -> i64> = lib.get(symbol.as_bytes())?; Ok(f()) }
+                            1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
+                            2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1])) }
+                            3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2])) }
+                            _ => Err(anyhow::anyhow!("ERROR_FFI max 3 args")),
+                        }
+                    }
+                })
+            };
+
+            // Call twice
+            let r1 = call_once(&iargs);
+            let r2 = call_once(&iargs);
+
+            let mut m = BTreeMap::new();
+            match (r1, r2) {
+                (Ok(v1), Ok(v2)) => {
+                    if v1 == v2 {
+                        // Deterministic — emit checked event and include in witness
+                        let _ = tracer.emit_raw(&format!(
+                            r#"{{"t":"ffi_checked","symbol":"{}","result":{},"reason":"{}","deterministic":true}}"#,
+                            symbol, v1, reason.replace('"', "\\\"")
+                        ));
+                        m.insert("t".to_string(), Val::Text("ok".to_string()));
+                        m.insert("ok".to_string(), Val::Int(v1));
+                        m.insert("checked".to_string(), Val::Bool(true));
+                        m.insert("deterministic".to_string(), Val::Bool(true));
+                    } else {
+                        // Non-deterministic — reject with evidence
+                        let _ = tracer.emit_raw(&format!(
+                            r#"{{"t":"ffi_checked","symbol":"{}","deterministic":false,"run1":{},"run2":{}}}"#,
+                            symbol, v1, v2
+                        ));
+                        m.insert("t".to_string(), Val::Text("err".to_string()));
+                        m.insert("e".to_string(), Val::Text(format!(
+                            "ERROR_FFI call_checked: non-deterministic result for {}: run1={} run2={}",
+                            symbol, v1, v2
+                        )));
+                        m.insert("run1".to_string(), Val::Int(v1));
+                        m.insert("run2".to_string(), Val::Int(v2));
+                        m.insert("deterministic".to_string(), Val::Bool(false));
+                    }
+                }
+                (Err(e), _) | (_, Err(e)) => {
+                    m.insert("t".to_string(), Val::Text("err".to_string()));
+                    m.insert("e".to_string(), Val::Text(format!("{}", e)));
+                }
+            }
+            Ok(Val::Record(m))
+        }
         Builtin::FfiCallStr => {
             // call_str: calls a C function that returns char* (as i64 pointer), converts to FARD text
             if args.len() != 3 { bail!("ERROR_BADARG ffi.call_str expects 3 args"); }
@@ -10389,6 +10483,7 @@ Ok(m)
                 m.insert("call".to_string(),  Val::Builtin(Builtin::FfiCall));
                 m.insert("call_pure".to_string(), Val::Builtin(Builtin::FfiCallPure));
                 m.insert("call_str".to_string(), Val::Builtin(Builtin::FfiCallStr));
+                m.insert("call_checked".to_string(), Val::Builtin(Builtin::FfiCallChecked));
                 m.insert("load".to_string(),  Val::Builtin(Builtin::FfiOpen));
                 m.insert("close".to_string(), Val::Builtin(Builtin::FfiClose));
                 Ok(m)
