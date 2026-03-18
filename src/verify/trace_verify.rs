@@ -128,8 +128,23 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
         "module_resolve",
         "module_graph",
         "artifact_in",
+        "artifact_in_named",
         "artifact_out",
+        "artifact_dep",
+        "artifact_derived",
         "error",
+        // Witnessed concurrency
+        "child_spawn",
+        "child_receipt",
+        // Tracing
+        "emit",
+        "grow_node",
+        "trace_info",
+        "trace_warn",
+        "trace_error",
+        "trace_span",
+        // Witness
+        "witness_verify",
     ]
     .into_iter()
     .collect();
@@ -162,7 +177,13 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
         }
 
         let canon = canon_line(&v)?;
-        if canon != raw_line {
+        // Canon check: only enforce for structural events, not informational ones
+        let t_for_canon = obj.get("t").and_then(|v| v.as_str()).unwrap_or("");
+        let skip_canon = matches!(t_for_canon,
+            "emit" | "grow_node" | "trace_info" | "trace_warn" |
+            "trace_error" | "trace_span" | "witness_verify" | "artifact_derived"
+        );
+        if !skip_canon && canon != raw_line {
             return Err(format!(
                 "M2_CANON_MISMATCH idx={} raw={} canon={}",
                 idx, raw_line, canon
@@ -209,6 +230,40 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
                 let _code = expect_str(obj, "code")?;
                 let _msg = expect_str(obj, "message")?;
                 error_count += 1;
+                saw_non_module_resolve = true;
+            }
+            "child_spawn" => {
+                // {t: "child_spawn", spawn_id: "spawn_<uuid>"}
+                let _spawn_id = expect_str(obj, "spawn_id")?;
+                saw_non_module_resolve = true;
+            }
+            "child_receipt" => {
+                // {t: "child_receipt", spawn_id: "...", run_digest: "sha256:...", result_digest: "sha256:..."}
+                let _spawn_id = expect_str(obj, "spawn_id")?;
+                let run_digest = expect_str(obj, "run_digest")?;
+                let result_digest = expect_str(obj, "result_digest")?;
+                if !is_sha256(run_digest) && run_digest != "sha256:no-trace" {
+                    return Err(format!("M2_BAD_RUN_DIGEST {}", run_digest));
+                }
+                if !is_sha256(result_digest) && result_digest != "sha256:no-result" {
+                    return Err(format!("M2_BAD_RESULT_DIGEST {}", result_digest));
+                }
+                saw_non_module_resolve = true;
+            }
+            "artifact_in_named" => {
+                let cid = expect_str(obj, "cid")?;
+                if !is_sha256(cid) { return Err("M2_BAD_CID".into()); }
+                saw_non_module_resolve = true;
+            }
+            "artifact_dep" => {
+                let run_id = expect_str(obj, "run_id")?;
+                if !is_sha256(run_id) { return Err(format!("M2_BAD_RUN_ID {}", run_id)); }
+                saw_non_module_resolve = true;
+            }
+            "artifact_derived" | "emit" | "grow_node" |
+            "trace_info" | "trace_warn" | "trace_error" | "trace_span" |
+            "witness_verify" => {
+                // Informational events — no strict schema, just require "t" field
                 saw_non_module_resolve = true;
             }
             _ => return Err("M2_UNREACHABLE".into()),
@@ -259,4 +314,37 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Extract all child_receipt entries from a trace
+pub fn extract_child_receipts(trace_path: &str) -> Result<Vec<(String, String, String)>, String> {
+    let bytes = std::fs::read(trace_path).map_err(|e| format!("IO: {e}"))?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| "UTF8".to_string())?;
+    let mut receipts = Vec::new();
+    for line in text.split('\n') {
+        if line.is_empty() { continue; }
+        if let Ok(v) = valuecore::json::from_str(line) {
+            if let Some(obj) = v.as_object() {
+                if obj.get("t").and_then(|t| t.as_str()) == Some("child_receipt") {
+                    let spawn_id = obj.get("spawn_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let run_digest = obj.get("run_digest").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let result_digest = obj.get("result_digest").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    receipts.push((spawn_id, run_digest, result_digest));
+                }
+            }
+        }
+    }
+    Ok(receipts)
+}
+
+/// Extract the run digest from a digests.json
+pub fn extract_run_digest(outdir: &str) -> Result<String, String> {
+    let path = format!("{}/digests.json", outdir);
+    let bytes = std::fs::read(&path).map_err(|e| format!("IO: {e}"))?;
+    let v: valuecore::json::JsonVal = valuecore::json::from_slice(&bytes)
+        .map_err(|_| "PARSE".to_string())?;
+    v.get("preimage_sha256")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "MISSING_preimage_sha256".to_string())
 }
