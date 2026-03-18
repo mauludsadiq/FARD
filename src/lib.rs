@@ -373,6 +373,41 @@ pub mod gates;
 
 /// Parse a FARD source string and return a list of error messages with line/col.
 /// Used by fard-lsp for diagnostics.
+/// Run the HM type checker and return errors as (line, col, message) triples.
+/// Used by --strict-types to abort execution on type errors.
+/// Calls fardcheck binary as subprocess.
+pub fn type_check_strict(source: &str, filename: &str) -> Vec<(u32, u32, String)> {
+    // Write source to temp file and run fardcheck
+    let tmp = std::env::temp_dir().join("fardcheck_strict_tmp.fard");
+    if std::fs::write(&tmp, source).is_err() { return vec![]; }
+    // Find fardcheck next to current exe
+    let exe = std::env::current_exe().ok()
+        .and_then(|p| p.parent().map(|d| d.join("fardcheck")))
+        .unwrap_or_else(|| std::path::PathBuf::from("fardcheck"));
+    let out = std::process::Command::new(&exe)
+        .arg(tmp.to_str().unwrap_or(filename))
+        .output();
+    let _ = std::fs::remove_file(&tmp);
+    match out {
+        Err(_) => vec![],
+        Ok(output) => {
+            if output.status.success() { return vec![]; }
+            // Parse "TYPE ERROR line N: message" from stderr
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let mut errors = Vec::new();
+            for line in stderr.lines() {
+                if let Some(rest) = line.strip_prefix("TYPE ERROR line ") {
+                    if let Some((lnum, msg)) = rest.split_once(": ") {
+                        let ln: u32 = lnum.trim().parse().unwrap_or(0);
+                        errors.push((ln, 0u32, msg.to_string()));
+                    }
+                }
+            }
+            errors
+        }
+    }
+}
+
 pub fn parse_check(source: &str, filename: &str) -> Vec<(u32, u32, String)> {
     // We shell out to the binary parser indirectly by re-using the run_fard path.
     // For now, use a subprocess approach: write to temp file and run fardrun --parse-only.

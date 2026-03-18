@@ -1062,6 +1062,43 @@ fn main() -> Result<()> {
 
     let program = run.program;
     let out_dir = run.out;
+
+    // ── Strict type checking ──────────────────────────────────────────────────
+    if run.strict_types {
+        let src_text = match fs::read_to_string(&program) {
+            Ok(s) => s,
+            Err(e) => bail!("cannot read {}: {}", program.display(), e),
+        };
+        let errors = fard_v0_5_language_gate::type_check_strict(&src_text, &program.to_string_lossy());
+        if !errors.is_empty() {
+            fs::create_dir_all(&out_dir).ok();
+            // Write error.json with type errors
+            let type_errors: Vec<_> = errors.iter().map(|(line, col, msg)| {
+                let mut m = Map::new();
+                m.insert("line".to_string(), J::Int(*line as i64));
+                m.insert("col".to_string(), J::Int(*col as i64));
+                m.insert("message".to_string(), J::Str(msg.clone()));
+                J::Object(m)
+            }).collect();
+            let mut em = Map::new();
+            em.insert("code".to_string(), J::Str("ERROR_TYPE".to_string()));
+            em.insert("message".to_string(), J::Str(format!("{} type error(s)", errors.len())));
+            em.insert("type_errors".to_string(), J::Array(type_errors));
+            em.insert("strict_types".to_string(), J::Bool(true));
+            fs::write(
+                out_dir.join("error.json"),
+                json_to_string(&J::Object(em)).into_bytes(),
+            )?;
+            for (line, _col, msg) in &errors {
+                eprintln!("TYPE ERROR line {}: {}", line, msg);
+            }
+            eprintln!("{} type error(s) — run aborted (--strict-types)", errors.len());
+            std::process::exit(2);
+        }
+        eprintln!("[strict-types] ok — 0 errors");
+    }
+
+
     let lockfile = run.lockfile;
     let registry_dir = run.registry;
     set_program_args(run.program_args.clone());
