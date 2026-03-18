@@ -379,6 +379,29 @@ entry = \"main.fard\"\n", name))?;
 }
 
 
+
+fn expr_contains_while(expr: &Expr) -> bool {
+    match expr {
+        Expr::While(..) => true,
+        Expr::Let(_, e1, e2) => expr_contains_while(e1) || expr_contains_while(e2),
+        Expr::LetPat(_, e1, e2) => expr_contains_while(e1) || expr_contains_while(e2),
+        Expr::If(c, t, f) => expr_contains_while(c) || expr_contains_while(t) || expr_contains_while(f),
+        Expr::Bin(_, a, b) => expr_contains_while(a) || expr_contains_while(b),
+        Expr::Unary(_, e) => expr_contains_while(e),
+        Expr::Call(f, args) => expr_contains_while(f) || args.iter().any(|a| expr_contains_while(a)),
+        Expr::Fn(_, body) | Expr::Lambda(_, body) => expr_contains_while(body),
+        Expr::Get(e, _) => expr_contains_while(e),
+        Expr::List(xs) => xs.iter().any(|x| expr_contains_while(x)),
+        Expr::Rec(kvs) => kvs.iter().any(|(_, v)| expr_contains_while(v)),
+        Expr::Try(e) | Expr::Return(e) => expr_contains_while(e),
+        Expr::Match(e, arms) => expr_contains_while(e) || arms.iter().any(|a| expr_contains_while(&a.body)),
+        Expr::Using(_, e1, e2) => expr_contains_while(e1) || expr_contains_while(e2),
+        Expr::Index(a, b) => expr_contains_while(a) || expr_contains_while(b),
+        Expr::NamedCall(f, args) => expr_contains_while(f) || args.iter().any(|(_, v)| expr_contains_while(v)),
+        _ => false,
+    }
+}
+
 fn expr_contains_var(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Var(n) => n == name,
@@ -4267,6 +4290,10 @@ impl VmCompiler {
             }
 
             Expr::Fn(params, body) | Expr::Lambda(params, body) => {
+                // Don't VM-compile inline lambdas — they may capture tree-walker locals
+                // that are not available in VM slot tables
+                bail!("vm: inline Fn/Lambda not supported — use Item::Fn at top level");
+                #[allow(unreachable_code)]
                 let mut inner = VmCompiler::new();
                 for p in params.iter() {
                     match p {
@@ -9315,7 +9342,8 @@ impl ModuleLoader {
                 Item::Fn(name, params, _ret, body) => {
                     let raw_params: Vec<Pat> = params.into_iter().map(|(p, _)| p).collect();
                     // Try to compile to VM bytecode for pure functions with simple bind params
-                    let all_bind = raw_params.iter().all(|p| matches!(p, Pat::Bind(_)));
+                    let has_while = expr_contains_while(&body);
+                    let all_bind = !has_while && raw_params.iter().all(|p| matches!(p, Pat::Bind(_)));
                     let vm_val = if all_bind {
                         let mut fns: Vec<VmCompiledFn> = Vec::new();
                         let mut compiler = VmCompiler::new();

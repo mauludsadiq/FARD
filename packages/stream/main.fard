@@ -6,8 +6,14 @@ import("std/str")  as str
 import("std/rec")  as rec
 import("std/type") as type
 
+/// Create a stream from a seed value, step function, and limit.
+/// seed: Any — initial state
+/// step_fn: Fn — fn(seed) -> {value, next} | null
+/// limit: Int — maximum iterations
 fn from_seed(seed, step_fn, limit) { { seed: seed, step: step_fn, limit: limit } }
 
+/// Create a stream from a list.
+/// xs: List — source list
 fn from_list(xs) {
   from_seed({ items: xs, i: 0 }, fn(s) {
     if s.i >= list.len(s.items) then null
@@ -15,10 +21,16 @@ fn from_list(xs) {
   }, list.len(xs))
 }
 
+/// Create an infinite stream of numbers from start with given step.
+/// start: Int — starting value
+/// step_size: Int — increment per step
 fn range(start, step_size) {
   from_seed(start, fn(n) { { value: n, next: n + step_size } }, 1000000)
 }
 
+/// Create a finite stream of integers from start (inclusive) to end (exclusive).
+/// start: Int — starting value
+/// end: Int — end value (exclusive)
 fn range_to(start, end) {
   from_seed(start, fn(n) {
     if n >= end then null
@@ -32,6 +44,9 @@ fn unfold_step(s, stream, n) {
   else { value: r.value, seed: { seed: r.next, count: s.count + 1 } }
 }
 
+/// Collect the first n elements of a stream into a list.
+/// stream: Stream — source stream
+/// n: Int — number of elements
 fn take(stream, n) {
   grow.unfold(
     { seed: stream.seed, count: 0 },
@@ -43,12 +58,17 @@ fn take(stream, n) {
   )
 }
 
+/// Skip the first n elements of a stream.
+/// stream: Stream — source stream
+/// n: Int — elements to skip
 fn drop(stream, n) {
+  let step = stream.step
+  let lim  = stream.limit
   let new_seed = list.fold(list.range(0, n), stream.seed, fn(seed, _) {
-    let r = stream.step(seed)
+    let r = step(seed)
     if r == null then seed else r.next
   })
-  from_seed(new_seed, stream.step, stream.limit - n)
+  from_seed(new_seed, step, lim - n)
 }
 
 fn map_step(step_fn, f, seed) {
@@ -57,8 +77,13 @@ fn map_step(step_fn, f, seed) {
   else { value: f(r.value), next: r.next }
 }
 
+/// Transform each element of a stream with a function.
+/// stream: Stream — source stream
+/// f: Fn — fn(element) -> transformed
 fn map(stream, f) {
-  from_seed(stream.seed, fn(seed) { map_step(stream.step, f, seed) }, stream.limit)
+  let step = stream.step
+  let lim  = stream.limit
+  from_seed(stream.seed, fn(seed) { map_step(step, f, seed) }, lim)
 }
 
 fn filter_advance(step_fn, pred, s) {
@@ -76,8 +101,13 @@ fn filter_step(step_fn, pred, seed) {
   else { value: result.value.value, next: result.value.next }
 }
 
+/// Keep only stream elements matching a predicate.
+/// stream: Stream — source stream
+/// pred: Fn — fn(element) -> Bool
 fn filter(stream, pred) {
-  from_seed(stream.seed, fn(seed) { filter_step(stream.step, pred, seed) }, stream.limit)
+  let step = stream.step
+  let lim  = stream.limit
+  from_seed(stream.seed, fn(seed) { filter_step(step, pred, seed) }, lim)
 }
 
 fn fold_step(s, step_fn, f, limit) {
@@ -86,16 +116,25 @@ fn fold_step(s, step_fn, f, limit) {
   else { seed: r.next, acc: f(s.acc, r.value), count: s.count + 1 }
 }
 
+/// Reduce a stream to a single value.
+/// stream: Stream — source stream
+/// init: Any — initial accumulator
+/// f: Fn — fn(acc, element) -> acc
 fn fold(stream, init, f) {
+  let lim  = stream.limit
+  let step = stream.step
   let result = while { seed: stream.seed, acc: init, count: 0 }
-    fn(s) { s.count < stream.limit }
-    fn(s) { fold_step(s, stream.step, f, stream.limit) }
+    fn(s) { s.count < lim }
+    fn(s) { fold_step(s, step, f, lim) }
   result.value.acc
 }
 
 fn to_list(stream)     { take(stream, stream.limit) }
 fn collect(stream, n)  { take(stream, n) }
 fn sum(stream)         { fold(stream, 0, fn(acc, x) { acc + x }) }
+/// Count stream elements matching a predicate.
+/// stream: Stream — source stream
+/// pred: Fn — fn(element) -> Bool
 fn count_where(stream, pred) { fold(stream, 0, fn(acc, x) { if pred(x) then acc + 1 else acc }) }
 
 fn find_step(s, stream) {
@@ -105,10 +144,15 @@ fn find_step(s, stream) {
   else { seed: r.next, found: null, count: s.count + 1 }
 }
 
+/// Find the first element matching a predicate. Returns {some: value} or {none: null}.
+/// stream: Stream — source stream
+/// pred: Fn — fn(element) -> Bool
 fn find(stream, pred) {
+  let lim  = stream.limit
+  let step = stream.step
   let result = while { seed: stream.seed, found: null, count: 0, pred: pred }
-    fn(s) { s.found == null && s.count < stream.limit }
-    fn(s) { find_step(s, stream) }
+    fn(s) { s.found == null && s.count < lim }
+    fn(s) { find_step(s, { seed: stream.seed, step: step, limit: lim }) }
   result.value.found
 }
 
@@ -119,15 +163,22 @@ fn zip_step(step_a, step_b, s) {
   else { value: [ra.value, rb.value], next: { sa: ra.next, sb: rb.next } }
 }
 
+/// Zip two streams into a stream of [a, b] pairs.
+/// stream_a: Stream — first stream
+/// stream_b: Stream — second stream
 fn zip(stream_a, stream_b) {
-  let lim = if stream_a.limit < stream_b.limit then stream_a.limit else stream_b.limit
+  let lim  = if stream_a.limit < stream_b.limit then stream_a.limit else stream_b.limit
+  let step_a = stream_a.step
+  let step_b = stream_b.step
   from_seed(
     { sa: stream_a.seed, sb: stream_b.seed },
-    fn(s) { zip_step(stream_a.step, stream_b.step, s) },
+    fn(s) { zip_step(step_a, step_b, s) },
     lim
   )
 }
 
+/// Create a stream of lines from a text string.
+/// text: Text — multiline string
 fn lines(text) { from_list(str.split_lines(text)) }
 
 {
