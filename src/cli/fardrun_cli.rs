@@ -21,6 +21,7 @@ pub enum Command {
     Publish(PublishArgs),
     Install(InstallArgs),
     New(NewArgs),
+    Search(SearchArgs),
 }
 
 #[derive(Args, Debug)]
@@ -87,6 +88,12 @@ pub struct InstallArgs {
     pub manifest: PathBuf,
     #[arg(long)]
     pub registry: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct SearchArgs {
+    /// Search query (package name or keyword)
+    pub query: Option<String>,
 }
 
 impl Cli {
@@ -179,6 +186,23 @@ impl Cli {
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, Some(n));
+            }
+            Some(Command::Search(s)) => {
+                let query = s.query.unwrap_or_default();
+                // Print search results and exit
+                // Store search query in env for fardrun.rs to handle
+                std::env::set_var("FARD_SEARCH_QUERY", &query);
+                std::env::set_var("FARD_SEARCH_MODE", "1");
+                let dummy = RunArgs {
+                    program: PathBuf::from("."),
+                    out: PathBuf::from("."),
+                    lockfile: None,
+                    registry: None,
+                    enforce_lockfile: false,
+                    no_trace: false,
+                    program_args: vec![],
+                };
+                return (dummy, false, false, None, None, None, None);
             }
             Some(Command::Repl) | None => {
                 if want_repl {

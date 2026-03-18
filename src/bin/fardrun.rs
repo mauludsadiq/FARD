@@ -189,6 +189,132 @@ fn fard_cache_dir() -> PathBuf {
     }
 }
 
+
+// ── Semver range resolution ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+struct SemVer { major: u32, minor: u32, patch: u32 }
+
+impl SemVer {
+    fn parse(s: &str) -> Option<Self> {
+        let s = s.trim_start_matches(|c: char| !c.is_ascii_digit());
+        let parts: Vec<&str> = s.splitn(3, '.').collect();
+        if parts.len() < 2 { return None; }
+        let major = parts[0].parse().ok()?;
+        let minor = parts[1].parse().ok()?;
+        let patch = parts.get(2)
+            .and_then(|p| p.split('-').next())
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0);
+        Some(SemVer { major, minor, patch })
+    }
+
+    fn as_tuple(&self) -> (u32, u32, u32) { (self.major, self.minor, self.patch) }
+}
+
+impl std::fmt::Display for SemVer {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+/// Check if `version` satisfies `range`.
+/// Supported: exact "1.2.3", caret "^1.2.3" (>=1.2.3 <2.0.0),
+///            tilde "~1.2.3" (>=1.2.3 <1.3.0), ">=1.2.3", "*"/"latest"
+fn semver_matches(range: &str, version: &str) -> bool {
+    let range = range.trim();
+    if range == "*" || range == "latest" || range.is_empty() { return true; }
+    let ver = match SemVer::parse(version) { Some(v) => v, None => return false };
+    if let Some(req) = range.strip_prefix('^') {
+        // ^1.2.3: >=1.2.3 <2.0.0 (or <0.2.0 if major=0, etc.)
+        let req = match SemVer::parse(req) { Some(v) => v, None => return false };
+        if req.major > 0 {
+            ver.as_tuple() >= req.as_tuple() && ver.major == req.major
+        } else if req.minor > 0 {
+            ver.as_tuple() >= req.as_tuple() && ver.major == 0 && ver.minor == req.minor
+        } else {
+            ver.as_tuple() >= req.as_tuple() && ver.major == 0 && ver.minor == 0
+        }
+    } else if let Some(req) = range.strip_prefix('~') {
+        // ~1.2.3: >=1.2.3 <1.3.0
+        let req = match SemVer::parse(req) { Some(v) => v, None => return false };
+        ver.as_tuple() >= req.as_tuple() && ver.major == req.major && ver.minor == req.minor
+    } else if let Some(req) = range.strip_prefix(">=") {
+        let req = match SemVer::parse(req) { Some(v) => v, None => return false };
+        ver.as_tuple() >= req.as_tuple()
+    } else if let Some(req) = range.strip_prefix('>') {
+        let req = match SemVer::parse(req) { Some(v) => v, None => return false };
+        ver.as_tuple() > req.as_tuple()
+    } else if let Some(req) = range.strip_prefix("<=") {
+        let req = match SemVer::parse(req) { Some(v) => v, None => return false };
+        ver.as_tuple() <= req.as_tuple()
+    } else if let Some(req) = range.strip_prefix('<') {
+        let req = match SemVer::parse(req) { Some(v) => v, None => return false };
+        ver.as_tuple() < req.as_tuple()
+    } else {
+        // Exact match or prefix match (1.6 matches 1.6.0)
+        if let Some(req) = SemVer::parse(range) {
+            if range.matches('.').count() == 1 {
+                // Minor-level: 1.6 matches 1.6.x
+                ver.major == req.major && ver.minor == req.minor
+            } else {
+                ver.as_tuple() == req.as_tuple()
+            }
+        } else {
+            version == range // exact string match
+        }
+    }
+}
+
+/// Resolve a semver range to the best matching version from a list.
+/// Returns the highest version satisfying the range.
+fn resolve_version<'a>(range: &str, versions: &[&'a str]) -> Option<&'a str> {
+    let mut best: Option<(SemVer, &str)> = None;
+    for &ver in versions {
+        if semver_matches(range, ver) {
+            if let Some(sv) = SemVer::parse(ver) {
+                match &best {
+                    None => best = Some((sv, ver)),
+                    Some((best_sv, _)) if sv.as_tuple() > best_sv.as_tuple() => {
+                        best = Some((sv, ver));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    best.map(|(_, v)| v)
+}
+
+/// Search packages in registry by query string.
+fn search_packages(query: &str) -> Result<Vec<(String, String, String)>> {
+    let registry_body = ureq::get(REGISTRY_URL)
+        .call()
+        .map_err(|e| anyhow!("ERROR_REGISTRY failed to fetch registry: {e}"))?
+        .into_string()?;
+    let registry: J = json_from_slice(registry_body.as_bytes())?;
+    let packages = registry.get("packages")
+        .and_then(|p| p.as_object())
+        .ok_or_else(|| anyhow!("ERROR_REGISTRY missing packages"))?;
+    let query_lower = query.to_lowercase();
+    let mut results: Vec<(String, String, String)> = Vec::new();
+    for (key, entry) in packages {
+        let key_lower = key.to_lowercase();
+        if query_lower.is_empty() || key_lower.contains(&query_lower) {
+            let desc = entry.get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .to_string();
+            // key is "name@version"
+            if let Some((name, ver)) = key.split_once('@') {
+                results.push((name.to_string(), ver.to_string(), desc));
+            }
+        }
+    }
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(results)
+}
+
 fn fetch_package(pkg_name: &str, version: &str) -> Result<PathBuf> {
     let cache_dir = fard_cache_dir();
     let pkg_dir = cache_dir.join(format!("{}@{}", pkg_name, version));
@@ -204,7 +330,24 @@ fn fetch_package(pkg_name: &str, version: &str) -> Result<PathBuf> {
         .map_err(|e| anyhow!("ERROR_REGISTRY failed to fetch registry: {e}"))?
         .into_string()?;
     let registry: J = json_from_slice(registry_body.as_bytes())?;
-    let key = format!("{}@{}", pkg_name, version);
+    // Resolve semver range to exact version
+    let resolved_version = if let Some(pkgs) = registry.get("packages").and_then(|p| p.as_object()) {
+        let versions: Vec<&str> = pkgs.keys()
+            .filter_map(|k| k.strip_prefix(&format!("{}@", pkg_name)))
+            .collect();
+        if versions.is_empty() {
+            bail!("ERROR_REGISTRY package not found: {}", pkg_name);
+        }
+        resolve_version(version, &versions)
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| version.to_string())
+    } else {
+        version.to_string()
+    };
+    if resolved_version != version {
+        eprintln!("[fard] resolved {}@{} -> {}@{}", pkg_name, version, pkg_name, resolved_version);
+    }
+    let key = format!("{}@{}", pkg_name, resolved_version);
     let pkg_entry = registry
         .get("packages")
         .and_then(|p| p.get(&key))
@@ -431,6 +574,29 @@ fn expr_contains_var(expr: &Expr, name: &str) -> bool {
 
 fn main() -> Result<()> {
     let (run, want_version, want_repl, test_args, publish_args, install_args, new_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+
+    // Handle search subcommand
+    if std::env::var("FARD_SEARCH_MODE").is_ok() {
+        let query = std::env::var("FARD_SEARCH_QUERY").unwrap_or_default();
+        match search_packages(&query) {
+            Ok(results) => {
+                if results.is_empty() {
+                    println!("No packages found{}", if query.is_empty() { String::new() } else { format!(" matching {:?}", query) });
+                } else {
+                    println!("{} package(s) found:\n", results.len());
+                    for (name, ver, desc) in &results {
+                        if desc.is_empty() {
+                            println!("  {}@{}", name, ver);
+                        } else {
+                            println!("  {}@{}  —  {}", name, ver, desc);
+                        }
+                    }
+                }
+            }
+            Err(e) => eprintln!("search error: {}", e),
+        }
+        return Ok(());
+    }
     if want_version {
         println!("fard_runtime_version={}", env!("CARGO_PKG_VERSION"));
         println!("trace_format_version=0.1.0");
@@ -891,6 +1057,8 @@ fn main() -> Result<()> {
         eprintln!("[fard install] done ({} package(s))", deps_to_install.len());
         return Ok(());
     }
+
+
     let program = run.program;
     let out_dir = run.out;
     let lockfile = run.lockfile;
