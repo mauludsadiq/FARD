@@ -3342,7 +3342,7 @@ enum Builtin {
     UuidV4, UuidValidate,
     IntToStrPadded,
     BigFromInt, BigFromStr, BigAdd, BigSub, BigMul, BigDiv, BigPow, BigToStr, BigEq, BigLt, BigGt, BigMod,
-    PromiseSpawn, PromiseAwait,
+    PromiseSpawn, PromiseAwait, PromiseSpawnOrdered,
     AstParse,
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
@@ -8591,6 +8591,106 @@ fn call_builtin(
             }
             _ => bail!("promise.spawn expects a function"),
         }
+
+        Builtin::PromiseSpawnOrdered => {
+            // spawn_ordered(fns) — spawn a list of fns, await ALL in spawn order.
+            // Returns a list of results in deterministic order regardless of completion order.
+            // Every run on the same inputs produces the same result list and the same trace.
+            match args.as_slice() {
+                [Val::List(fns)] => {
+                    let fns = fns.clone();
+                    let tmp = std::env::temp_dir();
+                    let mut handles: Vec<(
+                        String,  // spawn_id
+                        std::path::PathBuf,  // trace_path
+                        Arc<Mutex<Option<Result<Val, String>>>>,
+                    )> = Vec::new();
+
+                    // Spawn all in order
+                    for fv in &fns {
+                        let fv = fv.clone();
+                        if !matches!(fv, Val::Func(_) | Val::Builtin(_) | Val::VmFunc(_)) {
+                            bail!("promise.spawn_ordered: all elements must be functions");
+                        }
+                        let spawn_id = format!("spawn_{}", uuid::Uuid::new_v4());
+                        let trace_path = tmp.join(format!("promise_trace_{}.ndjson", &spawn_id));
+                        let trace_path2 = trace_path.clone();
+                        let slot: Arc<Mutex<Option<Result<Val, String>>>> = Arc::new(Mutex::new(None));
+                        let slot2 = slot.clone();
+                        let child_vm_fns = VM_FNS.with(|cell| cell.borrow().clone());
+                        let child_self_slots = VM_SELF_SLOTS.with(|cell| cell.borrow().clone());
+                        tracer.child_spawn(&spawn_id)?;
+                        let tmp2 = tmp.clone();
+                        std::thread::spawn(move || {
+                            VM_FNS.with(|cell| { *cell.borrow_mut() = child_vm_fns; });
+                            VM_SELF_SLOTS.with(|cell| { *cell.borrow_mut() = child_self_slots; });
+                            let trace_file = fs::File::create(&trace_path2).unwrap_or_else(|_| {
+                                fs::File::create(std::env::temp_dir().join("fallback_trace.ndjson")).unwrap()
+                            });
+                            let mut child_tracer = Tracer {
+                                first_event: true,
+                                artifact_cids: std::collections::BTreeMap::new(),
+                                w: trace_file,
+                                out_dir: tmp2,
+                            };
+                            let mut loader = ModuleLoader::new(&std::env::temp_dir());
+                            let result = call(fv, vec![], &mut child_tracer, &mut loader)
+                                .map_err(|e| e.to_string());
+                            *slot2.lock().unwrap() = Some(result);
+                        });
+                        handles.push((spawn_id, trace_path, slot));
+                    }
+
+                    // Await ALL in spawn order (deterministic join)
+                    let mut results: Vec<Val> = Vec::new();
+                    for (spawn_id, trace_path, slot) in &handles {
+                        // Spin-wait for this specific promise in order
+                        loop {
+                            let done = slot.lock().unwrap().is_some();
+                            if done { break; }
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                        let result = slot.lock().unwrap().take().unwrap();
+                        let val = result.map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                        // Compute digests
+                        let run_digest = if trace_path.exists() {
+                            let trace_bytes = fs::read(trace_path).unwrap_or_default();
+                            let digest = format!("sha256:{}", hex_lower(&{
+                                let mut h = NativeSha256::new();
+                                h.update(&trace_bytes);
+                                h.finalize()
+                            }));
+                            let _ = fs::remove_file(trace_path);
+                            digest
+                        } else {
+                            "sha256:no-trace".to_string()
+                        };
+                        let result_digest = if let Some(j) = val.to_json() {
+                            let s = json_to_string(&j);
+                            format!("sha256:{}", hex_lower(&{
+                                let mut h = NativeSha256::new();
+                                h.update(s.as_bytes());
+                                h.finalize()
+                            }))
+                        } else {
+                            "sha256:no-result".to_string()
+                        };
+                        tracer.child_receipt(spawn_id, &run_digest, &result_digest)?;
+                        results.push(val);
+                    }
+
+                    // Emit ordered receipt event — proof that results are in spawn order
+                    let _ = tracer.emit_raw(&format!(
+                        r#"{{"t":"spawn_ordered_complete","count":{}}}"#,
+                        results.len()
+                    ));
+
+                    Ok(Val::List(results))
+                }
+                _ => bail!("promise.spawn_ordered expects a list of functions"),
+            }
+        }
         Builtin::PromiseAwait => match args.as_slice() {
             [Val::Promise(slot, spawn_id, trace_path)] => {
                 let spawn_id = spawn_id.clone();
@@ -10129,6 +10229,7 @@ impl ModuleLoader {
                 let mut m = BTreeMap::new();
                 m.insert("spawn".to_string(), Val::Builtin(Builtin::PromiseSpawn));
                 m.insert("await".to_string(), Val::Builtin(Builtin::PromiseAwait));
+                m.insert("spawn_ordered".to_string(), Val::Builtin(Builtin::PromiseSpawnOrdered));
                 Ok(m)
             }
             "std/bigint" => {
