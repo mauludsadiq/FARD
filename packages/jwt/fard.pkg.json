@@ -1,0 +1,1 @@
+{ "schema": "fard.pkg.v0_1", "name": "jwt", "version": "1.6.0", "entrypoints": { "main": "main.fard" } }

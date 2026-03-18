@@ -20,6 +20,10 @@ fn make_signing_input(h, p) {
   str.concat(str.concat(h, "."), p)
 }
 
+/// Encode a claims record as a signed HS256 JWT.
+/// claims: Record — payload fields (sub, exp, iat, etc.)
+/// secret: Text — signing secret
+/// Returns: Text — signed JWT string
 fn encode(claims, secret) {
   let header  = b64url_encode(json.encode({ alg: "HS256", typ: "JWT" }))
   let payload = b64url_encode(json.encode(claims))
@@ -38,23 +42,38 @@ fn verify_parts(parts, secret) {
     { ok: true, error: null, claims: json.decode(b64url_decode(p)) }
 }
 
+/// Verify a JWT signature and return claims if valid.
+/// token: Text — JWT string
+/// secret: Text — signing secret
+/// Returns: {ok: Bool, claims: Record|Null, error: Text|Null}
 fn verify(token, secret) {
   let parts = str.split(token, ".")
   if list.len(parts) != 3 then { ok: false, error: "invalid token format", claims: null }
   else verify_parts(parts, secret)
 }
 
+/// Decode JWT payload WITHOUT verifying signature.
+/// Use only for inspection — not for authentication.
+/// token: Text — JWT string
+/// Returns: {ok: Bool, claims: Record|Null, error: Text|Null}
 fn decode_payload(token) {
   let parts = str.split(token, ".")
   if list.len(parts) != 3 then { ok: false, error: "invalid token format", claims: null }
   else { ok: true, error: null, claims: json.decode(b64url_decode(list.get(parts, 1))) }
 }
 
+/// Check if a claims record has an expired exp field.
+/// claims: Record — decoded JWT claims
+/// Returns: Bool
 fn is_expired(claims) {
   if rec.has(claims, "exp") then dt.now() > rec.get(claims, "exp")
   else false
 }
 
+/// Verify JWT signature AND check expiry (exp claim).
+/// token: Text — JWT string
+/// secret: Text — signing secret
+/// Returns: {ok: Bool, claims: Record|Null, error: Text|Null}
 fn verify_full(token, secret) {
   let result = verify(token, secret)
   if result.ok == false then result
