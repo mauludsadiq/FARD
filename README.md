@@ -21,12 +21,16 @@ It provides:
 - cryptographic witness receipts on every run
 - 53 standard library modules
 - 242 built-in primitives
-- an 11-binary toolchain
+- a 13-binary toolchain
 - native FFI via dynamic library loading
 - a WebAssembly compilation target
-- an LSP server with VS Code extension
-- a SQLite-backed receipt registry
-- a content-addressed package manager with 58 packages
+- an LSP server with go-to-definition and find-references
+- a SQLite-backed receipt registry with CRDT replication
+- a content-addressed package manager with 58 packages and semver ranges
+- a web playground (playground/index.jsx)
+- a doc generator (farddoc)
+- a verifiable build system (fard-build)
+- distributed receipt convergence via Inherit-Cert CRDT
 
 FARD turns program execution itself into a cryptographic artifact.
 
@@ -142,13 +146,8 @@ match type.of(x) {
 ### For and List Comprehensions
 
 ```
-// for..in..do sugar for list.map
-let doubled = for x in [1, 2, 3, 4, 5] do x * 2
-
-// list comprehension
-let squares = [x * x for x in [1, 2, 3, 4, 5]]
-
-// with filter
+let doubled      = for x in [1, 2, 3, 4, 5] do x * 2
+let squares      = [x * x for x in [1, 2, 3, 4, 5]]
 let even_squares = [x * x for x in [1, 2, 3, 4, 5] if x % 2 == 0]
 ```
 
@@ -328,7 +327,7 @@ import("pkg:greet")  as greet
 
 ## Package Manager
 
-Packages are versioned, SHA-256 verified, and cached locally.
+Packages are versioned, SHA-256 verified, and cached locally. Semver ranges are supported.
 
 ```toml
 name = "my-project"
@@ -336,11 +335,16 @@ version = "1.0.0"
 entry = "main.fard"
 
 [deps]
-greet = "greet@1.6.0"
+greet  = "greet@1.6.0"
+jwt    = "jwt@^1.6.0"
+stream = "stream@~1.6.0"
+stats  = "stats@>=1.0.0"
 ```
 
 ```bash
 fardrun install --manifest fard.toml
+fardrun search jwt
+fardrun search
 ```
 
 ```
@@ -362,7 +366,7 @@ Registry: `https://github.com/mauludsadiq/FARD/releases/latest/download/registry
 | `stream@1.6.0` | Data Science | Lazy sequences |
 | `csv-stream@1.6.0` | Data Science | Streaming CSV for large files |
 | `parse@1.6.0` | Data Science | Parser combinators |
-| `fard-web@1.6.0` | HTTP | Full web framework — routing, path params, validation, OpenAPI |
+| `fard-web@1.6.0` | HTTP | Full web framework |
 | `http-client@1.6.0` | HTTP | HTTP client with retry and JSON helpers |
 | `http-server@1.6.0` | HTTP | HTTP server with routing |
 | `http-middleware@1.6.0` | HTTP | CORS, auth, logging, rate-limit middleware |
@@ -431,19 +435,6 @@ chan.recv(c)   // -> {t: "some", v: 42}
 
 -----
 
-## Metaprogramming
-
-```
-import("std/eval") as e
-e.eval("fn double(n) { n * 2 }\ndouble(21)")   // -> 42
-
-import("std/ast") as ast
-let nodes = ast.parse("1 + 2")
-nodes[0].t    // -> "bin"
-```
-
------
-
 ## Cryptographic Witnessing
 
 ### Self-Digest
@@ -460,20 +451,30 @@ artifact step1 = "sha256:689dede5..."
 step1.output
 ```
 
-### Chain Verification
-
-```
-import("std/witness") as w
-let r = w.verify_chain("sha256:47912fef...")
-r.t      // "ok"
-r.depth  // depth of the verified chain
-```
-
-### Distributed Verification
+### Proof-Carrying Code
 
 ```bash
-export FARD_REGISTRY_URL=http://registry.example.com:7370
-fardrun run --program main.fard --out ./out
+fardverify prove --out ./out --spec spec.json
+```
+
+```json
+{
+  "obligations": [
+    {"type": "no_errors"},
+    {"type": "has_child_receipts", "min": 3},
+    {"type": "result_field", "field": "sum", "min": 1400, "max": 1400}
+  ]
+}
+```
+
+### Distributed Receipt Convergence (Inherit-Cert CRDT)
+
+The Inherit-Cert CRDT is a Min-Register Map satisfying all four semilattice laws. After one round of merge, all replicas converge on the canonical (lexicographic minimum) RunID for each effect.
+
+```bash
+curl -X POST http://registry/crdt/propose \
+  -d '{"effect_kind":"http_get","req_hex":"...","run_id":"sha256:aaa..."}'
+curl http://registry/crdt/state
 ```
 
 -----
@@ -503,6 +504,52 @@ fardwasm main.fard --target wasi --out main.wasm
 
 -----
 
+## Verifiable Build System
+
+```toml
+[build]
+name = "my-project"
+version = "1.0.0"
+
+[[step]]
+name = "compile"
+program = "steps/compile.fard"
+out = "build/compile"
+
+[[step]]
+name = "test"
+program = "steps/test.fard"
+out = "build/test"
+depends_on = ["compile"]
+```
+
+```bash
+fard-build --config fard.build.toml --out build/
+fard-build --verify --out build/
+```
+
+Each step produces a cryptographic receipt. The `build.receipt.json` chains all step digests. Any change to any step breaks the chain.
+
+-----
+
+## Documentation Generation
+
+```bash
+farddoc --package packages/stats --out docs/ --format html
+farddoc --out docs/
+farddoc --program main.fard --format md
+```
+
+Doc comment syntax:
+
+```
+/// Returns the sum of all elements in a list.
+/// xs: List(Int|Float)
+fn sum(xs) { ... }
+```
+
+-----
+
 ## CLI
 
 ### fardrun
@@ -513,67 +560,33 @@ fardrun run --program main.fard --out ./out
 fardrun test --program math.fard
 fardrun repl
 fardrun install --manifest fard.toml
+fardrun search jwt
 ```
 
 Output: `result.json`, `error.json`, `trace.ndjson`, `module_graph.json`, `digests.json`
 
-### fardrun repl
-
-```
-FARD v1.6.0 REPL
-  :quit / :q      exit
-  :help           show commands
-  :reset          clear environment
-  :vars           show defined names
-  :time <expr>    time an expression
-
-fard> let x = 42
-fard> x * 2
-84
-fard> :time list.range(0, 100000)
-time: 4.2ms
-```
-
-### fardrun test
-
-```
-test "basic"       { gcd(12, 8) == 4 }
-test "commutative" { gcd(8, 12) == gcd(12, 8) }
-```
-
-### fardfmt
+### fardverify
 
 ```bash
-fardfmt main.fard
-fardfmt --check main.fard
+fardverify trace  --out ./out
+fardverify chain  --out ./out --registry ./registry
+fardverify prove  --out ./out --spec spec.json
+fardverify bundle --out ./out
 ```
 
-### fardcheck
+### fard-build
 
 ```bash
-fardcheck main.fard
-# ok -- 47 items checked, 0 errors
-```
-
-### fardlock
-
-```bash
-fardlock gen-toml --manifest fard.toml --out fard.lock.json
-fardrun run --program main.fard --lockfile fard.lock.json --enforce-lockfile
-```
-
-### fardbundle
-
-```bash
-fardbundle build  --root . --entry main.fard --out ./bundle
-fardbundle verify --bundle bundle/bundle.json --out ./out
-fardbundle run    --bundle bundle/bundle.json --out ./out
+fard-build --config fard.build.toml --out build/
+fard-build --verify --out build/
+fard-build --step test
 ```
 
 ### fardregistry
 
 ```bash
-fardregistry --port 7370 --db receipts.db --seed receipts/
+fardregistry --port 7370 --db receipts.db
+# CRDT routes: GET /crdt/state  POST /crdt/propose  POST /crdt/merge
 ```
 
 -----
@@ -584,11 +597,7 @@ fardregistry --port 7370 --db receipts.db --seed receipts/
 code --install-extension editors/vscode/fard-language-0.1.0.vsix
 ```
 
-Syntax highlighting, inline diagnostics, dot-completion for all 53 stdlib modules, hover documentation, import path completion.
-
-```json
-{ "fard.lspPath": "/usr/local/bin/fard-lsp" }
-```
+Syntax highlighting, inline diagnostics, dot-completion, hover docs, go-to-definition (F12), find-all-references (Shift+F12).
 
 -----
 
@@ -596,39 +605,19 @@ Syntax highlighting, inline diagnostics, dot-completion for all 53 stdlib module
 
 | Binary | Purpose |
 |---|---|
-| `fardrun` | Runtime: `run`, `test`, `repl`, `new`, `install`, `publish` |
+| `fardrun` | Runtime: run, test, repl, new, install, search, publish |
 | `fardfmt` | Canonical formatter |
 | `fardcheck` | HM-style type checker |
 | `fardwasm` | FARD to WAT/WASM compiler |
-| `fardregistry` | SQLite-backed receipt registry server |
+| `fardregistry` | Receipt registry server with CRDT routes |
 | `fardlock` | Lockfile generation and enforcement |
 | `fardbundle` | Bundle build, verify, and run |
-| `fardverify` | Trace, artifact, and bundle verification |
+| `fardverify` | Trace, chain, proof, and bundle verification |
 | `fardpkg` | Package management |
 | `fard-lsp` | Language Server Protocol |
 | `fardc` | Compiler frontend and canonicalizer |
-
------
-
-## Error Messages
-
-```
-Error: unbound var: str -- did you forget to import? Try: import("std/str") as str
-Error: no member 'mpa' -- did you mean 'map'?
-Error: arity mismatch: expected 2 args, got 3
-```
-
-| Code | Meaning |
-|---|---|
-| `ERROR_PARSE` | Syntax error |
-| `ERROR_RUNTIME` | Runtime failure |
-| `ERROR_DIV_ZERO` | Division by zero |
-| `ERROR_PAT_MISMATCH` | Pattern match failed |
-| `ERROR_ARITY` | Wrong number of arguments |
-| `ERROR_BADARG` | Wrong argument type for a builtin |
-| `ERROR_IO` | File or network I/O failure |
-| `ERROR_LOCK` | Lockfile enforcement failure |
-| `ERROR_FFI` | Foreign function interface error |
+| `farddoc` | Documentation generator |
+| `fard-build` | Verifiable build system |
 
 -----
 
@@ -637,8 +626,6 @@ Error: arity mismatch: expected 2 args, got 3
 Given identical source code, imports, and inputs, FARD guarantees identical results, identical execution traces, and identical execution digests across machines, operating systems, and time.
 
 Oracle boundaries — `std/http`, `std/datetime.now`, `std/io.read_stdin`, `std/uuid.v4`, `std/ffi.call` — are explicitly marked. Their observed values are recorded in the execution trace so runs remain auditable even when interacting with the outside world.
-
-`std/ffi.call_pure` declares a foreign call deterministic and includes its result in the witness hash chain.
 
 -----
 
