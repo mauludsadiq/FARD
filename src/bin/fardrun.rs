@@ -40,6 +40,10 @@ use std::path::{Path, PathBuf};
 thread_local! {
     static VM_FNS: std::cell::RefCell<Vec<VmCompiledFn>> = std::cell::RefCell::new(Vec::new());
     static VM_SELF_SLOTS: std::cell::RefCell<std::collections::HashMap<usize, (usize, Val)>> = std::cell::RefCell::new(std::collections::HashMap::<usize, (usize, Val)>::new());
+    /// Raw pointer to VM_FNS vec — valid for entire program execution, avoids per-call clone
+    static VM_FNS_PTR: std::cell::Cell<*const Vec<VmCompiledFn>> = std::cell::Cell::new(std::ptr::null());
+    /// Region-based slot arena — reusable Vec<Val> frames, avoids per-call heap allocation
+    static SLOT_ARENA: std::cell::RefCell<Vec<Vec<Val>>> = std::cell::RefCell::new(Vec::new());
 
     static PROGRAM_ARGS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![]);
 }
@@ -580,6 +584,8 @@ fn main() -> Result<()> {
         let non_test: Vec<Item> = items.iter().filter(|i| !matches!(i, Item::Test(..)))
             .cloned().collect();
         loader.eval_items(non_test, &mut env, &mut tracer, program.parent().unwrap_or(Path::new(".")))?;
+        // Set VM_FNS_PTR after all fns compiled — avoids per-call clone
+        ModuleLoader::set_vm_fns_ptr();
         // Second pass: run tests
         let tests: Vec<(String, Expr, ErrorSpan)> = items.into_iter().filter_map(|i| {
             if let Item::Test(label, body, span) = i { Some((label, body, span)) } else { None }
@@ -3977,6 +3983,15 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
         match cur_f {
             Val::Builtin(b) => return call_builtin(b, cur_args, tracer, loader),
             Val::VmFunc(fn_idx) => {
+                // Use pre-set raw pointer — no clone, no RefCell borrow
+                let ptr = VM_FNS_PTR.with(|p| p.get());
+                if !ptr.is_null() {
+                    // SAFETY: ptr points to VM_FNS vec which lives for the program duration
+                    // VM_FNS is never modified during execution, only at load time
+                    let fns = unsafe { &*ptr };
+                    return vm_exec_fn(fns, fn_idx, cur_args, tracer, loader);
+                }
+                // Fallback: clone (first call before ptr is set)
                 let fns = VM_FNS.with(|cell| cell.borrow().clone());
                 return vm_exec_fn(&fns, fn_idx, cur_args, tracer, loader);
             }
@@ -4360,7 +4375,25 @@ fn vm_exec_fn(
     }
     let f = &fns[fn_idx];
     let n_slots = f.n_slots.max(args.len());
-    let mut slots = vec![Val::Unit; n_slots];
+    // Region-based slot allocation
+    // For small fns (≤8 slots): use Vec with pre-reserved capacity from arena
+    // For larger fns: standard allocation
+    let mut slots = if n_slots <= 8 {
+        let mut v = Vec::with_capacity(8);
+        v.resize(n_slots, Val::Unit);
+        v
+    } else {
+        SLOT_ARENA.with(|arena| {
+            let mut a = arena.borrow_mut();
+            if let Some(mut frame) = a.pop() {
+                frame.resize(n_slots, Val::Unit);
+                for v in frame.iter_mut() { *v = Val::Unit; }
+                frame
+            } else {
+                vec![Val::Unit; n_slots]
+            }
+        })
+    };
     // Populate free variables (sparse — only non-param, non-Unit slots)
     for (slot_idx, val) in &f.free_vars {
         if *slot_idx < slots.len() {
@@ -4487,11 +4520,21 @@ fn vm_exec_fn(
                 ip += 1;
             }
 
-            VmOp::Return => { return Ok(stack.pop().unwrap_or(Val::Unit)); }
+            VmOp::Return => {
+                let result = stack.pop().unwrap_or(Val::Unit);
+                if slots.capacity() > 8 {
+                    SLOT_ARENA.with(|arena| arena.borrow_mut().push(slots));
+                }
+                return Ok(result);
+            }
             VmOp::Halt   => { break; }
         }
     }
-    Ok(stack.pop().unwrap_or(Val::Unit))
+    let result = stack.pop().unwrap_or(Val::Unit);
+    if slots.capacity() > 8 {
+        SLOT_ARENA.with(|arena| arena.borrow_mut().push(slots));
+    }
+    Ok(result)
 }
 
 fn vm_dispatch_call(
@@ -9211,6 +9254,13 @@ impl ModuleLoader {
         // Convert valuecore::Val -> fardrun::Val directly (no v0 wire encoding)
         Ok(vcore_to_fardrun(vcore))
     }
+    fn set_vm_fns_ptr() {
+        VM_FNS.with(|cell| {
+            let ptr: *const Vec<VmCompiledFn> = &*cell.borrow();
+            VM_FNS_PTR.with(|p| p.set(ptr));
+        });
+    }
+
     fn eval_items(
         &mut self,
         items: Vec<Item>,
