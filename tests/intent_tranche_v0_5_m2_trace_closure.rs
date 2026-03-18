@@ -101,6 +101,21 @@ fn assert_m2_event_shape(line: &str) {
                 "module_graph requires cid:string"
             );
         }
+        "witnessed_failure" => {
+            assert!(
+                obj.get("code").and_then(|x| x.as_str()).is_some(),
+                "witnessed_failure requires code:string"
+            );
+            assert!(
+                obj.get("partial_trace_digest").and_then(|x| x.as_str()).is_some(),
+                "witnessed_failure requires partial_trace_digest:string"
+            );
+        }
+        "while_start" | "while_step" | "while_end" |
+        "ffi_oracle" | "ffi_checked" | "spawn_ordered_complete" |
+        "child_spawn" | "child_receipt" => {
+            // informational events — just require t field (already checked)
+        }
         _ => panic!("M2: unknown event kind: {t}"),
     }
 }

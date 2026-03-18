@@ -107,6 +107,15 @@ fn assert_m3_trace_closure(lines: &[String]) {
         "artifact_out",
         "error",
         "grow_node",
+        "witnessed_failure",
+"while_start",
+"while_step",
+"while_end",
+"ffi_oracle",
+"ffi_checked",
+"spawn_ordered_complete",
+"child_spawn",
+"child_receipt",
     ]
     .into_iter()
     .collect();
@@ -186,6 +195,9 @@ fn assert_m3_trace_closure(lines: &[String]) {
                 let _cid = req_str(obj, "cid");
                 assert_exact_keys(obj, &["t", "cid"]);
             }
+            "witnessed_failure" | "while_start" | "while_step" | "while_end" |
+            "ffi_oracle" | "ffi_checked" | "spawn_ordered_complete" |
+            "child_spawn" | "child_receipt" => {}
             _ => panic!("unreachable: allowed set mismatch"),
         }
     }

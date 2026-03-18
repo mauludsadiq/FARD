@@ -145,6 +145,13 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
         "trace_span",
         // Witness
         "witness_verify",
+        "witnessed_failure",
+        "while_start",
+        "while_step",
+        "while_end",
+        "ffi_oracle",
+        "ffi_checked",
+        "spawn_ordered_complete",
     ]
     .into_iter()
     .collect();
@@ -262,7 +269,9 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
             }
             "artifact_derived" | "emit" | "grow_node" |
             "trace_info" | "trace_warn" | "trace_error" | "trace_span" |
-            "witness_verify" => {
+            "witness_verify" | "witnessed_failure" |
+            "while_start" | "while_step" | "while_end" |
+            "ffi_oracle" | "ffi_checked" | "spawn_ordered_complete" => {
                 // Informational events — no strict schema, just require "t" field
                 saw_non_module_resolve = true;
             }

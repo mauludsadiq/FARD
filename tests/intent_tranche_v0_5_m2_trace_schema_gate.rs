@@ -102,6 +102,11 @@ fn assert_m2_event_shape(line: &str) {
                 "module_graph requires cid:string"
             );
         }
+        "witnessed_failure" | "while_start" | "while_step" | "while_end" |
+        "ffi_oracle" | "ffi_checked" | "spawn_ordered_complete" |
+        "child_spawn" | "child_receipt" => {
+            // new event types — informational, no strict schema required
+        }
         _ => panic!("M2: unknown event kind: {t}"),
     }
 }

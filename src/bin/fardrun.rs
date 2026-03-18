@@ -1144,6 +1144,65 @@ fn main() -> Result<()> {
     }
     let v = match loader.eval_main(&program, &mut tracer) {
         Ok(v) => v,
+        Err(e) if e.downcast_ref::<QMarkUnwind>().is_some() => {
+            // Top-level QMarkUnwind — the program's final expression used ?
+            // and produced an err. Treat as witnessed failure.
+            let q = e.downcast_ref::<QMarkUnwind>().unwrap();
+            let err_val = q.err.clone();
+            // Write witnessed failure to trace
+            let partial_digest = if let Ok(trace_bytes) = std::fs::read(effective_trace) {
+                format!("sha256:{}", {
+                    use sha2::Digest;
+                    let mut h = sha2::Sha256::new();
+                    h.update(&trace_bytes);
+                    hex::encode(h.finalize())
+                })
+            } else { "sha256:no-trace".to_string() };
+            let _ = tracer.emit_raw(&format!(
+                r#"{{"code":"QMARK_PROPAGATE_ERR","partial_trace_digest":"{}","t":"witnessed_failure"}}"#,
+                partial_digest
+            ));
+            // Write error.json
+            let clean_msg = match &err_val {
+                Val::Text(s) => format!("error propagated: {}", s),
+                Val::Record(m) => m.get("e")
+                    .and_then(|v| if let Val::Text(s) = v { Some(format!("error propagated: {}", s)) } else { None })
+                    .unwrap_or_else(|| "error propagated".to_string()),
+                _ => "error propagated".to_string(),
+            };
+            let mut em = Map::new();
+            em.insert("code".to_string(), J::Str("QMARK_PROPAGATE_ERR".to_string()));
+            em.insert("message".to_string(), J::Str(clean_msg));
+            em.insert("partial_trace_digest".to_string(), J::Str(partial_digest));
+            em.insert("witnessed_failure".to_string(), J::Bool(true));
+            if let Some(j) = err_val.to_json() { em.insert("e".to_string(), j.clone()); }
+            fs::write(out_dir.join("error.json"), json_to_string(&J::Object(em)).into_bytes())?;
+            // Emit error event to trace so existing tests see "t":"error"
+            let err_j = err_val.to_json().unwrap_or(J::Null);
+            tracer.error_event_with_e("QMARK_PROPAGATE_ERR",
+                &format!("QMARK_PROPAGATE_ERR {:?}", err_val), &err_j).ok();
+            // Write module_graph and digests before exit
+            {
+                let mg = loader.graph.to_json();
+                let b = canonical_json_bytes(&mg);
+                fs::write(out_dir.join("module_graph.json"), &b).ok();
+                let cid = sha256_bytes(&b);
+                let _ = tracer.module_graph_event(&cid);
+            }
+            let stdlib_root_digest = loader.stdlib_root_digest();
+            drop(tracer);
+            write_m5_digests(
+                &out_dir,
+                runtime_version,
+                trace_format_version,
+                &stdlib_root_digest,
+                false,
+                None,
+                run.no_trace,
+            ).ok();
+            eprintln!("Error: QMARK_PROPAGATE_ERR {:?}", err_val);
+            std::process::exit(1);
+        }
         Err(e) => {
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let v = loader.graph.to_json();
@@ -1317,7 +1376,7 @@ fn main() -> Result<()> {
                     em.insert("witnessed_failure".to_string(), J::Bool(true));
                     // Emit witnessed_failure event to trace
                     let _ = tracer.emit_raw(&format!(
-                        r#"{{"t":"witnessed_failure","code":"{}","partial_trace_digest":"{}"}}"#,
+                        r#"{{"code":"{}","partial_trace_digest":"{}","t":"witnessed_failure"}}"#,
                         em.get("code").and_then(|v| if let J::Str(s) = v { Some(s.as_str()) } else { None }).unwrap_or("ERROR_RUNTIME"),
                         partial_digest
                     ));
@@ -1434,8 +1493,13 @@ struct Tracer {
 }
 impl Tracer {
     fn emit_raw(&mut self, line: &str) -> Result<()> {
-        use std::io::Write;
-        writeln!(self.w, "{}", line)?;
+        // Use same newline convention as write_ndjson:
+        // newline BEFORE each event except the first
+        if !self.first_event {
+            std::io::Write::write_all(&mut self.w, b"\n")?;
+        }
+        std::io::Write::write_all(&mut self.w, line.as_bytes())?;
+        self.first_event = false;
         Ok(())
     }
 
@@ -4307,9 +4371,10 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                     }
                     Err(err) => {
                         CALL_DEPTH.with(|d| *d.borrow_mut() -= 1);
-                        if err.downcast_ref::<QMarkUnwind>().is_some() {
-                            // Let QMarkUnwind propagate — Expr::Try will catch it
-                            return Err(err);
+                        if let Some(q) = err.downcast_ref::<QMarkUnwind>() {
+                            // Convert to err value at function call boundary
+                            // This is correct: ? unwinds to nearest call site
+                            return Ok(mk_result_err(q.err.clone()));
                         } else if err.to_string() == "FARD_EARLY_RETURN" {
                             return Ok(RETURN_VAL.with(|cell| cell.borrow_mut().take()).unwrap_or(Val::Unit));
                         } else {
