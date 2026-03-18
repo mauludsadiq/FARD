@@ -46,6 +46,7 @@ thread_local! {
     static SLOT_ARENA: std::cell::RefCell<Vec<Vec<Val>>> = std::cell::RefCell::new(Vec::new());
 
     static PROGRAM_ARGS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![]);
+    static CALL_DEPTH: std::cell::RefCell<usize> = std::cell::RefCell::new(0);
 }
 fn set_program_args(args: Vec<String>) {
     PROGRAM_ARGS.with(|a| *a.borrow_mut() = args);
@@ -1151,11 +1152,32 @@ fn main() -> Result<()> {
                     if let Some(j) = q.err.to_json() {
                         extra_e = Some(j);
                     }
+                    // Clean human-readable message
+                    let clean_msg = match &q.err {
+                        Val::Text(s) => format!("error propagated: {}", s),
+                        Val::Record(m) => m.get("e")
+                            .and_then(|v| if let Val::Text(s) = v { Some(format!("error propagated: {}", s)) } else { None })
+                            .unwrap_or_else(|| "error propagated".to_string()),
+                        _ => "error propagated".to_string(),
+                    };
+                    em.insert("message".to_string(), J::Str(clean_msg));
                 }
             }
 
             em.insert("code".to_string(), J::Str(code.clone()));
-            em.insert("message".to_string(), J::Str(msg.clone()));
+            let final_msg = if code == QMARK_PROPAGATE_ERR {
+                // Strip "QMARK_PROPAGATE_ERR Text(\"...\")" to clean message
+                let raw = msg.trim_start_matches(QMARK_PROPAGATE_ERR).trim().to_string();
+                // raw is like: Text("division by zero") or just the error text
+                if raw.starts_with("Text(\"") && raw.ends_with("\")") {
+                    format!("error propagated: {}", &raw[6..raw.len()-2])
+                } else if raw.starts_with('"') && raw.ends_with('"') {
+                    format!("error propagated: {}", &raw[1..raw.len()-1])
+                } else {
+                    format!("error propagated: {}", raw)
+                }
+            } else { msg.clone() };
+            em.insert("message".to_string(), J::Str(final_msg));
             // Walk anyhow context chain for "  --> file:line:col" added by eval_items
             if !em.contains_key("span") {
                 for cause in e.chain() {
@@ -1243,6 +1265,26 @@ fn main() -> Result<()> {
                 sm.insert("line".to_string(), J::Int(ln as i64));
                 sm.insert("col".to_string(), J::Int(cl as i64));
                 em.insert("span".to_string(), J::Object(sm));
+            }
+            // Witnessed failure: attach partial trace digest at failure point
+            {
+                let trace_path = effective_trace;
+                if let Ok(trace_bytes) = fs::read(trace_path) {
+                    let partial_digest = format!("sha256:{}", {
+                        use sha2::Digest;
+                        let mut h = sha2::Sha256::new();
+                        h.update(&trace_bytes);
+                        hex::encode(h.finalize())
+                    });
+                    em.insert("partial_trace_digest".to_string(), J::Str(partial_digest.clone()));
+                    em.insert("witnessed_failure".to_string(), J::Bool(true));
+                    // Emit witnessed_failure event to trace
+                    let _ = tracer.emit_raw(&format!(
+                        r#"{{"t":"witnessed_failure","code":"{}","partial_trace_digest":"{}"}}"#,
+                        em.get("code").and_then(|v| if let J::Str(s) = v { Some(s.as_str()) } else { None }).unwrap_or("ERROR_RUNTIME"),
+                        partial_digest
+                    ));
+                }
             }
             fs::write(
                 out_dir.join("error.json"),
@@ -1354,6 +1396,12 @@ struct Tracer {
     out_dir: PathBuf,
 }
 impl Tracer {
+    fn emit_raw(&mut self, line: &str) -> Result<()> {
+        use std::io::Write;
+        writeln!(self.w, "{}", line)?;
+        Ok(())
+    }
+
     fn module_graph_event(&mut self, cid: &str) -> Result<()> {
         let mut m = Map::new();
         m.insert("t".to_string(), J::Str("module_graph".to_string()));
@@ -3035,7 +3083,14 @@ struct QMarkUnwind {
 }
 impl std::fmt::Display for QMarkUnwind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {:?}", QMARK_PROPAGATE_ERR, self.err)
+        let msg = match &self.err {
+            Val::Text(s) => s.clone(),
+            Val::Record(m) => m.get("e")
+                .and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None })
+                .unwrap_or_else(|| format!("{:?}", self.err)),
+            other => format!("{:?}", other),
+        };
+        write!(f, "{} {}", QMARK_PROPAGATE_ERR, msg)
     }
 }
 impl std::error::Error for QMarkUnwind {}
@@ -4198,16 +4253,23 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                 }
                 // Evaluate the body. If the result is a TailCall sentinel, loop.
                 // Otherwise return the value directly.
+                CALL_DEPTH.with(|d| *d.borrow_mut() += 1);
                 match eval_tco(&fun.body, &mut e, tracer, loader) {
-                    Ok(TcoResult::Done(v)) => return Ok(v),
+                    Ok(TcoResult::Done(v)) => {
+                        CALL_DEPTH.with(|d| *d.borrow_mut() -= 1);
+                        return Ok(v);
+                    }
                     Ok(TcoResult::TailCall(next_f, next_args)) => {
+                        CALL_DEPTH.with(|d| *d.borrow_mut() -= 1);
                         cur_f = next_f;
                         cur_args = next_args;
                         // loop continues
                     }
                     Err(err) => {
-                        if let Some(q) = err.downcast_ref::<QMarkUnwind>() {
-                            return Ok(mk_result_err(q.err.clone()));
+                        CALL_DEPTH.with(|d| *d.borrow_mut() -= 1);
+                        if err.downcast_ref::<QMarkUnwind>().is_some() {
+                            // Let QMarkUnwind propagate — Expr::Try will catch it
+                            return Err(err);
                         } else if err.to_string() == "FARD_EARLY_RETURN" {
                             return Ok(RETURN_VAL.with(|cell| cell.borrow_mut().take()).unwrap_or(Val::Unit));
                         } else {
