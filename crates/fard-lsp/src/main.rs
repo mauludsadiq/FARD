@@ -460,6 +460,8 @@ impl LanguageServer for FardLsp {
                     trigger_characters: Some(vec![".".to_string(), "\"".to_string()]),
                     ..Default::default()
                 }),
+                definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
@@ -587,7 +589,160 @@ impl LanguageServer for FardLsp {
         }
 
         Ok(Some(CompletionResponse::Array(items)))
+    
     }
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri.clone();
+        let pos = params.text_document_position_params.position;
+        let docs = self.docs.read().await;
+        let text = match docs.get(uri.as_str()) {
+            Some(t) => t.clone(),
+            None => return Ok(None),
+        };
+        let word = word_at_position(&text, pos.line, pos.character);
+        if word.is_empty() { return Ok(None); }
+
+        // Find the definition of `word` in the document
+        if let Some(loc) = find_definition(&text, &word, &uri) {
+            return Ok(Some(GotoDefinitionResponse::Scalar(loc)));
+        }
+        Ok(None)
+    }
+
+    async fn references(
+        &self,
+        params: ReferenceParams,
+    ) -> Result<Option<Vec<Location>>> {
+        let uri = params.text_document_position.text_document.uri.clone();
+        let pos = params.text_document_position.position;
+        let docs = self.docs.read().await;
+        let text = match docs.get(uri.as_str()) {
+            Some(t) => t.clone(),
+            None => return Ok(None),
+        };
+        let word = word_at_position(&text, pos.line, pos.character);
+        if word.is_empty() { return Ok(None); }
+
+        let locs = find_references(&text, &word, &uri);
+        if locs.is_empty() { return Ok(None); }
+        Ok(Some(locs))
+    }
+
+}
+
+
+// ── Symbol navigation helpers ─────────────────────────────────────────────────
+
+/// Extract the word (identifier) at a given position in the text.
+fn word_at_position(text: &str, line: u32, character: u32) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let line_idx = line as usize;
+    if line_idx >= lines.len() { return String::new(); }
+    let line_str = lines[line_idx];
+    let chars: Vec<char> = line_str.chars().collect();
+    let col = character as usize;
+    if col >= chars.len() { return String::new(); }
+
+    // Extend left
+    let mut start = col;
+    while start > 0 && (chars[start-1].is_alphanumeric() || chars[start-1] == '_') {
+        start -= 1;
+    }
+    // Extend right
+    let mut end = col;
+    while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
+        end += 1;
+    }
+    chars[start..end].iter().collect()
+}
+
+/// Find the definition location of a symbol in the document.
+/// Looks for: `fn name(`, `let name =`, `fn name `, param names.
+fn find_definition(text: &str, name: &str, uri: &Url) -> Option<Location> {
+    let patterns = [
+        format!("fn {}(", name),
+        format!("fn {} (", name),
+        format!("let {} =", name),
+        format!("let {} ", name),
+    ];
+
+    for (line_idx, line) in text.lines().enumerate() {
+        for pat in &patterns {
+            if let Some(col) = line.find(pat.as_str()) {
+                // Find where the name starts within the pattern
+                let name_offset = pat.find(name).unwrap_or(0);
+                let char_col = col + name_offset;
+                return Some(Location {
+                    uri: uri.clone(),
+                    range: Range {
+                        start: Position { line: line_idx as u32, character: char_col as u32 },
+                        end:   Position { line: line_idx as u32, character: (char_col + name.len()) as u32 },
+                    },
+                });
+            }
+        }
+        // Check fn params: `fn foo(name, ` or `fn foo(a, name)`
+        if line.trim_start().starts_with("fn ") {
+            if let Some(paren_start) = line.find('(') {
+                if let Some(paren_end) = line.find(')') {
+                    let params_str = &line[paren_start+1..paren_end];
+                    let mut col_offset = paren_start + 1;
+                    for param in params_str.split(',') {
+                        let trimmed = param.trim();
+                        // Handle "param: type" or just "param"
+                        let pname = trimmed.split(':').next().unwrap_or("").trim();
+                        if pname == name {
+                            let char_col = col_offset + param.len() - param.trim_start().len();
+                            return Some(Location {
+                                uri: uri.clone(),
+                                range: Range {
+                                    start: Position { line: line_idx as u32, character: char_col as u32 },
+                                    end:   Position { line: line_idx as u32, character: (char_col + name.len()) as u32 },
+                                },
+                            });
+                        }
+                        col_offset += param.len() + 1; // +1 for comma
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Find all references to a symbol in the document.
+fn find_references(text: &str, name: &str, uri: &Url) -> Vec<Location> {
+    let mut locs = Vec::new();
+    for (line_idx, line) in text.lines().enumerate() {
+        let mut search_from = 0;
+        while let Some(col) = line[search_from..].find(name) {
+            let abs_col = search_from + col;
+            // Check word boundaries — must not be preceded/followed by alphanumeric or _
+            let before_ok = abs_col == 0 || {
+                let c = line.as_bytes()[abs_col - 1];
+                !c.is_ascii_alphanumeric() && c != b'_'
+            };
+            let after_ok = abs_col + name.len() >= line.len() || {
+                let c = line.as_bytes()[abs_col + name.len()];
+                !c.is_ascii_alphanumeric() && c != b'_'
+            };
+            if before_ok && after_ok {
+                locs.push(Location {
+                    uri: uri.clone(),
+                    range: Range {
+                        start: Position { line: line_idx as u32, character: abs_col as u32 },
+                        end:   Position { line: line_idx as u32, character: (abs_col + name.len()) as u32 },
+                    },
+                });
+            }
+            search_from = abs_col + name.len();
+            if search_from >= line.len() { break; }
+        }
+    }
+    locs
 }
 
 #[tokio::main]
@@ -599,4 +754,72 @@ async fn main() {
         docs: Arc::new(RwLock::new(HashMap::new())),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
+}
+
+#[cfg(test)]
+mod nav_tests {
+    use super::*;
+    use tower_lsp::lsp_types::Url;
+
+    fn test_uri() -> Url {
+        Url::parse("file:///tmp/test.fard").unwrap()
+    }
+
+    const SRC: &str = "\
+fn double(n) { n * 2 }
+fn triple(n) { n * 3 }
+fn compute(x) {
+  let a = double(x)
+  let b = triple(x)
+  a + b
+}
+let result = compute(10)";
+
+    #[test]
+    fn test_word_at_position() {
+        assert_eq!(word_at_position(SRC, 0, 3), "double");
+        assert_eq!(word_at_position(SRC, 0, 10), "n");
+        assert_eq!(word_at_position(SRC, 3, 6), "a");
+    }
+
+    #[test]
+    fn test_find_definition_fn() {
+        let loc = find_definition(SRC, "double", &test_uri()).unwrap();
+        assert_eq!(loc.range.start.line, 0);
+        assert_eq!(loc.range.start.character, 3);
+    }
+
+    #[test]
+    fn test_find_definition_let() {
+        let loc = find_definition(SRC, "result", &test_uri()).unwrap();
+        assert_eq!(loc.range.start.line, 7);
+    }
+
+    #[test]
+    fn test_find_definition_param() {
+        let loc = find_definition(SRC, "x", &test_uri()).unwrap();
+        // x is a param of compute on line 2
+        assert_eq!(loc.range.start.line, 2);
+    }
+
+    #[test]
+    fn test_find_references() {
+        let refs = find_references(SRC, "double", &test_uri());
+        // double appears on line 0 (def) and line 3 (call)
+        assert!(refs.len() >= 2);
+        assert!(refs.iter().any(|r| r.range.start.line == 0));
+        assert!(refs.iter().any(|r| r.range.start.line == 3));
+    }
+
+    #[test]
+    fn test_references_word_boundary() {
+        // "double" should not match inside "double_check"
+        let src = "fn double_check(n) { n }\nlet x = double(1)";
+        let refs = find_references(src, "double", &test_uri());
+        // Only the call on line 1, not the fn name "double_check"
+        assert!(refs.iter().all(|r| {
+            let line = src.lines().nth(r.range.start.line as usize).unwrap_or("");
+            !line[r.range.start.character as usize..].starts_with("double_")
+        }));
+    }
 }
