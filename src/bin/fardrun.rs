@@ -609,6 +609,74 @@ fn main() -> Result<()> {
         use fard_v0_5_language_gate::cli::fardrun_cli::NewArgs;
         return cmd_new(new_args);
     }
+
+fn pretty_print_val(v: &Val, indent: usize) -> String {
+    let pad = "  ".repeat(indent);
+    let pad1 = "  ".repeat(indent + 1);
+    match v {
+        Val::Unit => "null".to_string(),
+        Val::Bool(b) => b.to_string(),
+        Val::Int(n) => n.to_string(),
+        Val::Float(f) => format!("{}", f),
+        Val::Text(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+        Val::Bytes(b) => format!("<bytes:{}>", b.len()),
+        Val::Big(n) => n.to_string(),
+        Val::List(items) => {
+            if items.is_empty() { return "[]".to_string(); }
+            // Short lists on one line
+            if items.len() <= 4 {
+                let all_simple = items.iter().all(|v| matches!(v,
+                    Val::Int(_) | Val::Float(_) | Val::Bool(_) | Val::Text(_) | Val::Unit));
+                if all_simple {
+                    let inner: Vec<String> = items.iter().map(|v| pretty_print_val(v, 0)).collect();
+                    let line = format!("[{}]", inner.join(", "));
+                    if line.len() < 60 { return line; }
+                }
+            }
+            let mut out = "[\n".to_string();
+            for (i, item) in items.iter().enumerate() {
+                out.push_str(&format!("{}{}", pad1, pretty_print_val(item, indent + 1)));
+                if i + 1 < items.len() { out.push(','); }
+                out.push('\n');
+            }
+            out.push_str(&format!("{}]", pad));
+            out
+        }
+        Val::Record(m) => {
+            if m.is_empty() { return "{}".to_string(); }
+            // Short records on one line
+            if m.len() <= 3 {
+                let all_simple = m.values().all(|v| matches!(v,
+                    Val::Int(_) | Val::Float(_) | Val::Bool(_) | Val::Text(_) | Val::Unit));
+                if all_simple {
+                    let inner: Vec<String> = m.iter()
+                        .map(|(k, v)| format!("{}: {}", k, pretty_print_val(v, 0)))
+                        .collect();
+                    let line = format!("{{ {} }}", inner.join(", "));
+                    if line.len() < 60 { return line; }
+                }
+            }
+            let mut out = "{\n".to_string();
+            let keys: Vec<&String> = m.keys().collect();
+            for (i, k) in keys.iter().enumerate() {
+                let val = &m[*k];
+                out.push_str(&format!("{}{}: {}", pad1, k, pretty_print_val(val, indent + 1)));
+                if i + 1 < keys.len() { out.push(','); }
+                out.push('\n');
+            }
+            out.push_str(&format!("{}}}", pad));
+            out
+        }
+        Val::Func(_) | Val::VmFunc(_) => "<fn>".to_string(),
+        Val::Builtin(_) => "<builtin>".to_string(),
+        Val::Chan(..) => "<chan>".to_string(),
+        Val::Mtx(..) => "<mutex>".to_string(),
+        Val::Promise(..) => "<promise>".to_string(),
+        Val::BoundMethod(..) => "<method>".to_string(),
+        Val::Err { code, .. } => format!("<err:{}>", code),
+    }
+}
+
     if want_repl {
         use rustyline::error::ReadlineError;
         use rustyline::DefaultEditor;
@@ -737,9 +805,7 @@ fn main() -> Result<()> {
                                         println!("time: {:.3}ms", elapsed.as_secs_f64() * 1000.0);
                                     }
                                     if !matches!(v, Val::Unit) {
-                                        if let Some(j) = v.to_json() {
-                                            println!("{}", canon_json(&j).unwrap_or_else(|_| "?".to_string()));
-                                        }
+                                        println!("{}", pretty_print_val(&v, 0));
                                     }
                                 }
                             }
