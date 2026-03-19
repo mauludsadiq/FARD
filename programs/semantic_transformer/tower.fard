@@ -4,11 +4,18 @@
 
 import("std/ffi") as ffi
 import("std/str") as str
+import("std/trace") as trace
 
 fn itof(n, denom) {
-  let whole = n / denom
-  let frac  = (n * 1000 / denom) % 1000
-  str.concat(str.from_int(whole), str.concat(".", str.from_int(frac)))
+  let raw     = (n * 10000 + denom / 2) / denom
+  let clamped = if raw > 10000 then 10000 else raw
+  let whole   = clamped / 10000
+  let frac    = clamped % 10000
+  let frac_str = if frac < 10 then str.concat("000", str.from_int(frac))
+    else if frac < 100 then str.concat("00", str.from_int(frac))
+    else if frac < 1000 then str.concat("0", str.from_int(frac))
+    else str.from_int(frac)
+  str.concat(str.from_int(whole), str.concat(".", frac_str))
 }
 
 fn encode(block_idx, layer_idx, step_count) {
@@ -20,7 +27,7 @@ fn encode(block_idx, layer_idx, step_count) {
   let f16 = if layer_idx == 4 then "1.0" else "0.0"
   let f17 = if layer_idx == 5 then "1.0" else "0.0"
   let f18 = if layer_idx == 6 then "1.0" else "0.0"
-  let f19 = itof(step_count, 60)
+  let f19 = itof(block_idx, 60)
   str.concat("[", str.concat(
     str.join([f0,"0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0",
               f12,f13,f14,f15,f16,f17,f18,f19,"0.0","1.0","0.0","0.0","0.3"], ","),
@@ -36,6 +43,28 @@ fn next_layer(tgt, current) {
   else if tgt == 5 then 5
   else if tgt == 6 then 6
   else current
+}
+
+fn op_name(op) {
+  if op == 0 then "SELECT_UNIVERSE"
+  else if op == 1 then "WITNESS_NEAREST"
+  else if op == 2 then "ATTEND"
+  else if op == 3 then "FFN_STEP"
+  else if op == 4 then "PROJECT_LAYER"
+  else if op == 5 then "RETURN_SET"
+  else if op == 6 then "ACCEPT"
+  else if op == 7 then "REJECT"
+  else "UNKNOWN"
+}
+
+fn layer_name(l) {
+  if l == 0 then "PHONEME"
+  else if l == 1 then "SYLLABLE"
+  else if l == 2 then "MORPHEME"
+  else if l == 3 then "WORD"
+  else if l == 4 then "PHRASE"
+  else if l == 5 then "SEMANTIC"
+  else "DISCOURSE"
 }
 
 let lib = ffi.load("./target/release/libfard_onnx.dylib")
@@ -56,10 +85,18 @@ let tower = while {
 }
 fn(s) { s.phoneme_idx < n_phonemes }
 fn(s) {
-  let feat = encode(s.block_idx, s.layer_idx, s.step_count)
+  let gt_layer = if s.block_idx == 4 then 1
+    else if s.block_idx == 5 then 2
+    else if s.block_idx == 6 then 3
+    else if s.block_idx == 7 then 4
+    else if s.block_idx == 8 then 5
+    else if s.block_idx >= 9 then 6
+    else 0
+  let feat = encode(s.block_idx, gt_layer, s.block_idx)
   let _    = ffi.call(lib.ok, "fard_onnx_infer_store", [h.ok, feat, str.len(feat)])
   let op   = ffi.call(lib.ok, "fard_onnx_result_argmax",  [])
   let tgt  = ffi.call(lib.ok, "fard_onnx_result_argmax2", [])
+  let _t   = trace.info(str.join(["ph=", str.from_int(s.phoneme_idx), " blk=", str.from_int(s.block_idx), " op=", op_name(op.ok), " tgt=", str.from_int(tgt.ok), " layer=", layer_name(gt_layer)], ""))
   let nb   = s.block_idx + 1
   let done = nb >= 12
   let next_l = next_layer(tgt.ok, s.layer_idx)
