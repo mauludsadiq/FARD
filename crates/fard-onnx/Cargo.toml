@@ -8,7 +8,7 @@ name = "fard_onnx"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ort = { version = "2.0.0-rc.12", features = ["load-dynamic"] }
+ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }
 
 [profile.release]
 opt-level = 3

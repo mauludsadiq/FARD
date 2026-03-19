@@ -6937,11 +6937,31 @@ fn call_builtin(
                 _ => "no reason provided".to_string(),
             };
 
-            let int_args: anyhow::Result<Vec<i64>> = ffi_args.iter().map(|v| match v {
-                Val::Int(n) => Ok(*n),
-                Val::Bool(b) => Ok(if *b { 1 } else { 0 }),
-                _ => Err(anyhow::anyhow!("ERROR_FFI call_checked: only int/bool args supported")),
-            }).collect();
+            // For Text args, we keep the string alive and pass ptr+len
+            let mut _text_keep: Vec<String> = Vec::new();
+            let int_args: anyhow::Result<Vec<i64>> = {
+                let mut out: Vec<i64> = Vec::new();
+                for v in &ffi_args {
+                    match v {
+                        Val::Int(n) => out.push(*n),
+                        Val::Bool(b) => out.push(if *b { 1 } else { 0 }),
+                        Val::Text(s) => {
+                            // Pass text as pointer then length
+                            _text_keep.push(s.clone());
+                            let kept = _text_keep.last().unwrap();
+                            out.push(kept.as_ptr() as i64);
+                            out.push(kept.len() as i64);
+                        }
+                        Val::List(l) if l.is_empty() => {
+                            // Empty list — pass null ptr + 0 length
+                            out.push(0i64);
+                            out.push(0i64);
+                        }
+                        _ => return Err(anyhow::anyhow!("ERROR_FFI call_checked: unsupported arg type")),
+                    }
+                }
+                Ok(out)
+            };
 
             let iargs = match int_args {
                 Err(e) => {
@@ -6964,7 +6984,12 @@ fn call_builtin(
                             1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
                             2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1])) }
                             3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2])) }
-                            _ => Err(anyhow::anyhow!("ERROR_FFI max 3 args")),
+                            4 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3])) }
+                            5 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4])) }
+                            6 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4],iargs[5])) }
+                            7 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4],iargs[5],iargs[6])) }
+                            8 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4],iargs[5],iargs[6],iargs[7])) }
+                            _ => Err(anyhow::anyhow!("ERROR_FFI max 8 args")),
                         }
                     }
                 })
