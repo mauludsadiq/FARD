@@ -284,3 +284,74 @@ pub extern "C" fn fard_onnx_result_argmax2() -> i64 {
         .map(|(i, _)| i as i64)
         .unwrap_or(-1)
 }
+
+/// Sequence inference for attention model (ProposerV7b)
+/// Input: JSON array of seq_len*fdim floats (flattened sequence)
+/// Returns number of output floats or -1 on error
+#[no_mangle]
+pub extern "C" fn fard_onnx_infer_seq(
+    handle: i64,
+    json_ptr: i64, json_len: i64,
+    seq_len: i64,
+    fdim: i64,
+) -> i64 {
+    let json_str = unsafe {
+        let bytes = std::slice::from_raw_parts(json_ptr as *const u8, json_len as usize);
+        match std::str::from_utf8(bytes) {
+            Ok(s) => s.to_string(),
+            Err(_) => return -1,
+        }
+    };
+    let trimmed = json_str.trim().trim_start_matches('[').trim_end_matches(']');
+    let flat: Vec<f32> = trimmed.split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    if flat.len() != (seq_len * fdim) as usize { return -1; }
+    let shape = [1usize, seq_len as usize, fdim as usize];
+    let tensor: Tensor<f32> = match Tensor::from_array((shape, flat.into_boxed_slice())) {
+        Ok(t) => t,
+        Err(e) => { eprintln!("seq tensor: {e}"); return -1; }
+    };
+    let mut guard = SESSIONS.write().unwrap();
+    let session = match guard.as_mut().and_then(|m| m.get_mut(&handle)) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let in_name  = session.inputs()[0].name().to_string();
+    let out_name = session.outputs()[0].name().to_string();
+    let outputs = match session.run(ort::inputs![in_name => tensor]) {
+        Ok(o) => o,
+        Err(e) => { eprintln!("seq run: {e}"); return -1; }
+    };
+    if let Some(v) = outputs.get(&out_name) {
+        if let Ok((_shape, data)) = v.try_extract_tensor::<f32>() {
+            let parts: Vec<String> = data.iter().map(|f| format!("{:.6}", f)).collect();
+            let json = format!("[{}]", parts.join(","));
+            let n = data.len() as i64;
+            *LAST_RESULT.write().unwrap() = json;
+            LAST_RESULT_LEN.store(n, Ordering::SeqCst);
+            return n;
+        }
+    }
+    -1
+}
+
+/// Argmax at a specific block position in the stored sequence result
+/// block bi occupies indices [bi*8 .. bi*8+8]
+#[no_mangle]
+pub extern "C" fn fard_onnx_seq_argmax_at(bi: i64) -> i64 {
+    let guard = LAST_RESULT.read().unwrap();
+    let json = guard.as_str();
+    if json.is_empty() { return -1; }
+    let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
+    let vals: Vec<f32> = trimmed.split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    let start = (bi * 8) as usize;
+    if start + 8 > vals.len() { return -1; }
+    vals[start..start+8].iter()
+        .enumerate()
+        .max_by(|a,b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i,_)| i as i64)
+        .unwrap_or(-1)
+}

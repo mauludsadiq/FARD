@@ -6858,7 +6858,12 @@ fn call_builtin(
                                 1 => { let f: libloading::Symbol<unsafe extern "C" fn(i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0])) }
                                 2 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1])) }
                                 3 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2])) }
-                                _ => Err(anyhow::anyhow!("ERROR_FFI max 3 args in v1")),
+                                4 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3])) }
+                                5 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4])) }
+                                6 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4],iargs[5])) }
+                                7 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4],iargs[5],iargs[6])) }
+                                8 => { let f: libloading::Symbol<unsafe extern "C" fn(i64,i64,i64,i64,i64,i64,i64,i64) -> i64> = lib.get(symbol.as_bytes())?; Ok(f(iargs[0],iargs[1],iargs[2],iargs[3],iargs[4],iargs[5],iargs[6],iargs[7])) }
+                                _ => Err(anyhow::anyhow!("ERROR_FFI max 8 args in v1")),
                             }
                         }
                     });
