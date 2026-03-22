@@ -3507,7 +3507,6 @@ enum Builtin {
     RecRename,
     RecUpdate,
     ResultErr,
-    ListGet,
     ListLen,
     ListHead,
     ListTail,
@@ -3653,6 +3652,7 @@ enum Builtin {
     LinalgVecExp, LinalgVecLog, LinalgVecSum, LinalgVecMax, LinalgVecMul,
     LinalgVecRelu, LinalgVecReluGrad, LinalgSoftmaxGrad, LinalgCrossEntropy,
     LinalgOuter, LinalgMatMulVecGrad, LinalgVecScalarAdd, LinalgMatRowSum,
+    ListGet,
     ListSet,
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
@@ -9610,12 +9610,24 @@ fn call_builtin(
             if args.len() != 1 { bail!("ERROR_BADARG linalg.softmax expects 1 arg"); }
             match &args[0] {
                 Val::List(xs) => {
-                    let fs: Result<Vec<f64>> = xs.iter().map(|x| val_to_f64_linalg(x)).collect();
+                    let fs: Result<Vec<i128>> = xs.iter().map(|x| val_to_q32_linalg(x)).collect();
                     let fs = fs?;
-                    let max = fs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                    let exps: Vec<f64> = fs.iter().map(|&x| (x - max).exp()).collect();
-                    let sum: f64 = exps.iter().sum();
-                    Ok(Val::List(exps.iter().map(|&e| Val::Float(e / sum)).collect()))
+                    if fs.is_empty() { return Ok(Val::List(vec![])); }
+                    let mut max = fs[0];
+                    for &x in fs.iter().skip(1) {
+                        if x > max { max = x; }
+                    }
+                    let mut exps: Vec<i128> = Vec::with_capacity(fs.len());
+                    let mut sum: i128 = 0;
+                    for &x in &fs {
+                        let e = q32_exp(x - max);
+                        exps.push(e);
+                        sum += e;
+                    }
+                    if sum <= 0 {
+                        return Ok(Val::List((0..fs.len()).map(|_| qv(0)).collect()));
+                    }
+                    Ok(Val::List(exps.into_iter().map(|e| qv(q32_div(e, sum))).collect()))
                 }
                 _ => bail!("ERROR_BADARG softmax expects list"),
             }
@@ -9626,9 +9638,9 @@ fn call_builtin(
                 Val::List(xs) => {
                     if xs.is_empty() { bail!("ERROR_BADARG argmax on empty list"); }
                     let mut best_i = 0usize;
-                    let mut best_v = f64::NEG_INFINITY;
-                    for (i, x) in xs.iter().enumerate() {
-                        let v = val_to_f64_linalg(x)?;
+                    let mut best_v = val_to_q32_linalg(&xs[0])?;
+                    for (i, x) in xs.iter().enumerate().skip(1) {
+                        let v = val_to_q32_linalg(x)?;
                         if v > best_v { best_v = v; best_i = i; }
                     }
                     Ok(Val::Int(best_i as i64))
@@ -9637,26 +9649,74 @@ fn call_builtin(
             }
         }
         Builtin::LinalgMatvec => {
-            let m = vl_to_mat(&args[0])?;
-            let x = vl_to_f64(&args[1])?;
-            Ok(Val::List(m.iter().map(|row| fv(row.iter().zip(x.iter()).map(|(a,b)| a*b).sum())).collect()))
+            let m = vl_to_q32_mat(&args[0])?;
+            let x = vl_to_q32_vec(&args[1])?;
+            let mut out: Vec<Val> = Vec::with_capacity(m.len());
+            for row in &m {
+                if row.len() != x.len() { bail!("ERROR_BADARG linalg.matvec length mismatch"); }
+                let mut acc: i128 = 0;
+                for j in 0..row.len() {
+                    acc += q32_mul(row[j], x[j]);
+                }
+                out.push(qv(acc));
+            }
+            Ok(Val::List(out))
         }
         Builtin::LinalgMatmul => {
-            let a = vl_to_mat(&args[0])?;
-            let b = vl_to_mat(&args[1])?;
+            let a = vl_to_q32_mat(&args[0])?;
+            let b = vl_to_q32_mat(&args[1])?;
             if a.is_empty() || b.is_empty() { return Ok(Val::List(vec![])); }
-            let (rm, k, rn) = (a.len(), a[0].len(), b[0].len());
-            Ok(Val::List((0..rm).map(|i| Val::List((0..rn).map(|j| fv((0..k).map(|l| a[i][l]*b[l][j]).sum())).collect())).collect()))
+            let rm = a.len();
+            let k = a[0].len();
+            let rn = b[0].len();
+            for row in &a {
+                if row.len() != k { bail!("ERROR_BADARG linalg.matmul ragged lhs"); }
+            }
+            for row in &b {
+                if row.len() != rn { bail!("ERROR_BADARG linalg.matmul ragged rhs"); }
+            }
+            if b.len() != k { bail!("ERROR_BADARG linalg.matmul dimension mismatch"); }
+            let mut rows: Vec<Val> = Vec::with_capacity(rm);
+            for i in 0..rm {
+                let mut row_out: Vec<Val> = Vec::with_capacity(rn);
+                for j in 0..rn {
+                    let mut acc: i128 = 0;
+                    for l in 0..k {
+                        acc += q32_mul(a[i][l], b[l][j]);
+                    }
+                    row_out.push(qv(acc));
+                }
+                rows.push(Val::List(row_out));
+            }
+            Ok(Val::List(rows))
         }
         Builtin::LinalgMatAdd => {
-            let a = vl_to_mat(&args[0])?;
-            let b = vl_to_mat(&args[1])?;
-            Ok(Val::List(a.iter().zip(b.iter()).map(|(ra,rb)| Val::List(ra.iter().zip(rb.iter()).map(|(x,y)| fv(x+y)).collect())).collect()))
+            let a = vl_to_q32_mat(&args[0])?;
+            let b = vl_to_q32_mat(&args[1])?;
+            if a.len() != b.len() { bail!("ERROR_BADARG linalg.mat_add row mismatch"); }
+            let mut rows: Vec<Val> = Vec::with_capacity(a.len());
+            for i in 0..a.len() {
+                if a[i].len() != b[i].len() { bail!("ERROR_BADARG linalg.mat_add col mismatch"); }
+                let mut row: Vec<Val> = Vec::with_capacity(a[i].len());
+                for j in 0..a[i].len() {
+                    row.push(qv(a[i][j] + b[i][j]));
+                }
+                rows.push(Val::List(row));
+            }
+            Ok(Val::List(rows))
         }
         Builtin::LinalgMatScale => {
-            let m = vl_to_mat(&args[0])?;
-            let s = fb64_1(&args[1..])?;
-            Ok(Val::List(m.iter().map(|r| Val::List(r.iter().map(|x| fv(x*s)).collect())).collect()))
+            let m = vl_to_q32_mat(&args[0])?;
+            let s = val_to_q32_linalg(&args[1])?;
+            let mut rows: Vec<Val> = Vec::with_capacity(m.len());
+            for row in &m {
+                let mut out: Vec<Val> = Vec::with_capacity(row.len());
+                for &x in row {
+                    out.push(qv(q32_mul(x, s)));
+                }
+                rows.push(Val::List(out));
+            }
+            Ok(Val::List(rows))
         }
         Builtin::LinalgEigh => {
             let m = vl_to_mat(&args[0])?;
@@ -9669,82 +9729,146 @@ fn call_builtin(
             { let mut m = BTreeMap::new(); m.insert("vals".into(), Val::List(vals)); m.insert("vecs".into(), Val::List(vecs)); Ok(Val::Record(m)) }
         }
         Builtin::LinalgVecExp => {
-            let xs: Vec<f64> = vl_to_vec(&args[0])?;
-            Ok(Val::List(xs.iter().map(|x| fv(x.exp())).collect()))
+            let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            Ok(Val::List(xs.iter().map(|&x| qv(q32_exp(x))).collect()))
         }
         Builtin::LinalgVecLog => {
-            let xs: Vec<f64> = vl_to_vec(&args[0])?;
-            Ok(Val::List(xs.iter().map(|x| fv(x.ln())).collect()))
+            let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            Ok(Val::List(xs.iter().map(|&x| qv(q32_ln(x))).collect()))
         }
         Builtin::LinalgVecSum => {
-            let xs: Vec<f64> = vl_to_vec(&args[0])?;
-            Ok(fv(xs.iter().sum()))
+            let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            let mut acc: i128 = 0;
+            for x in xs { acc += x; }
+            Ok(qv(acc))
         }
         Builtin::LinalgVecMax => {
-            let xs: Vec<f64> = vl_to_vec(&args[0])?;
+            let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
             if xs.is_empty() { bail!("ERROR_BADARG vec_max empty"); }
-            Ok(fv(xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max)))
+            let mut best = xs[0];
+            for &x in xs.iter().skip(1) {
+                if x > best { best = x; }
+            }
+            Ok(qv(best))
         }
         Builtin::LinalgVecMul => {
-            let a: Vec<f64> = vl_to_vec(&args[0])?;
-            let b: Vec<f64> = vl_to_vec(&args[1])?;
+            let a: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            let b: Vec<i128> = vl_to_q32_vec(&args[1])?;
             if a.len() != b.len() { bail!("ERROR_BADARG vec_mul length mismatch"); }
-            Ok(Val::List(a.iter().zip(b.iter()).map(|(x,y)| fv(x*y)).collect()))
+            Ok(Val::List(a.iter().zip(b.iter()).map(|(x,y)| qv(q32_mul(*x,*y))).collect()))
         }
         Builtin::LinalgVecRelu => {
-            let xs: Vec<f64> = vl_to_vec(&args[0])?;
-            Ok(Val::List(xs.iter().map(|x| fv(x.max(0.0))).collect()))
+            let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            Ok(Val::List(xs.iter().map(|&x| qv(if x > 0 { x } else { 0 })).collect()))
         }
         Builtin::LinalgVecReluGrad => {
-            let x:  Vec<f64> = vl_to_vec(&args[0])?;
-            let dv: Vec<f64> = vl_to_vec(&args[1])?;
+            let x:  Vec<i128> = vl_to_q32_vec(&args[0])?;
+            let dv: Vec<i128> = vl_to_q32_vec(&args[1])?;
             if x.len() != dv.len() { bail!("ERROR_BADARG vec_relu_grad length mismatch"); }
-            Ok(Val::List(x.iter().zip(dv.iter()).map(|(xi,di)| fv(if *xi > 0.0 { *di } else { 0.0 })).collect()))
+            Ok(Val::List(x.iter().zip(dv.iter()).map(|(xi,di)| qv(if *xi > 0 { *di } else { 0 })).collect()))
         }
         Builtin::LinalgSoftmaxGrad => {
-            let s: Vec<f64> = vl_to_vec(&args[0])?;
+            let s: Vec<i128> = vl_to_q32_vec(&args[0])?;
             let y = match &args[1] { Val::Int(i) => *i as usize, _ => bail!("ERROR_BADARG softmax_grad expects int label") };
             let mut g = s.clone();
-            if y < g.len() { g[y] -= 1.0; }
-            Ok(Val::List(g.iter().map(|x| fv(*x)).collect()))
+            if y < g.len() { g[y] -= q32_one(); }
+            Ok(Val::List(g.iter().map(|&x| qv(x)).collect()))
         }
         Builtin::LinalgCrossEntropy => {
-            let s: Vec<f64> = vl_to_vec(&args[0])?;
+            let s: Vec<i128> = vl_to_q32_vec(&args[0])?;
             let y = match &args[1] { Val::Int(i) => *i as usize, _ => bail!("ERROR_BADARG cross_entropy expects int label") };
             if y >= s.len() { bail!("ERROR_BADARG cross_entropy label out of range"); }
-            Ok(fv(-(s[y].max(1e-15).ln())))
+            let p = if s[y] <= 0 { 1 } else { s[y] };
+            Ok(qv(-q32_ln(p)))
         }
         Builtin::LinalgOuter => {
-            let a: Vec<f64> = vl_to_vec(&args[0])?;
-            let b: Vec<f64> = vl_to_vec(&args[1])?;
-            Ok(Val::List(a.iter().map(|ai| Val::List(b.iter().map(|bj| fv(ai*bj)).collect())).collect()))
+            let a: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            let b: Vec<i128> = vl_to_q32_vec(&args[1])?;
+            Ok(Val::List(a.iter().map(|ai| Val::List(b.iter().map(|bj| qv(q32_mul(*ai,*bj))).collect())).collect()))
         }
         Builtin::LinalgMatMulVecGrad => {
-            let w = vl_to_mat(&args[0])?;
-            let x: Vec<f64> = vl_to_vec(&args[1])?;
-            let dout: Vec<f64> = vl_to_vec(&args[2])?;
-            let dw: Vec<Val> = dout.iter().map(|di| Val::List(x.iter().map(|xj| fv(di*xj)).collect())).collect();
+            let w = vl_to_q32_mat(&args[0])?;
+            let x: Vec<i128> = vl_to_q32_vec(&args[1])?;
+            let dout: Vec<i128> = vl_to_q32_vec(&args[2])?;
+            let dw: Vec<Val> = dout.iter().map(|di| Val::List(x.iter().map(|xj| qv(q32_mul(*di,*xj))).collect())).collect();
             let m = w.len(); let n = if m>0 { w[0].len() } else { 0 };
-            let mut dx = vec![0.0f64; n];
-            for i in 0..m { for j in 0..n { dx[j] += w[i][j] * dout[i]; } }
+            let mut dx = vec![0i128; n];
+            for i in 0..m {
+                for j in 0..n {
+                    dx[j] += q32_mul(w[i][j], dout[i]);
+                }
+            }
             let mut rec = BTreeMap::new();
             rec.insert("dW".into(), Val::List(dw));
-            rec.insert("dx".into(), Val::List(dx.iter().map(|x| fv(*x)).collect()));
+            rec.insert("dx".into(), Val::List(dx.iter().map(|&x| qv(x)).collect()));
             Ok(Val::Record(rec))
         }
         Builtin::LinalgVecScalarAdd => {
-            let v: Vec<f64> = vl_to_vec(&args[0])?;
-            let s = val_to_f64_linalg(&args[1])?;
-            Ok(Val::List(v.iter().map(|x| fv(x+s)).collect()))
+            let v: Vec<i128> = vl_to_q32_vec(&args[0])?;
+            let s = val_to_q32_linalg(&args[1])?;
+            Ok(Val::List(v.iter().map(|&x| qv(x + s)).collect()))
         }
         Builtin::LinalgMatRowSum => {
-            let m = vl_to_mat(&args[0])?;
-            Ok(Val::List(m.iter().map(|row| fv(row.iter().sum())).collect()))
+            let m = vl_to_q32_mat(&args[0])?;
+            let mut out: Vec<Val> = Vec::with_capacity(m.len());
+            for row in &m {
+                let mut acc: i128 = 0;
+                for &x in row { acc += x; }
+                out.push(qv(acc));
+            }
+            Ok(Val::List(out))
         }
+
     }
 }
 
+fn q32_scale() -> i128 { 1i128 << 32 }
+fn q32_one() -> i128 { q32_scale() }
+fn q32_from_i64(n: i64) -> i128 { (n as i128) << 32 }
+fn q32_to_f64(x: i128) -> f64 { (x as f64) / (q32_scale() as f64) }
+
+fn q32_round_div(n: i128, d: i128) -> i128 {
+    if d == 0 { return 0; }
+    let an = n.abs();
+    let ad = d.abs();
+    let q = (an + (ad / 2)) / ad;
+    if (n < 0) ^ (d < 0) { -q } else { q }
+}
+
+fn q32_mul(a: i128, b: i128) -> i128 { q32_round_div(a * b, q32_scale()) }
+fn q32_div(a: i128, b: i128) -> i128 { q32_round_div(a * q32_scale(), b) }
+
+fn q32_exp(x: i128) -> i128 {
+    if x <= q32_from_i64(-16) { return 0; }
+    if x >= q32_from_i64(16) { return q32_from_i64(8_886_110); }
+    let mut term = q32_one();
+    let mut sum = q32_one();
+    let mut k: i128 = 1;
+    while k <= 24 {
+        term = q32_div(q32_mul(term, x), q32_from_i64(k as i64));
+        sum += term;
+        k += 1;
+    }
+    if sum < 0 { 0 } else { sum }
+}
+
+fn q32_ln(x: i128) -> i128 {
+    if x <= 0 { return q32_from_i64(-64); }
+    let mut y = 0i128;
+    let mut i = 0;
+    while i < 16 {
+        let ey = q32_exp(y);
+        let num = x - ey;
+        let den = if ey == 0 { 1 } else { ey };
+        y += q32_div(num, den);
+        i += 1;
+    }
+    y
+}
+
 fn fv(f: f64) -> Val { Val::Bytes(f.to_le_bytes().to_vec()) }
+fn qv(x: i128) -> Val { fv(q32_to_f64(x)) }
+
 fn val_to_f64_linalg(v: &Val) -> Result<f64> {
     match v {
         Val::Bytes(b) if b.len() == 8 => {
@@ -9753,6 +9877,19 @@ fn val_to_f64_linalg(v: &Val) -> Result<f64> {
         }
         Val::Float(f) => Ok(*f),
         Val::Int(n)   => Ok(*n as f64),
+        _ => bail!("ERROR_BADARG linalg: expected float value, got {:?}", v),
+    }
+}
+
+fn val_to_q32_linalg(v: &Val) -> Result<i128> {
+    match v {
+        Val::Bytes(b) if b.len() == 8 => {
+            let arr: [u8;8] = b.as_slice().try_into().unwrap();
+            let f = f64::from_le_bytes(arr);
+            Ok((f * (q32_scale() as f64)).round() as i128)
+        }
+        Val::Float(f) => Ok(((*f) * (q32_scale() as f64)).round() as i128),
+        Val::Int(n)   => Ok(q32_from_i64(*n)),
         _ => bail!("ERROR_BADARG linalg: expected float value, got {:?}", v),
     }
 }
@@ -9794,12 +9931,36 @@ fn vl_to_vec(v: &Val) -> anyhow::Result<Vec<f64>> {
         _ => anyhow::bail!("ERROR_BADARG vl_to_vec: expected list"),
     }
 }
+
+fn vl_to_q32_vec(v: &Val) -> anyhow::Result<Vec<i128>> {
+    match v {
+        Val::List(xs) => xs.iter().map(|x| val_to_q32_linalg(x)).collect(),
+        Val::Bytes(b) => {
+            if b.len() % 8 != 0 { anyhow::bail!("ERROR_BADARG vec bytes not multiple of 8"); }
+            b.chunks(8).map(|c| {
+                let arr: [u8;8] = c.try_into().unwrap();
+                let f = f64::from_le_bytes(arr);
+                Ok((f * (q32_scale() as f64)).round() as i128)
+            }).collect()
+        }
+        _ => anyhow::bail!("ERROR_BADARG vl_to_vec: expected list"),
+    }
+}
+
 fn vl_to_mat(v: &Val) -> anyhow::Result<Vec<Vec<f64>>> {
     match v {
         Val::List(rows) => rows.iter().map(vl_to_f64).collect(),
         _ => anyhow::bail!("ERROR_BADARG expected list of list of floats"),
     }
 }
+
+fn vl_to_q32_mat(v: &Val) -> anyhow::Result<Vec<Vec<i128>>> {
+    match v {
+        Val::List(rows) => rows.iter().map(vl_to_q32_vec).collect(),
+        _ => anyhow::bail!("ERROR_BADARG expected list of list of floats"),
+    }
+}
+
 
 fn insertion_sort(xs: &mut [i64]) {
     for i in 1..xs.len() {
@@ -11332,5 +11493,5 @@ fn file_digest(p: &Path) -> Result<String> {
 fn canonical_json_string(v: &J) -> String { String::from_utf8(canonical_json_bytes(v)).unwrap_or_default() }
 
 fn canonical_json_bytes(v: &J) -> Vec<u8> {
-    json_to_string(v).into_bytes()
+    canon_json(v).unwrap_or_else(|_| json_to_string(v)).into_bytes()
 }
