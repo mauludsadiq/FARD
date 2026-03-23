@@ -1,0 +1,5 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_expr("x + y + z")
+test "assoc root is add" { e.name == "int.add" }
+test "assoc lhs is add" { e.args[0].name == "int.add" }
