@@ -1,0 +1,23 @@
+import("std/list") as list
+
+import("../packages/fard_parse/parse") as parse
+
+let e1 = parse.parse_expr("x + 1")
+test "parse expr add tag" { e1.t == "call_builtin" }
+test "parse expr add op" { e1.name == "int.add" }
+test "parse expr add left var" { e1.args[0].t == "var" }
+test "parse expr add right lit" { e1.args[1].t == "lit_int" }
+
+let e2 = parse.parse_expr("y - 2")
+test "parse expr sub op" { e2.name == "int.sub" }
+
+let e3 = parse.parse_expr("z * 3")
+test "parse expr mul op" { e3.name == "int.mul" }
+
+let e4 = parse.parse_expr("w / 4")
+test "parse expr div op" { e4.name == "int.div" }
+
+let m = parse.parse_module_text("fn add(x, y) { x + 1 }")
+test "parse params count" { list.len(m.defs[0].params) == 2 }
+test "parse param 0" { m.defs[0].params[0] == "x" }
+test "parse param 1" { m.defs[0].params[1] == "y" }
