@@ -1,0 +1,5 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_expr("(x + y) * 3")
+test "paren root is mul" { e.name == "int.mul" }
+test "paren lhs is add" { e.args[0].name == "int.add" }
