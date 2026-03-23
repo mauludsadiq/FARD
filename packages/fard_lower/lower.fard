@@ -60,6 +60,17 @@ fn lower(node) {
   }
 }
 
+fn entry_name(defs) {
+  if list.len(defs) == 0 then "" else defs[0].name
+}
+
+fn lower_module(items) {
+  let defs = list.map(items, fn(it) { lower(it) })
+  fir.module("main", defs, entry_name(defs))
+}
+
 {
-  lower: lower
+  lower: lower,
+  entry_name: entry_name,
+  lower_module: lower_module
 }

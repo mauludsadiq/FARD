@@ -1,0 +1,9 @@
+import("../packages/fir/fir") as fir
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let n = fir.call_builtin("int.add", [fir.lit_int(1), fir.lit_int(2)])
+test "eval int.add" { fe.eval(n, env) == 3 }
+
+let l = fir.let1("x", fir.lit_int(7), fir.var("x"))
+test "eval let var" { fe.eval(l, env) == 7 }

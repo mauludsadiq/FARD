@@ -1,0 +1,44 @@
+import("std/list") as list
+import("std/record") as rec
+
+fn env_empty() { {} }
+
+fn env_get(env, name) { rec.get(env, name) }
+
+fn env_set(env, name, value) { rec.set(env, name, value) }
+
+fn eval_args(args, env) {
+  list.map(args, fn(a) { eval(a, env) })
+}
+
+fn apply_builtin(name, args) {
+  match name {
+    "int.add" => args[0] + args[1],
+    "int.sub" => args[0] - args[1],
+    "int.mul" => args[0] * args[1],
+    "int.div" => args[0] / args[1],
+    _ => { t: "err", e: "unsupported_builtin" }
+  }
+}
+
+fn eval(node, env) {
+  match node.t {
+    "lit_int" => node.v,
+    "lit_text" => node.v,
+    "var" => env_get(env, node.name),
+    "call_builtin" => apply_builtin(node.name, eval_args(node.args, env)),
+    "let" =>
+      let b = node.bindings[0] in
+      let v = eval(b.value, env) in
+      let env2 = env_set(env, b.name, v) in
+      eval(node.body, env2),
+    _ => { t: "err", e: "unsupported_eval_node" }
+  }
+}
+
+{
+  env_empty: env_empty,
+  env_get: env_get,
+  env_set: env_set,
+  eval: eval
+}

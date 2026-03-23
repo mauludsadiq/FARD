@@ -1,0 +1,9 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+import("../packages/fard_eval/eval") as fe
+
+let items = ast.parse("1 + 2")
+let fir = lower.lower(items[0])
+let env = fe.env_empty()
+
+test "lower+eval 1+2" { fe.eval(fir, env) == 3 }
