@@ -27,12 +27,36 @@ fn eval(node, env) {
     "lit_text" => node.v,
     "var" => env_get(env, node.name),
     "call_builtin" => apply_builtin(node.name, eval_args(node.args, env)),
+    "node_fn" => make_closure(node.params, node.body, env),
+    "call" =>
+      let fn_val = eval(rec.get(node, "fn"), env) in
+      let args2 = eval_args(node.args, env) in
+      apply_fn(fn_val, args2),
     "let" =>
       let b = node.bindings[0] in
       let v = eval(b.value, env) in
       let env2 = env_set(env, b.name, v) in
       eval(node.body, env2),
+    "def_fn" => make_closure(node.params, node.body, env),
     _ => { t: "err", e: "unsupported_eval_node" }
+  }
+}
+
+fn make_closure(params, body, env) {
+  { t: "closure", params: params, body: body, env: env }
+}
+
+fn bind_params(params, args, env) {
+  if list.len(params) == 0 then env
+  else bind_params(list.drop(params, 1), list.drop(args, 1), rec.set(env, params[0], args[0]))
+}
+
+fn apply_fn(fn_val, args) {
+  match fn_val.t {
+    "closure" =>
+      let env2 = bind_params(fn_val.params, args, fn_val.env) in
+      eval(fn_val.body, env2),
+    _ => { t: "err", e: "not_callable" }
   }
 }
 
@@ -40,5 +64,7 @@ fn eval(node, env) {
   env_empty: env_empty,
   env_get: env_get,
   env_set: env_set,
+  make_closure: make_closure,
+  apply_fn: apply_fn,
   eval: eval
 }

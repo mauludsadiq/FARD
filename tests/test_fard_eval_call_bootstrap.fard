@@ -1,0 +1,8 @@
+import("../packages/fir/fir") as fir
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let idfn = { t: "node_fn", params: ["x"], body: { t: "var", name: "x" } }
+let call1 = { t: "call", "fn": idfn, args: [fir.lit_int(9)] }
+
+test "eval closure call" { fe.eval(call1, env) == 9 }

@@ -1,0 +1,10 @@
+import("../packages/fir/fir") as fir
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let d = fir.def_fn("add1", ["x"], fir.call_builtin("int.add", [fir.var("x"), fir.lit_int(1)]))
+let f = fe.eval(d, env)
+let call1 = { t: "call", "fn": d, args: [fir.lit_int(9)] }
+
+test "eval def_fn produces closure" { f.t == "closure" }
+test "eval def_fn call" { fe.eval(call1, env) == 10 }

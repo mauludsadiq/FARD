@@ -1,0 +1,10 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+import("../packages/fard_eval/eval") as fe
+
+let items = ast.parse("fn add1(x) { x + 1 }")
+let m = lower.lower_module(items)
+let d = m.defs[0]
+let call1 = { t: "call", "fn": d, args: [{ t: "lit_int", v: 9 }] }
+
+test "lower_module def_fn call" { fe.eval(call1, fe.env_empty()) == 10 }
