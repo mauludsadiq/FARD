@@ -355,3 +355,82 @@ pub extern "C" fn fard_onnx_seq_argmax_at(bi: i64) -> i64 {
         .map(|(i,_)| i as i64)
         .unwrap_or(-1)
 }
+
+/// Multi-output inference — runs all outputs, concatenates into LAST_RESULT as JSON.
+/// Outputs are flattened in order: [out0_0, out0_1, ..., out1_0, out1_1, ...]
+/// Use fard_onnx_result_argmax_range(start, len) to get argmax within a slice.
+#[no_mangle]
+pub extern "C" fn fard_onnx_infer_store_multi(
+    handle: i64,
+    json_ptr: i64, json_len: i64,
+) -> i64 {
+    let json_str = unsafe {
+        let bytes = std::slice::from_raw_parts(json_ptr as *const u8, json_len as usize);
+        match std::str::from_utf8(bytes) {
+            Ok(s) => s.to_string(),
+            Err(_) => return -1,
+        }
+    };
+    let trimmed = json_str.trim().trim_start_matches('[').trim_end_matches(']');
+    let input_vec: Vec<f32> = trimmed
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    if input_vec.is_empty() { return -1; }
+    let input_len = input_vec.len();
+    let shape = [1usize, input_len];
+    let tensor: Tensor<f32> = match Tensor::from_array((shape, input_vec.into_boxed_slice())) {
+        Ok(t) => t,
+        Err(_) => return -1,
+    };
+    let mut guard = SESSIONS.write().unwrap();
+    let session = match guard.as_mut().and_then(|m| m.get_mut(&handle)) {
+        Some(s) => s,
+        None => return -1,
+    };
+    let in_name = session.inputs()[0].name().to_string();
+    let out_names: Vec<String> = session.outputs().iter()
+        .map(|o| o.name().to_string())
+        .collect();
+    let outputs = match session.run(ort::inputs![in_name => tensor]) {
+        Ok(o) => o,
+        Err(e) => { eprintln!("infer_store_multi: {e}"); return -1; }
+    };
+    let mut all_vals: Vec<f32> = Vec::new();
+    for name in &out_names {
+        if let Some(v) = outputs.get(name.as_str()) {
+            if let Ok((_shape, data)) = v.try_extract_tensor::<f32>() {
+                all_vals.extend_from_slice(data);
+            }
+        }
+    }
+    if all_vals.is_empty() { return -1; }
+    let n = all_vals.len() as i64;
+    let parts: Vec<String> = all_vals.iter().map(|f| format!("{:.6}", f)).collect();
+    let json = format!("[{}]", parts.join(","));
+    *LAST_RESULT.write().unwrap() = json;
+    LAST_RESULT_LEN.store(n, Ordering::SeqCst);
+    n
+}
+
+/// Argmax within a range [start, start+len) of the last stored result.
+/// Used to get argmax of a specific output head after infer_store_multi.
+#[no_mangle]
+pub extern "C" fn fard_onnx_result_argmax_range(start: i64, len: i64) -> i64 {
+    let guard = LAST_RESULT.read().unwrap();
+    let json = guard.as_str();
+    if json.is_empty() { return -1; }
+    let trimmed = json.trim().trim_start_matches('[').trim_end_matches(']');
+    let vals: Vec<f32> = trimmed
+        .split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect();
+    let s = start as usize;
+    let e = (start + len) as usize;
+    if e > vals.len() { return -1; }
+    vals[s..e].iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(i, _)| i as i64)
+        .unwrap_or(-1)
+}

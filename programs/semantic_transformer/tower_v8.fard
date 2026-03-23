@@ -1,0 +1,184 @@
+/// FARD Semantic Transformer Tower v8
+/// Uses FARD-trained linguistic classifier (no PyTorch weights)
+/// model_v6.onnx: operation sequencer (SELECT, ATTEND, etc.)
+/// fard_semantic_transformer.onnx: linguistic layer classifier
+
+import("std/ffi") as ffi
+import("std/str") as str
+import("std/trace") as trace
+
+fn itof(n, denom) {
+  let raw     = (n * 10000 + denom / 2) / denom
+  let clamped = if raw > 10000 then 10000 else raw
+  let whole   = clamped / 10000
+  let frac    = clamped % 10000
+  let frac_str = if frac < 10 then str.concat("000", str.from_int(frac))
+    else if frac < 100 then str.concat("00", str.from_int(frac))
+    else if frac < 1000 then str.concat("0", str.from_int(frac))
+    else str.from_int(frac)
+  str.concat(str.from_int(whole), str.concat(".", frac_str))
+}
+
+fn encode_op(block_idx, layer_idx, step_count) {
+  let f0  = itof(block_idx, 60)
+  let f12 = if layer_idx == 0 then "1.0" else "0.0"
+  let f13 = if layer_idx == 1 then "1.0" else "0.0"
+  let f14 = if layer_idx == 2 then "1.0" else "0.0"
+  let f15 = if layer_idx == 3 then "1.0" else "0.0"
+  let f16 = if layer_idx == 4 then "1.0" else "0.0"
+  let f17 = if layer_idx == 5 then "1.0" else "0.0"
+  let f18 = if layer_idx == 6 then "1.0" else "0.0"
+  let f19 = itof(block_idx, 60)
+  str.concat("[", str.concat(
+    str.join([f0,"0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0",
+              f12,f13,f14,f15,f16,f17,f18,f19,"0.0","1.0","0.0","0.0","0.3"], ","),
+    "]"))
+}
+
+fn encode_ling(phoneme_class, morpheme_class, layer_idx, block_idx) {
+  // 67-dim feature vector for FARD linguistic classifier
+  // positions 0-43: phoneme one-hot
+  // positions 44-59: morpheme one-hot
+  // positions 60-66: layer ratios
+  let ph = if phoneme_class < 44 then phoneme_class else 0
+  let mo = if morpheme_class < 16 then morpheme_class else 0
+  let make_feat = fn(i) {
+    if i == ph then "1.0"
+    else if i == 44 + mo then "1.0"
+    else if i == 60 then itof(phoneme_class, 34)
+    else if i == 61 then itof(layer_idx, 64)
+    else if i == 62 then itof(morpheme_class, 16)
+    else if i == 63 then itof(layer_idx, 64)
+    else if i == 64 then itof(layer_idx, 10)
+    else if i == 65 then itof(layer_idx, 60)
+    else if i == 66 then itof(layer_idx, 24)
+    else "0.0"
+  }
+  str.concat("[", str.concat(
+    str.join([make_feat(0),make_feat(1),make_feat(2),make_feat(3),make_feat(4),
+              make_feat(5),make_feat(6),make_feat(7),make_feat(8),make_feat(9),
+              make_feat(10),make_feat(11),make_feat(12),make_feat(13),make_feat(14),
+              make_feat(15),make_feat(16),make_feat(17),make_feat(18),make_feat(19),
+              make_feat(20),make_feat(21),make_feat(22),make_feat(23),make_feat(24),
+              make_feat(25),make_feat(26),make_feat(27),make_feat(28),make_feat(29),
+              make_feat(30),make_feat(31),make_feat(32),make_feat(33),make_feat(34),
+              make_feat(35),make_feat(36),make_feat(37),make_feat(38),make_feat(39),
+              make_feat(40),make_feat(41),make_feat(42),make_feat(43),make_feat(44),
+              make_feat(45),make_feat(46),make_feat(47),make_feat(48),make_feat(49),
+              make_feat(50),make_feat(51),make_feat(52),make_feat(53),make_feat(54),
+              make_feat(55),make_feat(56),make_feat(57),make_feat(58),make_feat(59),
+              make_feat(60),make_feat(61),make_feat(62),make_feat(63),make_feat(64),
+              make_feat(65),make_feat(66)], ","),
+    "]"))
+}
+
+fn layer_name(l) {
+  if l == 0 then "PHONEME"
+  else if l == 1 then "SYLLABLE"
+  else if l == 2 then "MORPHEME"
+  else if l == 3 then "WORD"
+  else if l == 4 then "PHRASE"
+  else if l == 5 then "SEMANTIC"
+  else "DISCOURSE"
+}
+
+fn op_name(op) {
+  if op == 0 then "SELECT_UNIVERSE"
+  else if op == 1 then "WITNESS_NEAREST"
+  else if op == 2 then "ATTEND"
+  else if op == 3 then "FFN_STEP"
+  else if op == 4 then "PROJECT_LAYER"
+  else if op == 5 then "RETURN_SET"
+  else if op == 6 then "ACCEPT"
+  else "REJECT"
+}
+
+// Load operation sequencer (model_v6.onnx)
+let lib   = ffi.load("./target/release/libfard_onnx.dylib")
+let mp_op = "/Users/g.bogans/Downloads/LLM_Nature_Semantic_Transformer/train/model_v6.onnx"
+let h_op  = ffi.call(lib.ok, "fard_onnx_load", [mp_op, str.len(mp_op)])
+
+// Load FARD-trained linguistic classifier
+let mp_ling = "/Users/g.bogans/Downloads/FARD_Semantic_Transformer/train/fard_semantic_transformer.onnx"
+let h_ling  = ffi.call(lib.ok, "fard_onnx_load", [mp_ling, str.len(mp_ling)])
+
+let n_phonemes = 20
+
+// vocab sizes for FARD classifier: [34, 64, 16, 64, 10, 60, 24]
+// outputs are concatenated: logits_0[34] + logits_1[64] + ... + logits_6[24]
+// offsets: [0, 34, 98, 114, 178, 188, 248] lengths: [34,64,16,64,10,60,24]
+let v0_start = 0   let v0_len = 34
+let v1_start = 34  let v1_len = 64
+let v2_start = 98  let v2_len = 16
+let v3_start = 114 let v3_len = 64
+let v4_start = 178 let v4_len = 10
+let v5_start = 188 let v5_len = 60
+let v6_start = 248 let v6_len = 24
+
+let tower = while {
+  phoneme_idx: 0,
+  block_idx:   0,
+  step_count:  0,
+  layer_idx:   0,
+  accepts:     0,
+  rejects:     0,
+  total:       0
+}
+fn(s) { s.phoneme_idx < n_phonemes }
+fn(s) {
+  let gt_layer = if s.block_idx == 4 then 1
+    else if s.block_idx == 5 then 2
+    else if s.block_idx == 6 then 3
+    else if s.block_idx == 7 then 4
+    else if s.block_idx == 8 then 5
+    else if s.block_idx >= 9 then 6
+    else 0
+
+  // Operation sequencer inference
+  let feat_op = encode_op(s.block_idx, gt_layer, s.block_idx)
+  let _       = ffi.call(lib.ok, "fard_onnx_infer_store", [h_op.ok, feat_op, str.len(feat_op)])
+  let op      = ffi.call(lib.ok, "fard_onnx_result_argmax",  [])
+  let tgt     = ffi.call(lib.ok, "fard_onnx_result_argmax2", [])
+
+  // FARD linguistic classifier inference (at PROJECT_LAYER step)
+  let feat_ling = encode_ling(s.phoneme_idx, 0, gt_layer, s.block_idx)
+  let _         = ffi.call(lib.ok, "fard_onnx_infer_store_multi", [h_ling.ok, feat_ling, str.len(feat_ling)])
+  let l0_pred   = ffi.call(lib.ok, "fard_onnx_result_argmax_range", [v0_start, v0_len])
+  let l6_pred   = ffi.call(lib.ok, "fard_onnx_result_argmax_range", [v6_start, v6_len])
+
+  let _t = trace.info(str.join([
+    "ph=", str.from_int(s.phoneme_idx),
+    " blk=", str.from_int(s.block_idx),
+    " op=", op_name(op.ok),
+    " layer=", layer_name(gt_layer),
+    " L0_pred=", str.from_int(l0_pred.ok),
+    " L6_pred=", str.from_int(l6_pred.ok)
+  ], ""))
+
+  let nb   = s.block_idx + 1
+  let next_phoneme = if nb >= 12 then s.phoneme_idx + 1 else s.phoneme_idx
+  let next_block   = if nb >= 12 then 0 else nb
+  let is_accept    = if op.ok == 6 then 1 else 0
+  let is_reject    = if op.ok == 7 then 1 else 0
+
+  {
+    phoneme_idx: next_phoneme,
+    block_idx:   next_block,
+    step_count:  s.step_count + 1,
+    layer_idx:   gt_layer,
+    accepts:     s.accepts + is_accept,
+    rejects:     s.rejects + is_reject,
+    total:       s.total + 1
+  }
+}
+
+{
+  tower_root:  tower.chain_hex,
+  total_ops:   tower.steps,
+  accepts:     tower.value.accepts,
+  rejects:     tower.value.rejects,
+  total:       tower.value.total,
+  model_op:    "model_v6.onnx",
+  model_ling:  "fard_semantic_transformer.onnx",
+  note:        "linguistic classifier trained entirely in FARD"
+}
