@@ -1,0 +1,13 @@
+import("std/list") as list
+
+import("../packages/fard_parse/parse") as parse
+
+let e1 = parse.parse_expr("x + 1")
+test "parse add op" { e1.name == "int.add" }
+
+let e2 = parse.parse_expr("x * 2")
+test "parse mul op" { e2.name == "int.mul" }
+
+let e3 = parse.parse_expr("x + y * 3")
+test "precedence root is add" { e3.name == "int.add" }
+test "precedence rhs is mul" { e3.args[1].name == "int.mul" }

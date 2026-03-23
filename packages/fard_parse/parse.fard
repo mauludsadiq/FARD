@@ -5,22 +5,55 @@ import("std/list") as list
 
 fn trim(s) { str.trim(s) }
 
+fn parse_atom(s) {
+  let t = trim(s) in
+  if str.contains(t, " ") then fir.var(t)
+  else
+    if t == "0" then fir.lit_int(0)
+    else
+      if t == "1" then fir.lit_int(1)
+      else
+        if t == "2" then fir.lit_int(2)
+        else
+          if t == "3" then fir.lit_int(3)
+          else
+            if t == "4" then fir.lit_int(4)
+            else
+              if t == "5" then fir.lit_int(5)
+              else
+                if t == "6" then fir.lit_int(6)
+                else
+                  if t == "7" then fir.lit_int(7)
+                  else
+                    if t == "8" then fir.lit_int(8)
+                    else
+                      if t == "9" then fir.lit_int(9)
+                      else
+                        fir.var(t)
+}
+
+fn parse_prod(s) {
+  let t = trim(s) in
+  if str.contains(t, "*") then
+    let p = str.split(t, "*") in
+    fir.call_builtin("int.mul", [parse_atom(p[0]), parse_prod(p[1])])
+  else if str.contains(t, "/") then
+    let p = str.split(t, "/") in
+    fir.call_builtin("int.div", [parse_atom(p[0]), parse_prod(p[1])])
+  else
+    parse_atom(t)
+}
+
 fn parse_expr(s) {
   let t = trim(s) in
   if str.contains(t, "+") then
     let p = str.split(t, "+") in
-    fir.call_builtin("int.add", [fir.var(trim(p[0])), fir.lit_int(cast.int(trim(p[1])))])
+    fir.call_builtin("int.add", [parse_atom(p[0]), parse_prod(p[1])])
   else if str.contains(t, "-") then
     let p = str.split(t, "-") in
-    fir.call_builtin("int.sub", [fir.var(trim(p[0])), fir.lit_int(cast.int(trim(p[1])))])
-  else if str.contains(t, "*") then
-    let p = str.split(t, "*") in
-    fir.call_builtin("int.mul", [fir.var(trim(p[0])), fir.lit_int(cast.int(trim(p[1])))])
-  else if str.contains(t, "/") then
-    let p = str.split(t, "/") in
-    fir.call_builtin("int.div", [fir.var(trim(p[0])), fir.lit_int(cast.int(trim(p[1])))])
+    fir.call_builtin("int.sub", [parse_atom(p[0]), parse_prod(p[1])])
   else
-    fir.var(t)
+    parse_prod(t)
 }
 
 fn parse_params_text(s) {
