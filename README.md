@@ -27,9 +27,9 @@ It provides:
 - an LSP server with go-to-definition and find-references
 - a SQLite-backed receipt registry with CRDT replication
 - a content-addressed package manager with 58 packages and semver ranges
-- a web playground (`playground/index.jsx`)
-- a doc generator (`farddoc`)
-- a verifiable build system (`fard-build`)
+- a web playground (playground/index.jsx)
+- a doc generator (farddoc)
+- a verifiable build system (fard-build)
 - distributed receipt convergence via Inherit-Cert CRDT
 
 FARD turns program execution itself into a cryptographic artifact.
@@ -41,9 +41,6 @@ Programs written in FARD do not merely return values — they return values toge
 ## Install
 
 ```bash
-# One-line install
-curl -fsSL https://github.com/mauludsadiq/FARD/releases/latest/download/install.sh | sh
-
 # macOS (Apple Silicon)
 curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-macos-aarch64.tar.gz | tar xz
 sudo mv fard-macos-aarch64/fard* /usr/local/bin/
@@ -55,10 +52,6 @@ sudo mv fard-macos-x86_64/fard* /usr/local/bin/
 # Linux
 curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-linux-x86_64.tar.gz | tar xz
 sudo mv fard-linux-x86_64/fard* /usr/local/bin/
-
-# Homebrew
-brew tap mauludsadiq/fard https://github.com/mauludsadiq/homebrew-fard
-brew install fard
 ```
 
 Or build from source:
@@ -130,25 +123,12 @@ greet("Alice", null)     // uses default -> "Hello, Alice"
 greet("Bob", "Hi")       // explicit override -> "Hi, Bob"
 ```
 
-### Let Bindings and Destructuring
+### Let Bindings
 
 ```
 let x = 42
 let y = x * 2
 let result = let x = 10 in let y = 20 in x + y
-
-let person = { name: "alice", age: 30 }
-let { name, age } = person   // destructuring
-```
-
-### Pipeline Operator
-
-```
-let result = 5 |> double |> add_one
-
-let pipeline = [1, 2, 3, 4, 5]
-  |> list.map(fn(x) { x * x })
-  |> list.filter(fn(x) { x > 5 })
 ```
 
 ### Conditionals and Pattern Matching
@@ -169,20 +149,6 @@ match type.of(x) {
 let doubled      = for x in [1, 2, 3, 4, 5] do x * 2
 let squares      = [x * x for x in [1, 2, 3, 4, 5]]
 let even_squares = [x * x for x in [1, 2, 3, 4, 5] if x % 2 == 0]
-```
-
-### Error Propagation
-
-```
-fn divide(a, b) {
-  if b == 0 then { t: "err", e: "division by zero" }
-  else { t: "ok", v: a / b }
-}
-
-fn safe_calc(x) {
-  let a = divide(10, x)?
-  { t: "ok", v: a * 2 }
-}
 ```
 
 ### Recursion
@@ -206,7 +172,6 @@ let result = while {n: 0, acc: 0}
 
 result.value      // {n: 10, acc: 45}
 result.chain_hex  // sha256 of the full computation history
-result.steps      // number of iterations
 ```
 
 ### Mutable Cells
@@ -226,34 +191,6 @@ import("std/math")   as math
 import("std/list")   as list
 import("./mylib")    as mylib
 import("pkg:greet")  as greet
-```
-
-### Hex-Haiku (6-Line Functions)
-
-FARD encourages the Hex-Haiku constraint: functions of at most 6 semantic lines, each representing one deterministic transformation. The pipeline operator and destructuring make this natural.
-
-```
-fn summarize(data) {
-  let { values, label } = data
-  let total = values |> list.fold(0, fn(acc, x) { acc + x })
-  { label: label, total: total, count: list.len(values) }
-}
-```
-
-```bash
-fardcheck --hex-haiku src/main.fard
-# ✓ fn 'summarize': 3 line(s)
-# HEX_HAIKU line 12: fn 'too_long' is 7 semantic lines (max 6)
-```
-
------
-
-## Notebooks
-
-FARD supports literate programming via `.fardnb.md` files — standard Markdown with embedded `fard` code cells. Running `fardrun notebook` executes each cell and inserts results inline. Output renders on GitHub without any special tooling.
-
-```bash
-fardrun notebook --input analysis.fardnb.md --output analysis.fardnb.md
 ```
 
 -----
@@ -342,7 +279,7 @@ fardrun notebook --input analysis.fardnb.md --output analysis.fardnb.md
 
 ### Concurrency
 
-**std/promise** — `spawn`, `await`, `spawn_ordered`
+**std/promise** — `spawn`, `await`
 
 **std/chan** — `new`, `send`, `recv`, `try_recv`, `close`
 
@@ -370,7 +307,7 @@ fardrun notebook --input analysis.fardnb.md --output analysis.fardnb.md
 
 ### Interoperability
 
-**std/ffi** — `load`, `call`, `call_pure`, `call_checked`, `call_str`, `close`
+**std/ffi** — `load`, `call`, `call_pure`, `call_str`, `close`
 
 **std/png** — `red_1x1`
 
@@ -419,61 +356,61 @@ Registry: `https://github.com/mauludsadiq/FARD/releases/latest/download/registry
 
 ### Available Packages (58)
 
-|Package                |Category      |Description                                     |
-|-----------------------|--------------|------------------------------------------------|
-|`tensor@1.6.0`         |Data Science  |N-dimensional arrays, activations, matmul       |
-|`frame@1.6.0`          |Data Science  |Typed columnar DataFrame                        |
-|`plot@1.6.0`           |Data Science  |SVG chart generation                            |
-|`stats@1.6.0`          |Data Science  |Descriptive statistics                          |
-|`table@1.6.0`          |Data Science  |In-memory tabular data                          |
-|`stream@1.6.0`         |Data Science  |Lazy sequences                                  |
-|`csv-stream@1.6.0`     |Data Science  |Streaming CSV for large files                   |
-|`parse@1.6.0`          |Data Science  |Parser combinators                              |
-|`fard-web@1.6.0`       |HTTP          |Full web framework                              |
-|`http-client@1.6.0`    |HTTP          |HTTP client with retry and JSON helpers         |
-|`http-server@1.6.0`    |HTTP          |HTTP server with routing                        |
-|`http-middleware@1.6.0`|HTTP          |CORS, auth, logging, rate-limit middleware      |
-|`async@1.6.0`          |Async         |par_map, all, race, retry, worker pool, pipeline|
-|`jwt@1.6.0`            |Auth          |JWT encode/decode/verify (HS256)                |
-|`hmac-sign@1.6.0`      |Auth          |HMAC-SHA256 request signing                     |
-|`oauth2@1.6.0`         |Auth          |OAuth2 client flows                             |
-|`kv@1.6.0`             |Storage       |Persistent key-value store                      |
-|`sqlite@1.6.0`         |Storage       |SQLite client via FFI                           |
-|`s3@1.6.0`             |Storage       |S3-compatible object storage                    |
-|`toml@1.6.0`           |Data/Text     |TOML parsing and generation                     |
-|`yaml@1.6.0`           |Data/Text     |YAML parsing and generation                     |
-|`template@1.6.0`       |Data/Text     |Jinja2-style string templating                  |
-|`json-schema@1.6.0`    |Data/Text     |JSON schema validation                          |
-|`csv-extra@1.6.0`      |Data/Text     |Enhanced CSV                                    |
-|`diff@1.6.0`           |Data/Text     |Text diffing                                    |
-|`xml@1.6.0`            |Data/Text     |XML parsing and generation                      |
-|`markdown@1.6.0`       |Data/Text     |Markdown to HTML                                |
-|`fard-test@1.6.0`      |Dev Tools     |Assertion library                               |
-|`fard-bench@1.6.0`     |Dev Tools     |Microbenchmarking with witnessed results        |
-|`fard-mock@1.6.0`      |Dev Tools     |Mock HTTP server for testing                    |
-|`fard-lint@1.6.0`      |Dev Tools     |Custom lint rules                               |
-|`fard-check@1.6.0`     |Dev Tools     |Runtime type and schema validation              |
-|`semver@1.6.0`         |Build/CI      |Semantic versioning                             |
-|`glob@1.6.0`           |Build/CI      |File glob matching                              |
-|`shell@1.6.0`          |Build/CI      |Safe shell command composition                  |
-|`env-config@1.6.0`     |Build/CI      |Structured config from environment and files    |
-|`fard-ci@1.6.0`        |Build/CI      |CI pipeline primitives with witnessed steps     |
-|`logger@1.6.0`         |Infrastructure|Structured logging                              |
-|`cache@1.6.0`          |Infrastructure|In-memory TTL cache                             |
-|`config@1.6.0`         |Infrastructure|Layered configuration                           |
-|`queue@1.6.0`          |Infrastructure|Persistent FIFO queue                           |
-|`pubsub@1.6.0`         |Infrastructure|Publish/subscribe event bus                     |
-|`rate-limiter@1.6.0`   |Infrastructure|Token bucket rate limiter                       |
-|`websocket@1.6.0`      |Protocols     |WebSocket frame encoding                        |
-|`smtp@1.6.0`           |Protocols     |Email composition and SMTP                      |
-|`uuid@1.6.0`           |Utilities     |UUID generation                                 |
-|`base64@1.6.0`         |Utilities     |Base64 encode/decode/url                        |
-|`crypto-extra@1.6.0`   |Utilities     |SHA-256, HMAC, key derivation                   |
-|`regex-extra@1.6.0`    |Utilities     |Glob matching, validators                       |
-|`fard-fmt-extra@1.6.0` |Utilities     |Number, byte, duration formatting               |
-|`fard-deploy@1.6.0`    |Deployment    |SSH, rsync, Docker, systemd                     |
-|`fard-watch@1.6.0`     |Deployment    |Poll-based file watching                        |
-|`fard-notebook@1.6.0`  |Literate      |Literate programming with HTML export           |
+| Package | Category | Description |
+|---|---|---|
+| `tensor@1.6.0` | Data Science | N-dimensional arrays, activations, matmul |
+| `frame@1.6.0` | Data Science | Typed columnar DataFrame |
+| `plot@1.6.0` | Data Science | SVG chart generation |
+| `stats@1.6.0` | Data Science | Descriptive statistics |
+| `table@1.6.0` | Data Science | In-memory tabular data |
+| `stream@1.6.0` | Data Science | Lazy sequences |
+| `csv-stream@1.6.0` | Data Science | Streaming CSV for large files |
+| `parse@1.6.0` | Data Science | Parser combinators |
+| `fard-web@1.6.0` | HTTP | Full web framework |
+| `http-client@1.6.0` | HTTP | HTTP client with retry and JSON helpers |
+| `http-server@1.6.0` | HTTP | HTTP server with routing |
+| `http-middleware@1.6.0` | HTTP | CORS, auth, logging, rate-limit middleware |
+| `async@1.6.0` | Async | par_map, all, race, retry, worker pool, pipeline |
+| `jwt@1.6.0` | Auth | JWT encode/decode/verify (HS256) |
+| `hmac-sign@1.6.0` | Auth | HMAC-SHA256 request signing |
+| `oauth2@1.6.0` | Auth | OAuth2 client flows |
+| `kv@1.6.0` | Storage | Persistent key-value store |
+| `sqlite@1.6.0` | Storage | SQLite client via FFI |
+| `s3@1.6.0` | Storage | S3-compatible object storage |
+| `toml@1.6.0` | Data/Text | TOML parsing and generation |
+| `yaml@1.6.0` | Data/Text | YAML parsing and generation |
+| `template@1.6.0` | Data/Text | Jinja2-style string templating |
+| `json-schema@1.6.0` | Data/Text | JSON schema validation |
+| `csv-extra@1.6.0` | Data/Text | Enhanced CSV |
+| `diff@1.6.0` | Data/Text | Text diffing |
+| `xml@1.6.0` | Data/Text | XML parsing and generation |
+| `markdown@1.6.0` | Data/Text | Markdown to HTML |
+| `fard-test@1.6.0` | Dev Tools | Assertion library |
+| `fard-bench@1.6.0` | Dev Tools | Microbenchmarking with witnessed results |
+| `fard-mock@1.6.0` | Dev Tools | Mock HTTP server for testing |
+| `fard-lint@1.6.0` | Dev Tools | Custom lint rules |
+| `fard-check@1.6.0` | Dev Tools | Runtime type and schema validation |
+| `semver@1.6.0` | Build/CI | Semantic versioning |
+| `glob@1.6.0` | Build/CI | File glob matching |
+| `shell@1.6.0` | Build/CI | Safe shell command composition |
+| `env-config@1.6.0` | Build/CI | Structured config from environment and files |
+| `fard-ci@1.6.0` | Build/CI | CI pipeline primitives with witnessed steps |
+| `logger@1.6.0` | Infrastructure | Structured logging |
+| `cache@1.6.0` | Infrastructure | In-memory TTL cache |
+| `config@1.6.0` | Infrastructure | Layered configuration |
+| `queue@1.6.0` | Infrastructure | Persistent FIFO queue |
+| `pubsub@1.6.0` | Infrastructure | Publish/subscribe event bus |
+| `rate-limiter@1.6.0` | Infrastructure | Token bucket rate limiter |
+| `websocket@1.6.0` | Protocols | WebSocket frame encoding |
+| `smtp@1.6.0` | Protocols | Email composition and SMTP |
+| `uuid@1.6.0` | Utilities | UUID generation |
+| `base64@1.6.0` | Utilities | Base64 encode/decode/url |
+| `crypto-extra@1.6.0` | Utilities | SHA-256, HMAC, key derivation |
+| `regex-extra@1.6.0` | Utilities | Glob matching, validators |
+| `fard-fmt-extra@1.6.0` | Utilities | Number, byte, duration formatting |
+| `fard-deploy@1.6.0` | Deployment | SSH, rsync, Docker, systemd |
+| `fard-watch@1.6.0` | Deployment | Poll-based file watching |
+| `fard-notebook@1.6.0` | Literate | Literate programming with HTML export |
 
 -----
 
@@ -488,13 +425,6 @@ let p1 = promise.spawn(fn() { expensive_a() })
 let p2 = promise.spawn(fn() { expensive_b() })
 let a  = promise.await(p1)
 let b  = promise.await(p2)
-
-// Deterministic ordered join — same digest across runs
-let results = promise.spawn_ordered([
-  fn() { task_a() },
-  fn() { task_b() },
-  fn() { task_c() }
-])
 
 list.par_map([1, 2, 3, 4, 5], fn(x) { x * x })
 
@@ -519,20 +449,6 @@ w.self_digest()   // -> "sha256:e60cb9e82ac28f..."
 ```
 artifact step1 = "sha256:689dede5..."
 step1.output
-```
-
-### Witnessed Failures
-
-When `?` propagates an error to the top level, FARD produces a witnessed failure receipt:
-
-```json
-{
-  "code": "QMARK_PROPAGATE_ERR",
-  "message": "error propagated: division by zero",
-  "partial_trace_digest": "sha256:34fa70b...",
-  "witnessed_failure": true,
-  "span": { "file": "main.fard", "line": 19, "col": 11 }
-}
 ```
 
 ### Proof-Carrying Code
@@ -568,21 +484,14 @@ curl http://registry/crdt/state
 ```
 import("std/ffi") as ffi
 
-let lib = ffi.load("/usr/lib/libm.dylib")
-
-// Non-deterministic oracle — emits ffi_oracle trace event
+let lib    = ffi.load("/usr/lib/libm.dylib")
 let result = ffi.call(lib.ok, "abs", [-42])
+result.ok   // -> 42
 
-// Declared pure — included in witness chain
 let r2 = ffi.call_pure(lib.ok, "abs", [-7])
-
-// Verified deterministic — called twice, outputs compared
-let r3 = ffi.call_checked(lib.ok, "abs", [-42], "pure math")
-r3.checked       // true
-r3.deterministic // true
 ```
 
-Type mapping: `Int` → `i64`, `Float` → `f64`, `Text` → `char*`, `Bool` → `0/1`
+Type mapping: `Int` -> `i64`, `Float` -> `f64`, `Text` -> `char*`, `Bool` -> `0/1`
 
 -----
 
@@ -641,27 +550,6 @@ fn sum(xs) { ... }
 
 -----
 
-## Strict Types
-
-```bash
-fardrun run --program main.fard --out ./out --strict-types
-```
-
-Runs the HM-style type checker before execution. Type errors abort the run and write `error.json`:
-
-```json
-{
-  "code": "ERROR_TYPE",
-  "message": "3 type error(s)",
-  "strict_types": true,
-  "type_errors": [
-    {"line": 4, "col": 0, "message": "argument type mismatch: Int vs Text"}
-  ]
-}
-```
-
------
-
 ## CLI
 
 ### fardrun
@@ -669,28 +557,13 @@ Runs the HM-style type checker before execution. Type errors abort the run and w
 ```bash
 fardrun new my-project
 fardrun run --program main.fard --out ./out
-fardrun run --program main.fard --out ./out --strict-types
 fardrun test --program math.fard
 fardrun repl
-fardrun notebook --input analysis.fardnb.md
 fardrun install --manifest fard.toml
 fardrun search jwt
 ```
 
 Output: `result.json`, `error.json`, `trace.ndjson`, `module_graph.json`, `digests.json`
-
-Compact trace for large while loops:
-
-```bash
-FARD_COMPACT_WHILE=1 fardrun run --program main.fard --out ./out
-```
-
-### fardcheck
-
-```bash
-fardcheck main.fard
-fardcheck --hex-haiku main.fard
-```
 
 ### fardverify
 
@@ -730,21 +603,50 @@ Syntax highlighting, inline diagnostics, dot-completion, hover docs, go-to-defin
 
 ## Binaries
 
-|Binary        |Purpose                                                          |
-|--------------|-----------------------------------------------------------------|
-|`fardrun`     |Runtime: run, test, repl, new, install, search, publish, notebook|
-|`fardfmt`     |Canonical formatter                                              |
-|`fardcheck`   |HM-style type checker with `--hex-haiku` lint                    |
-|`fardwasm`    |FARD to WAT/WASM compiler                                        |
-|`fardregistry`|Receipt registry server with CRDT routes                         |
-|`fardlock`    |Lockfile generation and enforcement                              |
-|`fardbundle`  |Bundle build, verify, and run                                    |
-|`fardverify`  |Trace, chain, proof, and bundle verification                     |
-|`fardpkg`     |Package management                                               |
-|`fard-lsp`    |Language Server Protocol                                         |
-|`fardc`       |Compiler frontend and canonicalizer                              |
-|`farddoc`     |Documentation generator                                          |
-|`fard-build`  |Verifiable build system                                          |
+| Binary | Purpose |
+|---|---|
+| `fardrun` | Runtime: run, test, repl, new, install, search, publish |
+| `fardfmt` | Canonical formatter |
+| `fardcheck` | HM-style type checker |
+| `fardwasm` | FARD to WAT/WASM compiler |
+| `fardregistry` | Receipt registry server with CRDT routes |
+| `fardlock` | Lockfile generation and enforcement |
+| `fardbundle` | Bundle build, verify, and run |
+| `fardverify` | Trace, chain, proof, and bundle verification |
+| `fardpkg` | Package management |
+| `fard-lsp` | Language Server Protocol |
+| `fardc` | Compiler frontend and canonicalizer |
+| `farddoc` | Documentation generator |
+| `fard-build` | Verifiable build system |
+
+-----
+
+## Self-Hosting (v1.6.0)
+
+FARD now owns its intermediate representation and first compiler stage,
+implemented entirely in FARD.
+
+**FIR v1** — FARD Intermediate Representation (`packages/fir/fir.fard`)
+A minimal IR with constructors for literals, variables, let bindings,
+function definitions, calls, and modules.
+
+**AST→FIR Lowering** (`packages/fard_lower/lower.fard`)
+Lowers FARD AST nodes to FIR. Handles: int, text, var, let, fn,
+binary operators (+, -, *, /), and module assembly.
+
+**FIR Evaluator** (`packages/fard_eval/eval.fard`)
+Executes FIR directly in FARD. Supports:
+- Literals (int, text, bool)
+- Variables and let bindings
+- Closures with environment capture
+- User-defined function calls
+- Builtin dispatch (int.add/sub/mul/div)
+- Control flow (if/then/else)
+- Module evaluation
+
+**End-to-end:** AST → FIR → result, fully in FARD. Rust is no longer
+required for execution of core functional programs. This is the first
+step toward a self-hosted FARD runtime.
 
 -----
 
@@ -776,22 +678,22 @@ CID(bytes) = "sha256:" || hex(SHA256(bytes))
 
 ## Self-Verifying
 
-313 tests across 36 files:
+313 tests across 36 files, all written in pure FARD:
 
 ```bash
-cargo test --workspace --exclude abirunner
+for f in tests/test_*.fard; do fardrun test --program "$f"; done
 ```
 
 -----
 
 ## Specifications
 
-|Document                          |Contents                          |
-|----------------------------------|----------------------------------|
-|`spec/fard_spec_stack_v0_final.md`|Trust stack specification (frozen)|
-|`spec/fardlang_grammar_v0.5.txt`  |Surface language grammar          |
-|`SPEC.md`                         |Stdlib surface spec (generated)   |
-|`ANNOUNCEMENT.md`                 |Release announcement (generated)  |
+| Document | Contents |
+|---|---|
+| `spec/fard_spec_stack_v0_final.md` | Trust stack specification (frozen) |
+| `spec/fardlang_grammar_v0.5.txt` | Surface language grammar |
+| `SPEC.md` | Stdlib surface spec (generated) |
+| `ANNOUNCEMENT.md` | Release announcement (generated) |
 
 -----
 
