@@ -1,0 +1,25 @@
+import("std/ast") as ast
+import("std/list") as list
+import("../packages/fard_lower/lower") as lower
+
+let let_nodes = ast.parse("let x = 42")
+let let_fir = lower.lower(let_nodes[0])
+
+test "lower let tag" { let_fir.t == "let" }
+test "lower let binds one" { list.len(let_fir.bindings) == 1 }
+test "lower let bind name" { let_fir.bindings[0].name == "x" }
+test "lower let bind value tag" { let_fir.bindings[0].value.t == "lit_int" }
+test "lower let bind value" { let_fir.bindings[0].value.v == 42 }
+test "lower let body var" { let_fir.body.t == "var" }
+test "lower let body name" { let_fir.body.name == "x" }
+
+let fn_nodes = ast.parse("fn add(x, y) { x + y }")
+let fn_fir = lower.lower(fn_nodes[0])
+
+test "lower fn tag" { fn_fir.t == "def_fn" }
+test "lower fn name" { fn_fir.name == "add" }
+test "lower fn param count" { list.len(fn_fir.params) == 2 }
+test "lower fn param 0" { fn_fir.params[0] == "x" }
+test "lower fn param 1" { fn_fir.params[1] == "y" }
+test "lower fn body tag" { fn_fir.body.t == "call_builtin" }
+test "lower fn body op" { fn_fir.body.name == "int.add" }

@@ -1,0 +1,35 @@
+import("../packages/fir/fir") as fir
+import("std/list") as list
+
+let n1 = fir.lit_int(7)
+test "fir.lit_int tag" { n1.t == "lit_int" }
+test "fir.lit_int value" { n1.v == 7 }
+
+let v1 = fir.var("x")
+test "fir.var tag" { v1.t == "var" }
+test "fir.var name" { v1.name == "x" }
+
+let cb = fir.call_builtin("int.add", [fir.lit_int(1), fir.lit_int(2)])
+test "fir.call_builtin tag" { cb.t == "call_builtin" }
+test "fir.call_builtin name" { cb.name == "int.add" }
+test "fir.call_builtin argc" { list.len(cb.args) == 2 }
+
+let c = fir.call(fir.var("f"), [fir.lit_int(3)])
+test "fir.call tag" { c.t == "call" }
+test "fir.call argc" { list.len(c.args) == 1 }
+
+let l = fir.let1("x", fir.lit_int(1), fir.var("x"))
+test "fir.let1 tag" { l.t == "let" }
+test "fir.let1 binds one" { list.len(l.bindings) == 1 }
+test "fir.let1 bind name" { l.bindings[0].name == "x" }
+
+let d = fir.def_fn("add1", ["x"], fir.call_builtin("int.add", [fir.var("x"), fir.lit_int(1)]))
+test "fir.def_fn tag" { d.t == "def_fn" }
+test "fir.def_fn name" { d.name == "add1" }
+test "fir.def_fn params" { list.len(d.params) == 1 }
+
+let m = fir.module("example.main", [d], "add1")
+test "fir.module tag" { m.t == "module" }
+test "fir.module version" { m.fir_version == "1" }
+test "fir.module defs" { list.len(m.defs) == 1 }
+test "fir.module entry" { m.entry == "add1" }

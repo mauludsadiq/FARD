@@ -1,0 +1,52 @@
+/// FIR v1 constructors (minimal bootstrap)
+
+fn lit_int(v) { { t: "lit_int", v: v } }
+fn lit_text(v) { { t: "lit_text", v: v } }
+fn var(name) { { t: "var", name: name } }
+
+fn call_builtin(name, args) {
+  { t: "call_builtin", name: name, args: args }
+}
+
+fn call(fn_node, args) {
+  { t: "call", fn: fn_node, args: args }
+}
+
+fn let1(name, value, body) {
+  {
+    t: "let",
+    bindings: [{ name: name, value: value }],
+    body: body
+  }
+}
+
+fn def_fn(name, params, body) {
+  {
+    t: "def_fn",
+    name: name,
+    params: params,
+    body: body
+  }
+}
+
+fn module(name, defs, entry) {
+  {
+    t: "module",
+    name: name,
+    fir_version: "1",
+    imports: [],
+    defs: defs,
+    entry: entry
+  }
+}
+
+{
+  lit_int: lit_int,
+  lit_text: lit_text,
+  var: var,
+  call_builtin: call_builtin,
+  call: call,
+  let1: let1,
+  def_fn: def_fn,
+  module: module
+}

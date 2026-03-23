@@ -8908,7 +8908,7 @@ fn call_builtin(
                     match item {
                         Item::Expr(e, _) => expr_to_val(e),
                         Item::Let(n, e, _) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("let".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("val".to_string(), expr_to_val(e)); Val::Record(m) }
-                        Item::Fn(n, _, _, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                        Item::Fn(n, params, _, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("params".to_string(), Val::List(params.iter().map(|(p, _)| { let mut pm = BTreeMap::new(); match p { Pat::Bind(s) => { pm.insert("name".to_string(), Val::Text(s.clone())); }, _ => { pm.insert("name".to_string(), Val::Text("_".to_string())); } } Val::Record(pm) }).collect())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
                         _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("item".to_string())); Val::Record(m) }
                     }
                 }

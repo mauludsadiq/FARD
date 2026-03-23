@@ -1,0 +1,14 @@
+import("std/ast") as ast
+import("std/list") as list
+import("../packages/fir/fir") as fir
+import("../packages/fard_lower/lower") as lower
+
+let items = ast.parse("fn add(x, y) { x + y }")
+let m = fir.module("example.add", [lower.lower(items[0])], "add")
+
+test "module tag" { m.t == "module" }
+test "module version" { m.fir_version == "1" }
+test "module defs len" { list.len(m.defs) == 1 }
+test "module entry" { m.entry == "add" }
+test "module def tag" { m.defs[0].t == "def_fn" }
+test "module def name" { m.defs[0].name == "add" }

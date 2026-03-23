@@ -1,0 +1,65 @@
+import("../fir/fir") as fir
+import("std/list") as list
+
+fn lower_fn_params(params) {
+  list.map(params, fn(p) { p.name })
+}
+
+fn lower(node) {
+  match node.t {
+    "int" => fir.lit_int(node.v),
+
+    "text" => fir.lit_text(node.v),
+
+    "var" => fir.var(node.name),
+
+    "let" =>
+      fir.let1(
+        node.name,
+        lower(node.val),
+        fir.var(node.name)
+      ),
+
+    "fn" =>
+      fir.def_fn(
+        node.name,
+        lower_fn_params(node.params),
+        lower(node.body)
+      ),
+
+    "bin" =>
+      match node.op {
+        "+" =>
+          fir.call_builtin(
+            "int.add",
+            [lower(node.l), lower(node.r)]
+          ),
+
+        "-" =>
+          fir.call_builtin(
+            "int.sub",
+            [lower(node.l), lower(node.r)]
+          ),
+
+        "*" =>
+          fir.call_builtin(
+            "int.mul",
+            [lower(node.l), lower(node.r)]
+          ),
+
+        "/" =>
+          fir.call_builtin(
+            "int.div",
+            [lower(node.l), lower(node.r)]
+          ),
+
+        _ => { t: "err", e: "unsupported_bin_op" }
+      },
+
+    _ => { t: "err", e: "unsupported_node" }
+  }
+}
+
+{
+  lower: lower
+}

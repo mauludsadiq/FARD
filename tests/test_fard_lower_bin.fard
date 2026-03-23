@@ -1,0 +1,13 @@
+import("std/ast") as ast
+import("std/list") as list
+import("../packages/fard_lower/lower") as lower
+
+let nodes = ast.parse("1 + 2")
+let fir = lower.lower(nodes[0])
+
+test "lower bin tag" { fir.t == "call_builtin" }
+test "lower bin name" { fir.name == "int.add" }
+test "lower bin argc" { list.len(fir.args) == 2 }
+test "lower bin left lit" { fir.args[0].t == "lit_int" }
+test "lower bin left val" { fir.args[0].v == 1 }
+test "lower bin right val" { fir.args[1].v == 2 }
