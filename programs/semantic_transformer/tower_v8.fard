@@ -95,7 +95,7 @@ fn op_name(op) {
 
 // Load operation sequencer (model_v6.onnx)
 let lib   = ffi.load("./target/release/libfard_onnx.dylib")
-let mp_op = "/Users/g.bogans/Downloads/LLM_Nature_Semantic_Transformer/train/model_v6.onnx"
+let mp_op = "/Users/g.bogans/Downloads/FARD_Semantic_Transformer/train/op_sequencer_fard.onnx"
 let h_op  = ffi.call(lib.ok, "fard_onnx_load", [mp_op, str.len(mp_op)])
 
 // Load FARD-trained linguistic classifier
@@ -178,7 +178,7 @@ fn(s) {
   accepts:     tower.value.accepts,
   rejects:     tower.value.rejects,
   total:       tower.value.total,
-  model_op:    "model_v6.onnx",
+  model_op:    "op_sequencer_fard.onnx",
   model_ling:  "fard_semantic_transformer.onnx",
   note:        "linguistic classifier trained entirely in FARD"
 }
