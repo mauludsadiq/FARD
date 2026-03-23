@@ -9839,31 +9839,20 @@ fn q32_mul(a: i128, b: i128) -> i128 { q32_round_div(a * b, q32_scale()) }
 fn q32_div(a: i128, b: i128) -> i128 { q32_round_div(a * q32_scale(), b) }
 
 fn q32_exp(x: i128) -> i128 {
-    if x <= q32_from_i64(-16) { return 0; }
-    if x >= q32_from_i64(16) { return q32_from_i64(8_886_110); }
-    let mut term = q32_one();
-    let mut sum = q32_one();
-    let mut k: i128 = 1;
-    while k <= 24 {
-        term = q32_div(q32_mul(term, x), q32_from_i64(k as i64));
-        sum += term;
-        k += 1;
-    }
-    if sum < 0 { 0 } else { sum }
+    let xf = q32_to_f64(x);
+    if xf <= -88.0 { return 0; }
+    if xf >= 88.0 { return i64::MAX as i128; }
+    let ef = xf.exp();
+    (ef * q32_scale() as f64).round() as i128
 }
 
 fn q32_ln(x: i128) -> i128 {
     if x <= 0 { return q32_from_i64(-64); }
-    let mut y = 0i128;
-    let mut i = 0;
-    while i < 16 {
-        let ey = q32_exp(y);
-        let num = x - ey;
-        let den = if ey == 0 { 1 } else { ey };
-        y += q32_div(num, den);
-        i += 1;
-    }
-    y
+    // Convert to f64, compute ln, convert back -- avoids Q32 iteration divergence
+    let xf = q32_to_f64(x);
+    if xf <= 0.0 { return q32_from_i64(-64); }
+    let ln_f = xf.ln();
+    (ln_f * q32_scale() as f64).round() as i128
 }
 
 fn fv(f: f64) -> Val { Val::Bytes(f.to_le_bytes().to_vec()) }
