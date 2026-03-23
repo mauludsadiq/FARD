@@ -626,6 +626,15 @@ Syntax highlighting, inline diagnostics, dot-completion, hover docs, go-to-defin
 FARD now owns its intermediate representation and first compiler stage,
 implemented entirely in FARD.
 
+**FARD-native Parser** (`packages/fard_parse/parse.fard`)
+Parses FARD source text into AST nodes. Handles:
+- Identifiers and variables
+- Integer and text literals
+- Binary operators with correct precedence (* before +/-)
+- Left associativity for + and -
+- Parenthesized expressions: (x + y) * z
+- Multi-parameter function signatures
+
 **FIR v1** — FARD Intermediate Representation (`packages/fir/fir.fard`)
 A minimal IR with constructors for literals, variables, let bindings,
 function definitions, calls, and modules.
@@ -644,7 +653,7 @@ Executes FIR directly in FARD. Supports:
 - Control flow (if/then/else)
 - Module evaluation
 
-**End-to-end:** AST → FIR → result, fully in FARD. Rust is no longer
+**End-to-end:** source text → AST → FIR → result, fully in FARD. Rust is no longer
 required for execution of core functional programs. This is the first
 step toward a self-hosted FARD runtime.
 
