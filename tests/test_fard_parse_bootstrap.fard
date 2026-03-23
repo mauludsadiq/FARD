@@ -1,0 +1,10 @@
+import("../packages/fard_parse/parse") as parse
+
+let m = parse.parse_module_text("fn add1(x) { x + 1 }")
+
+test "parse module tag" { m.t == "module" }
+test "parse module entry" { m.entry == "add1" }
+test "parse def tag" { m.defs[0].t == "def_fn" }
+test "parse def name" { m.defs[0].name == "add1" }
+test "parse body tag" { m.defs[0].body.t == "call_builtin" }
+test "parse body op" { m.defs[0].body.name == "int.add" }
