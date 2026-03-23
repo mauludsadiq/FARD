@@ -1,0 +1,9 @@
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let cond = { t: "lit_bool", v: true }
+let tcase = { t: "lit_int", v: 7 }
+let fcase = { t: "lit_int", v: 9 }
+let n = { t: "if_node", cond: cond, t_branch: tcase, f_branch: fcase }
+
+test "eval if_node true" { fe.eval(n, env) == 7 }
