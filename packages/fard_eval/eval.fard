@@ -49,28 +49,41 @@ fn apply_fn(fn_val, args) {
   }
 }
 
+fn eval_bool_not(arg, env) {
+  let a = eval(arg, env) in
+  !a
+}
+
+fn eval_bool_and(arg1, arg2, env) {
+  let a = eval(arg1, env) in
+  if a then eval(arg2, env) else false
+}
+
+fn eval_bool_or(arg1, arg2, env) {
+  let a = eval(arg1, env) in
+  if a then true else eval(arg2, env)
+}
+
+fn eval_call_builtin(node, env) {
+  match node.name {
+    "bool.not" => eval_bool_not(node.args[0], env),
+    "bool.and" => eval_bool_and(node.args[0], node.args[1], env),
+    "bool.or" => eval_bool_or(node.args[0], node.args[1], env),
+    _ => apply_builtin(node.name, eval_args(node.args, env))
+  }
+}
+
 fn eval(node, env) {
   match node.t {
     "lit_int" => node.v,
     "lit_text" => node.v,
     "lit_bool" => node.v,
 
-    "call_builtin" =>
-      if node.name == "bool.not" then
-        not (eval(node.args[0], env))
-      else if node.name == "bool.and" then
-        let a = eval(node.args[0], env) in
-        if a then eval(node.args[1], env) else false
-      else if node.name == "bool.or" then
-        let a = eval(node.args[0], env) in
-        if a then true else eval(node.args[1], env)
-      else
-        apply_builtin(node.name, eval_args(node.args, env)),
+    "var" => env_get(env, node.name),
 
+    "call_builtin" => eval_call_builtin(node, env),
 
-
-    "node_fn" =>
-      make_closure(node.params, node.body, env),
+    "node_fn" => make_closure(node.params, node.body, env),
 
     "call" =>
       let fn_val = eval(rec.get(node, "fn"), env) in
@@ -83,8 +96,7 @@ fn eval(node, env) {
       let env2 = env_set(env, b.name, v) in
       eval(node.body, env2),
 
-    "def_fn" =>
-      make_closure(node.params, node.body, env),
+    "def_fn" => make_closure(node.params, node.body, env),
 
     "if_node" =>
       let cond = eval(rec.get(node, "cond"), env) in
