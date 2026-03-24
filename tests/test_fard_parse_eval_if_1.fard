@@ -1,0 +1,8 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let e = parse.parse_if("if x < 3 then 1 else 2")
+let env2 = fe.env_set(env, "x", 2)
+
+test "parse+eval if true" { fe.eval(e, env2) == 1 }

@@ -17,6 +17,12 @@ fn apply_builtin(name, args) {
     "int.sub" => args[0] - args[1],
     "int.mul" => args[0] * args[1],
     "int.div" => args[0] / args[1],
+    "int.eq" => args[0] == args[1],
+    "int.ne" => args[0] != args[1],
+    "int.lt" => args[0] < args[1],
+    "int.le" => args[0] <= args[1],
+    "int.gt" => args[0] > args[1],
+    "int.ge" => args[0] >= args[1],
     _ => { t: "err", e: "unsupported_builtin" }
   }
 }
@@ -72,8 +78,8 @@ fn eval(node, env) {
       make_closure(node.params, node.body, env),
 
     "if_node" =>
-      let c = eval(rec.get(node, "cond"), env) in
-      if c then eval(rec.get(node, "t_branch"), env)
+      let cond = eval(rec.get(node, "cond"), env) in
+      if cond then eval(rec.get(node, "t_branch"), env)
       else eval(rec.get(node, "f_branch"), env),
 
     _ => { t: "err", e: "unsupported_eval_node" }
