@@ -1,0 +1,55 @@
+import("../packages/fard_type/typecheck") as tc
+
+let env = tc.tenv_empty()
+let inc_ty = tc.fn_type(["int"], "int")
+let env2 = tc.tenv_set(env, "inc", inc_ty)
+
+let ok_call = {
+  t: "call",
+  "fn": { t: "var", name: "inc" },
+  args: [{ t: "lit_int", v: 2 }]
+}
+
+test "typed call returns int" { tc.type_of(ok_call, env2) == "int" }
+
+let bad_call = {
+  t: "call",
+  "fn": { t: "var", name: "inc" },
+  args: [{ t: "lit_bool", v: true }]
+}
+
+test "typed call rejects bad arg" { tc.type_of(bad_call, env2).t == "type_error" }
+
+let fact_def = {
+  t: "def_fn",
+  name: "fact",
+  params: ["n"],
+  param_types: ["int"],
+  ret_type: "int",
+  body: {
+    t: "if_node",
+    cond: { t: "call_builtin", name: "int.eq", args: [{ t: "var", name: "n" }, { t: "lit_int", v: 0 }] },
+    t_branch: { t: "lit_int", v: 1 },
+    f_branch: {
+      t: "call_builtin",
+      name: "int.mul",
+      args: [
+        { t: "var", name: "n" },
+        {
+          t: "call",
+          "fn": { t: "var", name: "fact" },
+          args: [
+            {
+              t: "call_builtin",
+              name: "int.sub",
+              args: [{ t: "var", name: "n" }, { t: "lit_int", v: 1 }]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+test "typed recursive def collapses to fn_type" { tc.type_of(fact_def, env).t == "fn_type" }
+test "typed recursive def return type is int" { tc.type_of(fact_def, env).ret == "int" }

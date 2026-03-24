@@ -12,15 +12,50 @@ fn expect(cond, msg) {
 }
 
 fn is_error(x) {
-  rec.has(x, "t") && x.t == "type_error"
+  if x == "int" then false
+  else if x == "bool" then false
+  else if x == "text" then false
+  else rec.has(x, "t") && x.t == "type_error"
 }
 
 fn type_eq(a, b) {
   if a == b then true else false
 }
 
+fn fn_type(params, ret) {
+  { t: "fn_type", params: params, ret: ret }
+}
+
+fn all_int_types(xs) {
+  if list.len(xs) == 0 then true
+  else if type_eq(xs[0], "int") then all_int_types(list.drop(xs, 1))
+  else false
+}
+
 fn type_args(args, env) {
   list.map(args, fn(a) { type_of(a, env) })
+}
+
+fn any_error(xs) {
+  if list.len(xs) == 0 then false
+  else if is_error(xs[0]) then true
+  else any_error(list.drop(xs, 1))
+}
+
+fn same_types(xs, ys) {
+  if list.len(xs) == 0 then list.len(ys) == 0
+  else if list.len(ys) == 0 then false
+  else if type_eq(xs[0], ys[0]) then same_types(list.drop(xs, 1), list.drop(ys, 1))
+  else false
+}
+
+fn extend_params(env, params, tys) {
+  if list.len(params) == 0 then env
+  else extend_params(
+    tenv_set(env, params[0], tys[0]),
+    list.drop(params, 1),
+    list.drop(tys, 1)
+  )
 }
 
 fn check_builtin(name, arg_types) {
@@ -45,9 +80,37 @@ fn check_builtin(name, arg_types) {
       if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
       else { t: "type_error", e: "int.eq expects (int,int)" },
 
+    "int.ne" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
+      else { t: "type_error", e: "int.ne expects (int,int)" },
+
     "int.lt" =>
       if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
       else { t: "type_error", e: "int.lt expects (int,int)" },
+
+    "int.le" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
+      else { t: "type_error", e: "int.le expects (int,int)" },
+
+    "int.gt" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
+      else { t: "type_error", e: "int.gt expects (int,int)" },
+
+    "int.ge" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
+      else { t: "type_error", e: "int.ge expects (int,int)" },
+
+    "bool.not" =>
+      if type_eq(arg_types[0], "bool") then "bool"
+      else { t: "type_error", e: "bool.not expects (bool)" },
+
+    "bool.and" =>
+      if type_eq(arg_types[0], "bool") && type_eq(arg_types[1], "bool") then "bool"
+      else { t: "type_error", e: "bool.and expects (bool,bool)" },
+
+    "bool.or" =>
+      if type_eq(arg_types[0], "bool") && type_eq(arg_types[1], "bool") then "bool"
+      else { t: "type_error", e: "bool.or expects (bool,bool)" },
 
     _ => { t: "type_error", e: "unknown builtin" }
   }
@@ -66,23 +129,44 @@ fn type_of(node, env) {
 
     "call_builtin" =>
       let arg_types = type_args(node.args, env) in
-      check_builtin(node.name, arg_types),
+      if any_error(arg_types) then arg_types[0] else check_builtin(node.name, arg_types),
 
     "node_fn" =>
-      { t: "fn", params: node.params, body: node.body, env: env },
+      if rec.has(node, "ret_type") then
+        let param_types =
+          if rec.has(node, "param_types") then node.param_types
+          else [] in
+        if list.len(param_types) == list.len(node.params) then
+          let env2 = extend_params(env, node.params, param_types) in
+          let body_ty = type_of(node.body, env2) in
+          if is_error(body_ty) then body_ty
+          else if type_eq(body_ty, node.ret_type) then fn_type(param_types, node.ret_type)
+          else { t: "type_error", e: "node_fn return type mismatch" }
+        else
+          { t: "type_error", e: "node_fn param type arity mismatch" }
+      else
+        { t: "type_error", e: "node_fn missing param_types/ret_type" },
 
     "call" =>
       let fn_ty = type_of(rec.get(node, "fn"), env) in
       if is_error(fn_ty) then fn_ty
       else
         let arg_types = type_args(node.args, env) in
-        { t: "unknown_call", fn: fn_ty, args: arg_types },
+        if any_error(arg_types) then arg_types[0]
+        else if rec.has(fn_ty, "t") && fn_ty.t == "fn_type" then
+          if same_types(fn_ty.params, arg_types) then fn_ty.ret
+          else { t: "type_error", e: "call arg type mismatch" }
+        else
+          { t: "type_error", e: "call target not fn_type" },
 
     "if_node" =>
       let ct = type_of(rec.get(node, "cond"), env) in
       let tt = type_of(rec.get(node, "t_branch"), env) in
       let ft = type_of(rec.get(node, "f_branch"), env) in
-      if type_eq(ct, "bool") then
+      if is_error(ct) then ct
+      else if is_error(tt) then tt
+      else if is_error(ft) then ft
+      else if type_eq(ct, "bool") then
         if type_eq(tt, ft) then tt
         else { t: "type_error", e: "if branches mismatch" }
       else
@@ -91,11 +175,28 @@ fn type_of(node, env) {
     "let" =>
       let b = node.bindings[0] in
       let vt = type_of(b.value, env) in
-      let env2 = tenv_set(env, b.name, vt) in
-      type_of(node.body, env2),
+      if is_error(vt) then vt
+      else
+        let env2 = tenv_set(env, b.name, vt) in
+        type_of(node.body, env2),
 
     "def_fn" =>
-      { t: "fn_def", name: node.name, params: node.params },
+      if rec.has(node, "ret_type") then
+        let param_types =
+          if rec.has(node, "param_types") then node.param_types
+          else [] in
+        if list.len(param_types) == list.len(node.params) then
+          let self_ty = fn_type(param_types, node.ret_type) in
+          let env1 = tenv_set(env, node.name, self_ty) in
+          let env2 = extend_params(env1, node.params, param_types) in
+          let body_ty = type_of(node.body, env2) in
+          if is_error(body_ty) then body_ty
+          else if type_eq(body_ty, node.ret_type) then self_ty
+          else { t: "type_error", e: "def_fn return type mismatch" }
+        else
+          { t: "type_error", e: "def_fn param type arity mismatch" }
+      else
+        { t: "type_error", e: "def_fn missing param_types/ret_type" },
 
     _ => { t: "type_error", e: "unsupported node" }
   }
@@ -103,5 +204,7 @@ fn type_of(node, env) {
 
 {
   tenv_empty: tenv_empty,
+  tenv_set: tenv_set,
+  fn_type: fn_type,
   type_of: type_of
 }
