@@ -1,0 +1,29 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fir/fir") as fir
+import("std/list") as list
+import("std/record") as rec
+
+let e1 = parse.parse_expr("f()")
+test "call0 tag" { e1.t == "call" }
+test "call0 fn var" { rec.get(e1, "fn").t == "var" }
+test "call0 fn name" { rec.get(e1, "fn").name == "f" }
+test "call0 argc" { list.len(e1.args) == 0 }
+
+let e2 = parse.parse_expr("f(x)")
+test "call1 tag" { e2.t == "call" }
+test "call1 argc" { list.len(e2.args) == 1 }
+test "call1 arg0 var" { e2.args[0].t == "var" }
+
+let e3 = parse.parse_expr("f(x, 2)")
+test "call2 argc" { list.len(e3.args) == 2 }
+test "call2 arg1 lit" { e3.args[1].t == "lit_int" }
+
+let e4 = parse.parse_expr("f(x + 1, g(y))")
+test "nested call tag" { e4.t == "call" }
+test "nested call argc" { list.len(e4.args) == 2 }
+test "nested arg0 add" { e4.args[0].name == "int.add" }
+test "nested arg1 call" { e4.args[1].t == "call" }
+
+let e5 = parse.parse_expr("f(x) + g(y)")
+test "call in add lhs" { e5.args[0].t == "call" }
+test "call in add rhs" { e5.args[1].t == "call" }

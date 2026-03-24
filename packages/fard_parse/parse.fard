@@ -2,6 +2,7 @@ import("../fir/fir") as fir
 import("std/str") as str
 import("std/list") as list
 import("std/cast") as cast
+import("std/record") as rec
 
 fn trim(s) { str.trim(s) }
 
@@ -16,16 +17,17 @@ fn normalize_ops(s) {
   let s4 = str.replace(s3, "!=", " __NE__ ") in
   let s5 = str.replace(s4, "(", " ( ") in
   let s6 = str.replace(s5, ")", " ) ") in
-  let s7 = str.replace(s6, "+", " + ") in
-  let s8 = str.replace(s7, "-", " - ") in
-  let s9 = str.replace(s8, "*", " * ") in
-  let s10 = str.replace(s9, "/", " / ") in
-  let s11 = str.replace(s10, "<", " < ") in
-  let s12 = str.replace(s11, ">", " > ") in
-  let s13 = str.replace(s12, "__LE__", "<=") in
-  let s14 = str.replace(s13, "__GE__", ">=") in
-  let s15 = str.replace(s14, "__EQ__", "==") in
-  str.replace(s15, "__NE__", "!=")
+  let s7 = str.replace(s6, ",", " , ") in
+  let s8 = str.replace(s7, "+", " + ") in
+  let s9 = str.replace(s8, "-", " - ") in
+  let s10 = str.replace(s9, "*", " * ") in
+  let s11 = str.replace(s10, "/", " / ") in
+  let s12 = str.replace(s11, "<", " < ") in
+  let s13 = str.replace(s12, ">", " > ") in
+  let s14 = str.replace(s13, "__LE__", "<=") in
+  let s15 = str.replace(s14, "__GE__", ">=") in
+  let s16 = str.replace(s15, "__EQ__", "==") in
+  str.replace(s16, "__NE__", "!=")
 }
 
 fn tokenize(s) {
@@ -34,18 +36,14 @@ fn tokenize(s) {
   drop_empty(raw)
 }
 
-fn st_new(tokens) {
-  { tokens: tokens, pos: 0 }
-}
+fn st_new(tokens) { { tokens: tokens, pos: 0 } }
 
 fn st_peek(st) {
   if st.pos >= list.len(st.tokens) then ""
   else st.tokens[st.pos]
 }
 
-fn st_next(st) {
-  { tokens: st.tokens, pos: st.pos + 1 }
-}
+fn st_next(st) { { tokens: st.tokens, pos: st.pos + 1 } }
 
 fn is_digit_token(t) {
   if t == "0" then true
@@ -66,132 +64,158 @@ fn parse_int_atom(t) {
   else fir.var(t)
 }
 
-fn parse_primary(st) {
+fn make_call_node(fn_node, args) {
+  rec.set(rec.set(rec.set({}, "t", "call"), "fn", fn_node), "args", args)
+}
+
+fn parse_args(parse_one, st, acc) {
+  let tok = st_peek(st) in
+  if tok == ")" then
+    { args: acc, st: st_next(st) }
+  else
+    let r = parse_one(st) in
+    let acc2 = list.concat([acc, [r.node]]) in
+    let tok2 = st_peek(r.st) in
+    if tok2 == "," then
+      parse_args(parse_one, st_next(r.st), acc2)
+    else if tok2 == ")" then
+      { args: acc2, st: st_next(r.st) }
+    else
+      { args: acc2, st: r.st }
+}
+
+fn parse_primary(parse_one, st) {
   let tok = st_peek(st) in
   if tok == "(" then
-    let r1 = parse_if_from(st_next(st)) in
+    let r1 = parse_one(st_next(st)) in
     let tok2 = st_peek(r1.st) in
     if tok2 == ")" then
       { node: r1.node, st: st_next(r1.st) }
     else
       { node: { t: "err", e: "expected_rparen" }, st: r1.st }
   else
-    { node: parse_int_atom(tok), st: st_next(st) }
+    let base = { node: parse_int_atom(tok), st: st_next(st) } in
+    let tok2 = st_peek(base.st) in
+    if tok2 == "(" then
+      let r2 = parse_args(parse_one, st_next(base.st), []) in
+      { node: make_call_node(base.node, r2.args), st: r2.st }
+    else
+      base
 }
 
-fn parse_unary(st) {
+fn parse_unary(parse_one, st) {
   let tok = st_peek(st) in
   if tok == "not" then
-    let r = parse_unary(st_next(st)) in
+    let r = parse_unary(parse_one, st_next(st)) in
     { node: fir.call_builtin("bool.not", [r.node]), st: r.st }
   else
-    parse_primary(st)
+    parse_primary(parse_one, st)
 }
 
-fn fold_mul_div(lhs, st) {
+fn fold_mul_div(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "*" then
-    let r = parse_unary(st_next(st)) in
-    fold_mul_div(fir.call_builtin("int.mul", [lhs, r.node]), r.st)
+    let r = parse_unary(parse_one, st_next(st)) in
+    fold_mul_div(parse_one, fir.call_builtin("int.mul", [lhs, r.node]), r.st)
   else if tok == "/" then
-    let r = parse_unary(st_next(st)) in
-    fold_mul_div(fir.call_builtin("int.div", [lhs, r.node]), r.st)
+    let r = parse_unary(parse_one, st_next(st)) in
+    fold_mul_div(parse_one, fir.call_builtin("int.div", [lhs, r.node]), r.st)
   else
     { node: lhs, st: st }
 }
 
-fn parse_mul_div(st) {
-  let r = parse_unary(st) in
-  fold_mul_div(r.node, r.st)
+fn parse_mul_div(parse_one, st) {
+  let r = parse_unary(parse_one, st) in
+  fold_mul_div(parse_one, r.node, r.st)
 }
 
-fn fold_add_sub(lhs, st) {
+fn fold_add_sub(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "+" then
-    let r = parse_mul_div(st_next(st)) in
-    fold_add_sub(fir.call_builtin("int.add", [lhs, r.node]), r.st)
+    let r = parse_mul_div(parse_one, st_next(st)) in
+    fold_add_sub(parse_one, fir.call_builtin("int.add", [lhs, r.node]), r.st)
   else if tok == "-" then
-    let r = parse_mul_div(st_next(st)) in
-    fold_add_sub(fir.call_builtin("int.sub", [lhs, r.node]), r.st)
+    let r = parse_mul_div(parse_one, st_next(st)) in
+    fold_add_sub(parse_one, fir.call_builtin("int.sub", [lhs, r.node]), r.st)
   else
     { node: lhs, st: st }
 }
 
-fn parse_add_sub(st) {
-  let r = parse_mul_div(st) in
-  fold_add_sub(r.node, r.st)
+fn parse_add_sub(parse_one, st) {
+  let r = parse_mul_div(parse_one, st) in
+  fold_add_sub(parse_one, r.node, r.st)
 }
 
-fn parse_cmp_tail(lhs, st) {
+fn parse_cmp_tail(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "==" then
-    let r = parse_add_sub(st_next(st)) in
+    let r = parse_add_sub(parse_one, st_next(st)) in
     { node: fir.call_builtin("int.eq", [lhs, r.node]), st: r.st }
   else if tok == "!=" then
-    let r = parse_add_sub(st_next(st)) in
+    let r = parse_add_sub(parse_one, st_next(st)) in
     { node: fir.call_builtin("int.ne", [lhs, r.node]), st: r.st }
   else if tok == "<=" then
-    let r = parse_add_sub(st_next(st)) in
+    let r = parse_add_sub(parse_one, st_next(st)) in
     { node: fir.call_builtin("int.le", [lhs, r.node]), st: r.st }
   else if tok == ">=" then
-    let r = parse_add_sub(st_next(st)) in
+    let r = parse_add_sub(parse_one, st_next(st)) in
     { node: fir.call_builtin("int.ge", [lhs, r.node]), st: r.st }
   else if tok == "<" then
-    let r = parse_add_sub(st_next(st)) in
+    let r = parse_add_sub(parse_one, st_next(st)) in
     { node: fir.call_builtin("int.lt", [lhs, r.node]), st: r.st }
   else if tok == ">" then
-    let r = parse_add_sub(st_next(st)) in
+    let r = parse_add_sub(parse_one, st_next(st)) in
     { node: fir.call_builtin("int.gt", [lhs, r.node]), st: r.st }
   else
     { node: lhs, st: st }
 }
 
-fn parse_cmp(st) {
-  let r = parse_add_sub(st) in
-  parse_cmp_tail(r.node, r.st)
+fn parse_cmp(parse_one, st) {
+  let r = parse_add_sub(parse_one, st) in
+  parse_cmp_tail(parse_one, r.node, r.st)
 }
 
-fn parse_not_from(st) {
+fn parse_not_from(parse_one, st) {
   let tok = st_peek(st) in
   if tok == "not" then
-    let r = parse_not_from(st_next(st)) in
+    let r = parse_not_from(parse_one, st_next(st)) in
     { node: fir.call_builtin("bool.not", [r.node]), st: r.st }
   else
-    parse_cmp(st)
+    parse_cmp(parse_one, st)
 }
 
-fn fold_and(lhs, st) {
+fn fold_and(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "and" then
-    let r = parse_not_from(st_next(st)) in
-    fold_and(fir.call_builtin("bool.and", [lhs, r.node]), r.st)
+    let r = parse_not_from(parse_one, st_next(st)) in
+    fold_and(parse_one, fir.call_builtin("bool.and", [lhs, r.node]), r.st)
   else
     { node: lhs, st: st }
 }
 
-fn parse_and(st) {
-  let r = parse_not_from(st) in
-  fold_and(r.node, r.st)
+fn parse_and(parse_one, st) {
+  let r = parse_not_from(parse_one, st) in
+  fold_and(parse_one, r.node, r.st)
 }
 
-fn fold_or(lhs, st) {
+fn fold_or(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "or" then
-    let r = parse_and(st_next(st)) in
-    fold_or(fir.call_builtin("bool.or", [lhs, r.node]), r.st)
+    let r = parse_and(parse_one, st_next(st)) in
+    fold_or(parse_one, fir.call_builtin("bool.or", [lhs, r.node]), r.st)
   else
     { node: lhs, st: st }
 }
 
-fn parse_logic(st) {
-  let r = parse_and(st) in
-  fold_or(r.node, r.st)
+fn parse_logic(parse_one, st) {
+  let r = parse_and(parse_one, st) in
+  fold_or(parse_one, r.node, r.st)
 }
 
 fn parse_if_from(st) {
   let tok = st_peek(st) in
   if tok == "if" then
-    let rcond = parse_logic(st_next(st)) in
+    let rcond = parse_logic(parse_if_from, st_next(st)) in
     let tok_then = st_peek(rcond.st) in
     if tok_then == "then" then
       let rthen = parse_if_from(st_next(rcond.st)) in
@@ -204,21 +228,21 @@ fn parse_if_from(st) {
     else
       { node: { t: "err", e: "expected_then" }, st: rcond.st }
   else
-    parse_logic(st)
+    parse_logic(parse_if_from, st)
 }
 
 fn parse_expr(s) {
-  let r = parse_add_sub(st_new(tokenize(s))) in
+  let r = parse_add_sub(parse_if_from, st_new(tokenize(s))) in
   r.node
 }
 
 fn parse_cmp_text(s) {
-  let r = parse_cmp(st_new(tokenize(s))) in
+  let r = parse_cmp(parse_if_from, st_new(tokenize(s))) in
   r.node
 }
 
 fn parse_logic_text(s) {
-  let r = parse_logic(st_new(tokenize(s))) in
+  let r = parse_logic(parse_if_from, st_new(tokenize(s))) in
   r.node
 }
 
