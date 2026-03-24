@@ -2386,7 +2386,7 @@ impl Parser {
         if self.eat_sym(s) {
             Ok(())
         } else {
-            bail!("ERROR_PARSE expected symbol {s:?}")
+            let span = self.cur_span(); let got = self.peek().clone(); bail!("ERROR_PARSE expected symbol {s:?} but got {:?}  --> {}:{}:{}", got, span.file, span.line, span.col)
         }
     }
     fn eat_kw(&mut self, s: &str) -> bool {
@@ -2414,7 +2414,7 @@ impl Parser {
         if self.eat_kw(s) {
             Ok(())
         } else {
-            bail!("ERROR_PARSE expected keyword {s}")
+            let span = self.cur_span(); let got = self.peek().clone(); bail!("ERROR_PARSE expected keyword {s:?} but got {:?}  --> {}:{}:{}", got, span.file, span.line, span.col)
         }
     }
     fn expect_ident(&mut self) -> Result<String> {
