@@ -109,6 +109,43 @@ fn parse_expr(s) {
         parse_prod(t)
 }
 
+
+fn parse_cmp(s) {
+  let t = trim(s) in
+  if str.contains(t, "==") then
+    let parts = str.split(t, "==") in
+    fir.call_builtin("int.eq", [parse_expr(parts[0]), parse_expr(parts[1])])
+  else if str.contains(t, "!=") then
+    let parts = str.split(t, "!=") in
+    fir.call_builtin("int.ne", [parse_expr(parts[0]), parse_expr(parts[1])])
+  else if str.contains(t, "<=") then
+    let parts = str.split(t, "<=") in
+    fir.call_builtin("int.le", [parse_expr(parts[0]), parse_expr(parts[1])])
+  else if str.contains(t, ">=") then
+    let parts = str.split(t, ">=") in
+    fir.call_builtin("int.ge", [parse_expr(parts[0]), parse_expr(parts[1])])
+  else if str.contains(t, "<") then
+    let parts = str.split(t, "<") in
+    fir.call_builtin("int.lt", [parse_expr(parts[0]), parse_expr(parts[1])])
+  else if str.contains(t, ">") then
+    let parts = str.split(t, ">") in
+    fir.call_builtin("int.gt", [parse_expr(parts[0]), parse_expr(parts[1])])
+  else
+    parse_expr(t)
+}
+
+
+fn parse_if(s) {
+  let t = trim(s) in
+  if str.starts_with(t, "if ") then
+    let p1 = str.split(str.replace(t, "if ", ""), " then ") in
+    let cond = parse_cmp(p1[0]) in
+    let p2 = str.split(p1[1], " else ") in
+    { t: "if_node", cond: cond, t_branch: parse_expr(p2[0]), f_branch: parse_expr(p2[1]) }
+  else
+    parse_cmp(t)
+}
+
 fn parse_params_text(s) {
   let t = trim(s) in
   if t == "" then
@@ -130,12 +167,14 @@ fn parse_module_text(src) {
   let params = parse_params_text(param_text) in
   let p4 = str.split(body_part, "}") in
   let expr = trim(p4[0]) in
-  let body = parse_expr(expr) in
+  let body = parse_if(expr) in
   let def = fir.def_fn(name, params, body) in
   fir.module("main", [def], name)
 }
 
 {
   parse_expr: parse_expr,
+  parse_cmp: parse_cmp,
+  parse_if: parse_if,
   parse_module_text: parse_module_text
 }

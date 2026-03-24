@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_if("if x < 3 then 1 else 2")
+test "if node tag" { e.t == "if_node" }
+test "if cond op" { e.cond.name == "int.lt" }
+test "if then lit" { e.t_branch.t == "lit_int" }
+test "if else lit" { e.f_branch.t == "lit_int" }

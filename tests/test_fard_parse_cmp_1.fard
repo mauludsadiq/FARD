@@ -1,0 +1,19 @@
+import("../packages/fard_parse/parse") as parse
+
+let e1 = parse.parse_cmp("x == 1")
+test "cmp eq op" { e1.name == "int.eq" }
+
+let e2 = parse.parse_cmp("x != 2")
+test "cmp ne op" { e2.name == "int.ne" }
+
+let e3 = parse.parse_cmp("x < 3")
+test "cmp lt op" { e3.name == "int.lt" }
+
+let e4 = parse.parse_cmp("x <= 4")
+test "cmp le op" { e4.name == "int.le" }
+
+let e5 = parse.parse_cmp("x > 5")
+test "cmp gt op" { e5.name == "int.gt" }
+
+let e6 = parse.parse_cmp("x >= 6")
+test "cmp ge op" { e6.name == "int.ge" }
