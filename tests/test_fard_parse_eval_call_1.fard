@@ -1,0 +1,8 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let call = parse.parse_expr("f(2)")
+let env2 = fe.env_set(env, "f", { t: "closure", params: ["x"], body: { t: "call_builtin", name: "int.add", args: [{ t: "var", name: "x" }, { t: "lit_int", v: 1 }] }, env: env })
+
+test "parsed call evals via env closure" { fe.eval(call, env2) == 3 }

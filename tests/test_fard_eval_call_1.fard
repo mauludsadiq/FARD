@@ -1,0 +1,14 @@
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let inc = {
+  t: "call",
+  "fn": {
+    t: "node_fn",
+    params: ["x"],
+    body: { t: "call_builtin", name: "int.add", args: [{ t: "var", name: "x" }, { t: "lit_int", v: 1 }] }
+  },
+  args: [{ t: "lit_int", v: 2 }]
+}
+
+test "direct lambda call evals" { fe.eval(inc, env) == 3 }
