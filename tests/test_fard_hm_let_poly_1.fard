@@ -1,0 +1,39 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let poly_prog = {
+  t: "let",
+  bindings: [
+    {
+      name: "id",
+      value: {
+        t: "node_fn",
+        params: ["x"],
+        body: { t: "var", name: "x" }
+      }
+    }
+  ],
+  body: {
+    t: "let",
+    bindings: [
+      {
+        name: "a",
+        value: {
+          t: "call",
+          "fn": { t: "var", name: "id" },
+          args: [{ t: "lit_int", v: 7 }]
+        }
+      }
+    ],
+    body: {
+      t: "call",
+      "fn": { t: "var", name: "id" },
+      args: [{ t: "lit_bool", v: true }]
+    }
+  }
+}
+
+let r = hm.infer(poly_prog, env, {}, 0)
+
+test "let-polymorphism infers bool for second id use" { r.ty == "bool" }
