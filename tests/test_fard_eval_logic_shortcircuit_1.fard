@@ -1,0 +1,8 @@
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+let bad = { t: "call_builtin", name: "bool.and", args: [{ t: "lit_bool", v: false }, { t: "var", name: "missing" }] }
+test "bool.and short-circuits" { fe.eval(bad, env) == false }
+
+let ok = { t: "call_builtin", name: "bool.or", args: [{ t: "lit_bool", v: true }, { t: "var", name: "missing" }] }
+test "bool.or short-circuits" { fe.eval(ok, env) == true }

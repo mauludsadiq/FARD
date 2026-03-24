@@ -55,10 +55,19 @@ fn eval(node, env) {
     "lit_text" => node.v,
     "lit_bool" => node.v,
 
-    "var" => env_get(env, node.name),
-
     "call_builtin" =>
-      apply_builtin(node.name, eval_args(node.args, env)),
+      if node.name == "bool.not" then
+        not (eval(node.args[0], env))
+      else if node.name == "bool.and" then
+        let a = eval(node.args[0], env) in
+        if a then eval(node.args[1], env) else false
+      else if node.name == "bool.or" then
+        let a = eval(node.args[0], env) in
+        if a then true else eval(node.args[1], env)
+      else
+        apply_builtin(node.name, eval_args(node.args, env)),
+
+
 
     "node_fn" =>
       make_closure(node.params, node.body, env),
