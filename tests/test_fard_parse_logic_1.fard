@@ -1,0 +1,10 @@
+import("../packages/fard_parse/parse") as parse
+
+let e1 = parse.parse_logic("x < 3 and y > 1")
+test "logic and op" { e1.name == "bool.and" }
+
+let e2 = parse.parse_logic("not x == 0")
+test "logic not op" { e2.name == "bool.not" }
+
+let e3 = parse.parse_if("if x < 3 and y > 1 then 1 else 2")
+test "if logic cond op" { e3.cond.name == "bool.and" }

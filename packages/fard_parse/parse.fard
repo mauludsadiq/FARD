@@ -135,11 +135,32 @@ fn parse_cmp(s) {
 }
 
 
+
+fn parse_not(s) {
+  let t = trim(s) in
+  if str.starts_with(t, "not ") then
+    fir.call_builtin("bool.not", [parse_cmp(str.replace(t, "not ", ""))])
+  else
+      parse_cmp(t)
+}
+
+fn parse_logic(s) {
+  let t = trim(s) in
+  if str.contains(t, " and ") then
+    let parts = str.split(t, " and ") in
+    fir.call_builtin("bool.and", [parse_not(parts[0]), parse_not(parts[1])])
+  else if str.contains(t, " or ") then
+    let parts = str.split(t, " or ") in
+    fir.call_builtin("bool.or", [parse_not(parts[0]), parse_not(parts[1])])
+  else
+    parse_not(t)
+}
+
 fn parse_if(s) {
   let t = trim(s) in
   if str.starts_with(t, "if ") then
     let p1 = str.split(str.replace(t, "if ", ""), " then ") in
-    let cond = parse_cmp(p1[0]) in
+    let cond = parse_logic(p1[0]) in
     let p2 = str.split(p1[1], " else ") in
     { t: "if_node", cond: cond, t_branch: parse_expr(p2[0]), f_branch: parse_expr(p2[1]) }
   else
@@ -175,6 +196,7 @@ fn parse_module_text(src) {
 {
   parse_expr: parse_expr,
   parse_cmp: parse_cmp,
+  parse_logic: parse_logic,
   parse_if: parse_if,
   parse_module_text: parse_module_text
 }
