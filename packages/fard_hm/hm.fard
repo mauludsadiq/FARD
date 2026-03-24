@@ -1,0 +1,136 @@
+import("std/record") as rec
+import("std/list") as list
+import("std/str") as str
+import("std/type") as type
+
+fn is_err_val(x) {
+  if x == null then false
+  else if type.of(x) != "record" then false
+  else if !rec.has(x, "t") then false
+  else x.t == "type_error"
+}
+
+fn is_rec_with_t(x, tname) {
+  if x == null then false
+  else if type.of(x) != "record" then false
+  else if !rec.has(x, "t") then false
+  else x.t == tname
+}
+
+# --- Type constructors ---
+
+fn tvar(id) { { t: "tvar", id: id } }
+fn tcon(name) { name }
+fn tfun(args, ret) { { t: "tfun", args: args, ret: ret } }
+
+# --- Substitution ---
+
+fn subst_empty() { {} }
+
+fn subst_get(s, id) { rec.get(s, str.from_int(id)) }
+
+fn subst_set(s, id, ty) { rec.set(s, str.from_int(id), ty) }
+
+fn apply_subst(ty, s) {
+  if ty == "int" then "int"
+  else if ty == "bool" then "bool"
+  else if ty == "text" then "text"
+  else if is_rec_with_t(ty, "tvar") then
+    let v = subst_get(s, ty.id) in
+    if v == null then ty else apply_subst(v, s)
+  else if is_rec_with_t(ty, "tfun") then
+    tfun(
+      list.map(ty.args, fn(a) { apply_subst(a, s) }),
+      apply_subst(ty.ret, s)
+    )
+  else ty
+}
+
+# --- Occurs check ---
+
+fn occurs(id, ty, s) {
+  let ty2 = apply_subst(ty, s) in
+  if is_rec_with_t(ty2, "tvar") then ty2.id == id
+  else if is_rec_with_t(ty2, "tfun") then
+    list.any(ty2.args, fn(a) { occurs(id, a, s) }) || occurs(id, ty2.ret, s)
+  else false
+}
+
+# --- Unification ---
+
+fn unify_list(xs, ys, s) {
+  if list.len(xs) == 0 then s
+  else
+    let s2 = unify(xs[0], ys[0], s) in
+    if is_err_val(s2) then s2
+    else unify_list(list.drop(xs,1), list.drop(ys,1), s2)
+}
+
+# --- Fresh variable generator ---
+
+
+fn unify(t1, t2, s) {
+  let a = apply_subst(t1, s) in
+  let b = apply_subst(t2, s) in
+
+  if a == b then s
+  else if is_rec_with_t(a, "tvar") then
+    if occurs(a.id, b, s) then { t: "type_error", e: "occurs check" }
+    else subst_set(s, a.id, b)
+  else if is_rec_with_t(b, "tvar") then
+    if occurs(b.id, a, s) then { t: "type_error", e: "occurs check" }
+    else subst_set(s, b.id, a)
+  else if is_rec_with_t(a, "tfun") && is_rec_with_t(b, "tfun") then
+    if list.len(a.args) != list.len(b.args) then { t: "type_error", e: "arity mismatch" }
+    else
+      let s2 = unify_list(a.args, b.args, s) in
+      if is_err_val(s2) then s2 else unify(a.ret, b.ret, s2)
+  else if a == b then s
+  else { t: "type_error", e: "cannot unify" }
+}
+
+fn fresh(n) { tvar(n) }
+
+# --- Inference (Algorithm W simplified) ---
+
+fn infer(node, env, s, next_id) {
+  match node.t {
+
+    "lit_int" => { ty: "int", s: s, next: next_id },
+    "lit_bool" => { ty: "bool", s: s, next: next_id },
+    "lit_text" => { ty: "text", s: s, next: next_id },
+
+    "var" =>
+      let t = rec.get(env, node.name) in
+      if t == null then { t: "type_error", e: "unbound var" }
+      else { ty: t, s: s, next: next_id },
+
+    "node_fn" =>
+      let tv = fresh(next_id) in
+      let env2 = rec.set(env, node.params[0], tv) in
+      let r = infer(node.body, env2, s, next_id + 1) in
+      if is_err_val(r) then r
+      else { ty: tfun([tv], r.ty), s: r.s, next: r.next },
+
+    "call" =>
+      let r1 = infer(rec.get(node,"fn"), env, s, next_id) in
+      if is_err_val(r1) then r1
+      else
+        let r2 = infer(node.args[0], env, r1.s, r1.next) in
+        if is_err_val(r2) then r2
+        else
+          let tv = fresh(r2.next) in
+          let s3 = unify(r1.ty, tfun([r2.ty], tv), r2.s) in
+          if is_err_val(s3) then s3
+          else { ty: apply_subst(tv, s3), s: s3, next: r2.next + 1 },
+
+    _ => { t: "type_error", e: "unsupported" }
+  }
+}
+
+{
+  infer: infer,
+  tvar: tvar,
+  tfun: tfun,
+  unify: unify
+}

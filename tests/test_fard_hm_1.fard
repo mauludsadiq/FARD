@@ -1,0 +1,23 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let id_fn = {
+  t: "node_fn",
+  params: ["x"],
+  body: { t: "var", name: "x" }
+}
+
+let r1 = hm.infer(id_fn, env, {}, 0)
+test "infer id returns tfun" { r1.ty.t == "tfun" }
+test "infer id arg is tvar" { r1.ty.args[0].t == "tvar" }
+test "infer id ret same var" { r1.ty.ret.id == r1.ty.args[0].id }
+
+let call_id = {
+  t: "call",
+  "fn": id_fn,
+  args: [{ t: "lit_int", v: 7 }]
+}
+
+let r2 = hm.infer(call_id, env, {}, 0)
+test "infer id(7) returns int" { r2.ty == "int" }
