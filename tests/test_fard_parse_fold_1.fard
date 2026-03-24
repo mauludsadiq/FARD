@@ -1,0 +1,6 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_expr("a + b + c + d")
+test "fold4 root add" { e.name == "int.add" }
+test "fold4 lhs add" { e.args[0].name == "int.add" }
+test "fold4 lhs lhs add" { e.args[0].args[0].name == "int.add" }

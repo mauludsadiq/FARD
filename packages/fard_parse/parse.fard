@@ -5,13 +5,8 @@ import("std/list") as list
 
 fn trim(s) { str.trim(s) }
 
-fn parse_atom(s) {
-  let t = trim(s) in
-  if str.starts_with(t, "(") then
-    let inner1 = str.replace(t, "(", "") in
-    let inner2 = str.replace(inner1, ")", "") in
-    parse_expr(inner2)
-  else if t == "0" then fir.lit_int(0)
+fn parse_int_atom(t) {
+  if t == "0" then fir.lit_int(0)
   else if t == "1" then fir.lit_int(1)
   else if t == "2" then fir.lit_int(2)
   else if t == "3" then fir.lit_int(3)
@@ -24,6 +19,56 @@ fn parse_atom(s) {
   else fir.var(t)
 }
 
+fn fold_add(parts, acc, i) {
+  if i >= list.len(parts) then acc
+  else
+    fold_add(
+      parts,
+      fir.call_builtin("int.add", [acc, parse_prod(parts[i])]),
+      i + 1
+    )
+}
+
+fn fold_sub(parts, acc, i) {
+  if i >= list.len(parts) then acc
+  else
+    fold_sub(
+      parts,
+      fir.call_builtin("int.sub", [acc, parse_prod(parts[i])]),
+      i + 1
+    )
+}
+
+fn fold_mul(parts, acc, i) {
+  if i >= list.len(parts) then acc
+  else
+    fold_mul(
+      parts,
+      fir.call_builtin("int.mul", [acc, parse_atom(parts[i])]),
+      i + 1
+    )
+}
+
+fn fold_div(parts, acc, i) {
+  if i >= list.len(parts) then acc
+  else
+    fold_div(
+      parts,
+      fir.call_builtin("int.div", [acc, parse_atom(parts[i])]),
+      i + 1
+    )
+}
+
+fn parse_atom(s) {
+  let t = trim(s) in
+  if str.starts_with(t, "(") then
+    let inner1 = str.replace(t, "(", "") in
+    let inner2 = str.replace(inner1, ")", "") in
+    parse_expr(inner2)
+  else
+    parse_int_atom(t)
+}
+
 fn parse_prod(s) {
   let t = trim(s) in
   if str.contains(t, ") *") then
@@ -34,14 +79,16 @@ fn parse_prod(s) {
     let p = str.split(t, ") /") in
     let lhs = parse_expr(str.replace(p[0], "(", "")) in
     fir.call_builtin("int.div", [lhs, parse_prod(p[1])])
-  else if str.contains(t, "*") then
-    let p = str.split(t, "*") in
-    fir.call_builtin("int.mul", [parse_atom(p[0]), parse_prod(p[1])])
-  else if str.contains(t, "/") then
-    let p = str.split(t, "/") in
-    fir.call_builtin("int.div", [parse_atom(p[0]), parse_prod(p[1])])
   else
-    parse_atom(t)
+    let mul_parts = str.split(t, "*") in
+    if list.len(mul_parts) > 1 then
+      fold_mul(mul_parts, parse_atom(mul_parts[0]), 1)
+    else
+      let div_parts = str.split(t, "/") in
+      if list.len(div_parts) > 1 then
+        fold_div(div_parts, parse_atom(div_parts[0]), 1)
+      else
+        parse_atom(t)
 }
 
 fn parse_expr(s) {
@@ -51,19 +98,13 @@ fn parse_expr(s) {
   else if str.contains(t, ") /") then
     parse_prod(t)
   else
-    let parts = str.split(t, "+") in
-    if list.len(parts) == 3 then
-      let lhs = fir.call_builtin("int.add", [parse_prod(parts[0]), parse_prod(parts[1])]) in
-      fir.call_builtin("int.add", [lhs, parse_prod(parts[2])])
-    else if list.len(parts) == 2 then
-      fir.call_builtin("int.add", [parse_prod(parts[0]), parse_prod(parts[1])])
+    let add_parts = str.split(t, "+") in
+    if list.len(add_parts) > 1 then
+      fold_add(add_parts, parse_prod(add_parts[0]), 1)
     else
-      let parts2 = str.split(t, "-") in
-      if list.len(parts2) == 3 then
-        let lhs = fir.call_builtin("int.sub", [parse_prod(parts2[0]), parse_prod(parts2[1])]) in
-        fir.call_builtin("int.sub", [lhs, parse_prod(parts2[2])])
-      else if list.len(parts2) == 2 then
-        fir.call_builtin("int.sub", [parse_prod(parts2[0]), parse_prod(parts2[1])])
+      let sub_parts = str.split(t, "-") in
+      if list.len(sub_parts) > 1 then
+        fold_sub(sub_parts, parse_prod(sub_parts[0]), 1)
       else
         parse_prod(t)
 }
