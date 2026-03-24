@@ -1,0 +1,45 @@
+import("../packages/fard_type/typecheck") as tc
+
+let env = tc.tenv_empty()
+
+let ok_add = {
+  t: "call_builtin",
+  name: "int.add",
+  args: [{ t: "lit_int", v: 1 }, { t: "lit_int", v: 2 }]
+}
+
+test "type int.add -> int" { tc.type_of(ok_add, env) == "int" }
+
+let ok_cmp = {
+  t: "call_builtin",
+  name: "int.lt",
+  args: [{ t: "lit_int", v: 1 }, { t: "lit_int", v: 2 }]
+}
+
+test "type int.lt -> bool" { tc.type_of(ok_cmp, env) == "bool" }
+
+let bad_add = {
+  t: "call_builtin",
+  name: "int.add",
+  args: [{ t: "lit_int", v: 1 }, { t: "lit_text", v: "x" }]
+}
+
+test "type error on bad int.add" { tc.type_of(bad_add, env).t == "type_error" }
+
+let ok_if = {
+  t: "if_node",
+  cond: ok_cmp,
+  t_branch: { t: "lit_int", v: 1 },
+  f_branch: { t: "lit_int", v: 0 }
+}
+
+test "type if int branches -> int" { tc.type_of(ok_if, env) == "int" }
+
+let bad_if = {
+  t: "if_node",
+  cond: { t: "lit_int", v: 1 },
+  t_branch: { t: "lit_int", v: 1 },
+  f_branch: { t: "lit_int", v: 0 }
+}
+
+test "type error on non-bool if cond" { tc.type_of(bad_if, env).t == "type_error" }

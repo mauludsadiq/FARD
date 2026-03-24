@@ -1,0 +1,107 @@
+import("std/record") as rec
+import("std/list") as list
+
+fn tenv_empty() { {} }
+
+fn tenv_get(env, name) { rec.get(env, name) }
+
+fn tenv_set(env, name, ty) { rec.set(env, name, ty) }
+
+fn expect(cond, msg) {
+  if cond then true else { t: "type_error", e: msg }
+}
+
+fn is_error(x) {
+  rec.has(x, "t") && x.t == "type_error"
+}
+
+fn type_eq(a, b) {
+  if a == b then true else false
+}
+
+fn type_args(args, env) {
+  list.map(args, fn(a) { type_of(a, env) })
+}
+
+fn check_builtin(name, arg_types) {
+  match name {
+    "int.add" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "int"
+      else { t: "type_error", e: "int.add expects (int,int)" },
+
+    "int.sub" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "int"
+      else { t: "type_error", e: "int.sub expects (int,int)" },
+
+    "int.mul" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "int"
+      else { t: "type_error", e: "int.mul expects (int,int)" },
+
+    "int.div" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "int"
+      else { t: "type_error", e: "int.div expects (int,int)" },
+
+    "int.eq" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
+      else { t: "type_error", e: "int.eq expects (int,int)" },
+
+    "int.lt" =>
+      if type_eq(arg_types[0], "int") && type_eq(arg_types[1], "int") then "bool"
+      else { t: "type_error", e: "int.lt expects (int,int)" },
+
+    _ => { t: "type_error", e: "unknown builtin" }
+  }
+}
+
+fn type_of(node, env) {
+  match node.t {
+
+    "lit_int" => "int",
+    "lit_bool" => "bool",
+    "lit_text" => "text",
+
+    "var" =>
+      let t = tenv_get(env, node.name) in
+      if t == null then { t: "type_error", e: "unbound var" } else t,
+
+    "call_builtin" =>
+      let arg_types = type_args(node.args, env) in
+      check_builtin(node.name, arg_types),
+
+    "node_fn" =>
+      { t: "fn", params: node.params, body: node.body, env: env },
+
+    "call" =>
+      let fn_ty = type_of(rec.get(node, "fn"), env) in
+      if is_error(fn_ty) then fn_ty
+      else
+        let arg_types = type_args(node.args, env) in
+        { t: "unknown_call", fn: fn_ty, args: arg_types },
+
+    "if_node" =>
+      let ct = type_of(rec.get(node, "cond"), env) in
+      let tt = type_of(rec.get(node, "t_branch"), env) in
+      let ft = type_of(rec.get(node, "f_branch"), env) in
+      if type_eq(ct, "bool") then
+        if type_eq(tt, ft) then tt
+        else { t: "type_error", e: "if branches mismatch" }
+      else
+        { t: "type_error", e: "if cond not bool" },
+
+    "let" =>
+      let b = node.bindings[0] in
+      let vt = type_of(b.value, env) in
+      let env2 = tenv_set(env, b.name, vt) in
+      type_of(node.body, env2),
+
+    "def_fn" =>
+      { t: "fn_def", name: node.name, params: node.params },
+
+    _ => { t: "type_error", e: "unsupported node" }
+  }
+}
+
+{
+  tenv_empty: tenv_empty,
+  type_of: type_of
+}
