@@ -658,9 +658,26 @@ Executes FIR directly in FARD. Supports:
 - Control flow (if/then/else)
 - Module evaluation
 
-**End-to-end:** source text → AST → FIR → result, fully in FARD. Rust is no longer
-required for execution of core functional programs. This is the first
-step toward a self-hosted FARD runtime.
+**AST Type Checker** (`packages/fard_type/typecheck.fard`)
+Static validation before evaluation. Handles:
+- Type environment (tenv) with let and def_fn binding
+- Builtin typing rules (int.*, comparisons)
+- Function type collapse: fn_type(params, ret)
+- Typed call nodes with arity checking
+- Recursive def_fn via self-binding in type env
+- Structured type error propagation
+
+**Hindley-Milner Type Inference** (`packages/fard_hm/hm.fard`)
+Algorithm W implementation in FARD. Includes:
+- Type variables and substitution
+- Occurs check
+- Unification
+- Let generalization
+- Inference for literals, variables, functions, single-arg calls
+
+**End-to-end pipeline:** source text → parse → lower → typecheck → infer → eval → result, fully in FARD.
+Rust is no longer required for execution or type checking of core functional programs.
+This is a complete compiler frontend written in FARD.
 
 -----
 
