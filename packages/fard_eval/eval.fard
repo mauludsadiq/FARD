@@ -31,6 +31,10 @@ fn make_closure(params, body, env) {
   { t: "closure", params: params, body: body, env: env }
 }
 
+fn make_named_closure(name, params, body, env) {
+  { t: "closure", name: name, params: params, body: body, env: env }
+}
+
 fn bind_params(params, args, env) {
   if list.len(params) == 0 then env
   else bind_params(
@@ -43,7 +47,12 @@ fn bind_params(params, args, env) {
 fn apply_fn(fn_val, args) {
   match fn_val.t {
     "closure" =>
-      let env2 = bind_params(fn_val.params, args, fn_val.env) in
+      let base_env =
+        if rec.has(fn_val, "name") then
+          env_set(fn_val.env, fn_val.name, fn_val)
+        else
+          fn_val.env in
+      let env2 = bind_params(fn_val.params, args, base_env) in
       eval(fn_val.body, env2),
     _ => { t: "err", e: "not_callable" }
   }
@@ -96,7 +105,7 @@ fn eval(node, env) {
       let env2 = env_set(env, b.name, v) in
       eval(node.body, env2),
 
-    "def_fn" => make_closure(node.params, node.body, env),
+    "def_fn" => make_named_closure(node.name, node.params, node.body, env),
 
     "if_node" =>
       let cond = eval(rec.get(node, "cond"), env) in
@@ -120,6 +129,7 @@ fn eval_module(m, env) {
   env_get: env_get,
   env_set: env_set,
   make_closure: make_closure,
+  make_named_closure: make_named_closure,
   apply_fn: apply_fn,
   eval: eval,
   eval_module: eval_module

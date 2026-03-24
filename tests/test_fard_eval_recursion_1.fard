@@ -1,0 +1,38 @@
+import("../packages/fard_eval/eval") as fe
+
+let env = fe.env_empty()
+
+let fact_def = {
+  t: "def_fn",
+  name: "fact",
+  params: ["n"],
+  body: {
+    t: "if_node",
+    cond: { t: "call_builtin", name: "int.eq", args: [{ t: "var", name: "n" }, { t: "lit_int", v: 0 }] },
+    t_branch: { t: "lit_int", v: 1 },
+    f_branch: {
+      t: "call_builtin",
+      name: "int.mul",
+      args: [
+        { t: "var", name: "n" },
+        {
+          t: "call",
+          "fn": { t: "var", name: "fact" },
+          args: [
+            {
+              t: "call_builtin",
+              name: "int.sub",
+              args: [{ t: "var", name: "n" }, { t: "lit_int", v: 1 }]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+
+let m = { t: "module", defs: [fact_def], entry: "fact" }
+let fact = fe.eval_module(m, env)
+let result = fe.apply_fn(fact, [5])
+
+test "recursive fact(5) == 120" { result == 120 }
