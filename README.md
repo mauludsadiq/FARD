@@ -634,6 +634,9 @@ Parses FARD source text into AST nodes. Handles:
 - Left associativity for + and -
 - Parenthesized expressions: (x + y) * z
 - Multi-parameter function signatures
+- Comparison operators: ==, !=, <, <=, >, >=
+- Boolean logic: and, or, not (with correct precedence: cmp < logic < if)
+- Compound predicates for control flow
 
 **FIR v1** — FARD Intermediate Representation (`packages/fir/fir.fard`)
 A minimal IR with constructors for literals, variables, let bindings,
@@ -650,6 +653,8 @@ Executes FIR directly in FARD. Supports:
 - Closures with environment capture
 - User-defined function calls
 - Builtin dispatch (int.add/sub/mul/div)
+- Comparison operators (==, !=, <, <=, >, >=)
+- Short-circuit boolean evaluation (and, or, not)
 - Control flow (if/then/else)
 - Module evaluation
 
