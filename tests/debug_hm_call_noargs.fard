@@ -1,0 +1,10 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+let call_node = {
+  t: "call",
+  fn: { t: "var", name: "f" },
+  args: []
+}
+let r = hm.infer(call_node, env, {}, 0)
+r

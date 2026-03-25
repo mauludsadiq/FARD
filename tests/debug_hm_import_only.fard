@@ -1,0 +1,7 @@
+import("../packages/fard_hm/hm") as hm
+import("std/record") as rec
+
+let fir = [{ t: "top_import", alias: "rec", path: "std/record" }]
+let r = hm.infer_program(fir)
+test "ok" { r.ok == true }
+test "rec in env" { rec.has(r.env, "rec") == true }

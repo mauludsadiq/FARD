@@ -1,5 +1,6 @@
 import("../fir/fir") as fir
 import("std/list") as list
+import("std/record") as rec
 
 fn lower_fn_params(params) {
   list.map(params, fn(p) { p.name })
@@ -21,11 +22,14 @@ fn lower(node) {
       ),
 
     "fn" =>
-      fir.def_fn(
-        node.name,
-        lower_fn_params(node.params),
-        lower(node.body)
-      ),
+      if rec.has(node, "name") then
+        fir.def_fn(
+          node.name,
+          lower_fn_params(node.params),
+          lower(node.body)
+        )
+      else
+        { t: "node_fn", params: lower_fn_params(node.params), body: lower(node.body) },
 
     "bin" =>
       match node.op {
@@ -55,6 +59,25 @@ fn lower(node) {
 
         _ => { t: "err", e: "unsupported_bin_op" }
       },
+
+    "import" =>
+      { t: "top_import", alias: node.alias, path: node.path },
+
+    "get" =>
+      { t: "get_field", obj: lower(node.obj), field: node.field },
+
+    "call" =>
+      let fn_node = lower(node.f) in
+      let args = list.map(node.args, fn(a) { lower(a) }) in
+      { t: "call", fn: fn_node, args: args },
+
+    "list" =>
+      { t: "lit_list", items: list.map(node.items, fn(x) { lower(x) }) },
+
+    "rec" =>
+      { t: "lit_record", fields: list.map(node.fields, fn(f) { { key: f.key, value: lower(f.val) } }) },
+
+    "null" => { t: "lit_null" },
 
     _ => { t: "err", e: "unsupported_node" }
   }

@@ -1,0 +1,12 @@
+import("../packages/fard_hm/hm") as hm
+import("std/record") as rec
+
+let env = rec.set(rec.set(rec.set({}, "rec", { t: "scheme", vars: [], ty: { t: "tvar", id: 99 } }), "env", { t: "scheme", vars: [], ty: { t: "tvar", id: 98 } }), "name", { t: "scheme", vars: [], ty: { t: "tvar", id: 97 } })
+
+let call_node = {
+  t: "call",
+  fn: { t: "get_field", obj: { t: "var", name: "rec" }, field: "get" },
+  args: [{ t: "var", name: "env" }, { t: "var", name: "name" }]
+}
+let r = hm.infer(call_node, env, {}, 100)
+test "ok" { r.ty == r.ty }

@@ -175,17 +175,17 @@ fn hm_fold_params(ps, env_acc, next_acc, vars) {
     hm_fold_params(list.drop(ps, 1), env2, next_acc + 1, list.concat([vars, [tv]]))
 }
 
-fn hm_infer_call_args(fn_ty, args, env, s, next_id) {
+fn hm_infer_call_args(infer_fn, fn_ty, args, env, s, next_id) {
   if list.len(args) == 0 then { ty: fn_ty, s: s, next: next_id }
   else
-    let rarg = infer(args[0], env, s, next_id) in
+    let rarg = infer_fn(args[0], env, s, next_id) in
     if is_err_val(rarg) then rarg
     else
       let tv = fresh(rarg.next) in
       let s2 = unify(fn_ty, tfun([rarg.ty], tv), rarg.s) in
       if is_err_val(s2) then s2
       else
-        hm_infer_call_args(apply_subst(tv, s2), list.drop(args, 1), env, s2, rarg.next + 1)
+        hm_infer_call_args(infer_fn, apply_subst(tv, s2), list.drop(args, 1), env, s2, rarg.next + 1)
 }
 
 
@@ -248,6 +248,23 @@ fn infer(node, env, s, next_id) {
         let full_ty = list.fold(list.reverse(fp.vars), r.ty, fn(acc, v) { tfun([apply_subst(v, r.s)], acc) }) in
         { ty: full_ty, s: r.s, next: r.next },
 
+    "get_field" =>
+      let r = infer(node.obj, env, s, next_id) in
+      if is_err_val(r) then r
+      else
+        let tv = fresh(r.next) in
+        { ty: tv, s: r.s, next: r.next + 1 },
+
+    "lit_record" =>
+      let tv = fresh(next_id) in
+      { ty: tv, s: s, next: next_id + 1 },
+
+    "lit_list" =>
+      let tv = fresh(next_id) in
+      { ty: tv, s: s, next: next_id + 1 },
+
+    "lit_null" => { ty: fresh(next_id), s: s, next: next_id + 1 },
+
     "call_builtin" =>
       let builtin_ret = check_builtin_hm(infer, node.name, node.args, env, s, next_id) in
       if is_err_val(builtin_ret) then
@@ -259,7 +276,7 @@ fn infer(node, env, s, next_id) {
       let r1 = infer(rec.get(node, "fn"), env, s, next_id) in
       if is_err_val(r1) then r1
       else
-        let call_result = hm_infer_call_args(r1.ty, node.args, env, r1.s, r1.next) in
+        let call_result = hm_infer_call_args(infer, r1.ty, node.args, env, r1.s, r1.next) in
         if is_err_val(call_result) then
           if rec.has(node, "loc") then rec.set(call_result, "loc", node.loc)
           else call_result
@@ -303,7 +320,12 @@ fn infer_letrec(binding, body, env, s, next_id) {
 }
 
 fn infer_def(def, acc) {
-  if def.t == "def_fn" then
+  if def.t == "top_import" then
+    let any_ty = tvar(acc.next) in
+    let sc = scheme([], any_ty) in
+    let env2 = rec.set(acc.env, def.alias, sc) in
+    { ok: true, env: env2, s: acc.s, next: acc.next + 1 }
+  else if def.t == "def_fn" then
     let fp = hm_fold_params(def.params, acc.env, acc.next, []) in
     let r = infer(def.body, fp.env, acc.s, fp.next) in
     if is_err_val(r) then { ok: false, env: acc.env, s: acc.s, next: acc.next, err: r }

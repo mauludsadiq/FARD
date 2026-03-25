@@ -1,0 +1,9 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+import("../packages/fard_hm/hm") as hm
+import("std/list") as list
+
+let src = "import(\"../fir/fir\") as fir\nimport(\"std/list\") as list\nimport(\"std/record\") as rec\n\nfn env_empty() { {} }\n\nfn env_get(env, name) { rec.get(env, name) }"
+let nodes = ast.parse(src)
+let fir = list.filter(list.map(nodes, fn(n) { lower.lower(n) }), fn(d) { d.t != "err" })
+hm.infer_program(fir)

@@ -1,0 +1,5 @@
+import("std/record") as rec
+
+let node = { t: "call", fn: { t: "var", name: "x" }, args: [] }
+test "has fn" { rec.has(node, "fn") == true }
+test "get fn" { rec.get(node, "fn").t == "var" }

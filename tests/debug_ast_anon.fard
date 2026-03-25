@@ -1,0 +1,4 @@
+import("std/ast") as ast
+
+let nodes = ast.parse("let f = fn(x) { x + 1 }")
+nodes[0]

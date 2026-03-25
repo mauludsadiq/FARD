@@ -1,0 +1,6 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+
+let nodes = ast.parse("rec.get(env, name)")
+let fir = lower.lower(nodes[0])
+fir.t

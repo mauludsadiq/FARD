@@ -1,0 +1,9 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+import("std/record") as rec
+
+let nodes = ast.parse("rec.get(env, name)")
+let fir = lower.lower(nodes[0])
+test "call tag" { fir.t == "call" }
+test "has fn key" { rec.has(fir, "fn") == true }
+test "fn is get_field" { rec.get(fir, "fn").t == "get_field" }

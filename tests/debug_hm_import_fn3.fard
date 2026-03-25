@@ -1,0 +1,17 @@
+import("../packages/fard_hm/hm") as hm
+import("std/record") as rec
+
+let fir = [
+  { t: "top_import", alias: "rec", path: "std/record" },
+  {
+    t: "def_fn",
+    name: "env_get",
+    params: ["env", "name"],
+    body: {
+      t: "call",
+      fn: { t: "get_field", obj: { t: "var", name: "rec" }, field: "get" },
+      args: [{ t: "var", name: "env" }, { t: "var", name: "name" }]
+    }
+  }
+]
+hm.infer_program(fir)

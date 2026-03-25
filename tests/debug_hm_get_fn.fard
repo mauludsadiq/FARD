@@ -1,0 +1,8 @@
+import("../packages/fard_hm/hm") as hm
+import("std/record") as rec
+
+let node = { t: "call", fn: { t: "lit_int", v: 1 }, args: [] }
+let fn_node = rec.get(node, "fn")
+test "fn_node t" { fn_node.t == "lit_int" }
+let r = hm.infer(node, {}, {}, 0)
+test "infer call lit" { r.ty == "int" }

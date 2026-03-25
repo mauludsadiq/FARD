@@ -1269,11 +1269,24 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         let project_dir = std::env::current_dir()?;
         let hm_pkg = project_dir.join("packages/fard_hm/hm");
         let parse_pkg = project_dir.join("packages/fard_parse/parse");
+        let lower_pkg = project_dir.join("packages/fard_lower/lower");
         let hm_prog = format!(
-            "import({:?}) as hm\nimport({:?}) as parse\nimport(\"std/list\") as list\nimport(\"std/record\") as rec\n\nlet src = {:?}\nlet defs = parse.parse_program(src)\nlet raw = if list.len(defs) == 0 then hm.infer(parse.parse_expr(src), {{}}, {{}}, 0) else hm.infer_program(defs)\nlet r = if rec.has(raw, \"ok\") then raw else {{ ok: !hm.is_err(raw), err: raw }}\nlet err = if r.ok then null else r.err\nlet loc = if err == null then null else if rec.has(err, \"loc\") then parse.token_pos_to_line_col(src, err.loc) else null\n{{ r: r, loc: loc }}\n",
-            hm_pkg.to_string_lossy(),
-            parse_pkg.to_string_lossy(),
-            src_text
+            concat!(
+                "import({hm:?}) as hm\n",
+                "import({lower:?}) as lower\n",
+                "import(\"std/ast\") as ast\n",
+                "import(\"std/record\") as rec\n",
+                "import(\"std/list\") as list\n",
+                "import(\"std/record\") as rec\n\n",
+                "let nodes = ast.parse({src:?})\n",
+                "let fir = list.filter(list.map(nodes, fn(n) {{ lower.lower(n) }}), fn(d) {{ d.t != \"err\" }})\n",
+                "let raw = if list.len(fir) == 0 then {{ ok: true, env: {{}}, s: {{}}, next: 0 }} else hm.infer_program(fir)\n",
+                "let r = if rec.has(raw, \"ok\") then raw else {{ ok: !hm.is_err(raw), err: raw }}\n",
+                "{{ r: r, loc: null }}\n"
+            ),
+            hm = hm_pkg.to_string_lossy().as_ref(),
+            lower = lower_pkg.to_string_lossy().as_ref(),
+            src = src_text
         );
         // Write to a temp file and run it from project root
         let tmp_dir = std::env::temp_dir().join(format!("fard_hm_{}", std::process::id()));
@@ -9070,6 +9083,7 @@ fn call_builtin(
                         Item::Expr(e, _) => expr_to_val(e),
                         Item::Let(n, e, _) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("let".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("val".to_string(), expr_to_val(e)); Val::Record(m) }
                         Item::Fn(n, params, _, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("params".to_string(), Val::List(params.iter().map(|(p, _)| { let mut pm = BTreeMap::new(); match p { Pat::Bind(s) => { pm.insert("name".to_string(), Val::Text(s.clone())); }, _ => { pm.insert("name".to_string(), Val::Text("_".to_string())); } } Val::Record(pm) }).collect())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                        Item::Import(path, alias) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("import".to_string())); m.insert("path".to_string(), Val::Text(path.clone())); m.insert("alias".to_string(), Val::Text(alias.clone())); Val::Record(m) }
                         _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("item".to_string())); Val::Record(m) }
                     }
                 }

@@ -1,0 +1,3 @@
+import("std/ast") as ast
+
+ast.parse("import(\"std/list\") as list\nlet x = list.len([])\nfn f(a) { a.t }")
