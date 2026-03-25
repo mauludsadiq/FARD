@@ -189,6 +189,42 @@ fn hm_infer_call_args(fn_ty, args, env, s, next_id) {
 }
 
 
+fn check_builtin_hm(infer_fn, name, args, env, s, next_id) {
+  let r0 = infer_fn(args[0], env, s, next_id) in
+  if is_err_val(r0) then r0
+  else
+    if name == "bool.not" then
+      let s1 = unify(r0.ty, "bool", r0.s) in
+      if is_err_val(s1) then s1
+      else { ty: "bool", s: s1, next: r0.next }
+    else
+      let r1 = infer_fn(args[1], env, r0.s, r0.next) in
+      if is_err_val(r1) then r1
+      else
+        if name == "int.add" || name == "int.sub" || name == "int.mul" || name == "int.div" then
+          let s1 = unify(r0.ty, "int", r1.s) in
+          if is_err_val(s1) then s1
+          else
+            let s2 = unify(r1.ty, "int", s1) in
+            if is_err_val(s2) then s2
+            else { ty: "int", s: s2, next: r1.next }
+        else if name == "int.eq" || name == "int.ne" || name == "int.lt" || name == "int.le" || name == "int.gt" || name == "int.ge" then
+          let s1 = unify(r0.ty, "int", r1.s) in
+          if is_err_val(s1) then s1
+          else
+            let s2 = unify(r1.ty, "int", s1) in
+            if is_err_val(s2) then s2
+            else { ty: "bool", s: s2, next: r1.next }
+        else if name == "bool.and" || name == "bool.or" then
+          let s1 = unify(r0.ty, "bool", r1.s) in
+          if is_err_val(s1) then s1
+          else
+            let s2 = unify(r1.ty, "bool", s1) in
+            if is_err_val(s2) then s2
+            else { ty: "bool", s: s2, next: r1.next }
+        else { t: "type_error", e: "unknown builtin" }
+}
+
 fn infer(node, env, s, next_id) {
   match node.t {
     "lit_int" => { ty: "int", s: s, next: next_id },
@@ -209,6 +245,10 @@ fn infer(node, env, s, next_id) {
       else
         let full_ty = list.fold(list.reverse(fp.vars), r.ty, fn(acc, v) { tfun([apply_subst(v, r.s)], acc) }) in
         { ty: full_ty, s: r.s, next: r.next },
+
+    "call_builtin" =>
+      let builtin_ret = check_builtin_hm(infer, node.name, node.args, env, s, next_id) in
+      builtin_ret,
 
     "call" =>
       let r1 = infer(rec.get(node, "fn"), env, s, next_id) in

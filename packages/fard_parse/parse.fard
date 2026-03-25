@@ -31,7 +31,8 @@ fn normalize_ops(s) {
 }
 
 fn tokenize(s) {
-  let s1 = normalize_ops(s) in
+  let s0 = str.replace(s, "\n", " ") in
+  let s1 = normalize_ops(s0) in
   let raw = str.split(s1, " ") in
   drop_empty(raw)
 }
@@ -61,6 +62,8 @@ fn is_digit_token(t) {
 
 fn parse_int_atom(t) {
   if is_digit_token(t) then fir.lit_int(cast.int(t))
+  else if t == "true" then { t: "lit_bool", v: true }
+  else if t == "false" then { t: "lit_bool", v: false }
   else fir.var(t)
 }
 

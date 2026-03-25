@@ -1,0 +1,10 @@
+import("../packages/fard_hm/hm") as hm
+import("../packages/fard_parse/parse") as parse
+
+let ast = parse.parse_expr("1 + 2")
+test "ast tag" { ast.t == "call_builtin" }
+test "ast arg0" { ast.args[0].t == "lit_int" }
+test "ast arg1" { ast.args[1].t == "lit_int" }
+
+let r = hm.infer(ast, {}, {}, 0)
+test "infer tag" { r.ty == "int" }

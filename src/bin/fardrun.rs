@@ -1256,6 +1256,62 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
     }
 
 
+
+    // ── HM type checking ─────────────────────────────────────────────────────
+    if run.hm_types {
+        let src_text = match fs::read_to_string(&program) {
+            Ok(s) => s,
+            Err(e) => bail!("cannot read {}: {}", program.display(), e),
+        };
+        // Build the hm checker program source — runs from project root
+        let project_dir = std::env::current_dir()?;
+        let hm_pkg = project_dir.join("packages/fard_hm/hm");
+        let parse_pkg = project_dir.join("packages/fard_parse/parse");
+        let hm_prog = format!(
+            "import({:?}) as hm\nimport({:?}) as parse\n\nlet src = {:?}\nlet ast = parse.parse_expr(src)\nlet env = {{}}\nlet r = hm.infer(ast, env, {{}}, 0)\nr\n",
+            hm_pkg.to_string_lossy(),
+            parse_pkg.to_string_lossy(),
+            src_text
+        );
+        // Write to a temp file and run it from project root
+        let tmp_dir = std::env::temp_dir().join(format!("fard_hm_{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir)?;
+        let tmp_prog = tmp_dir.join("hm_check.fard");
+        let tmp_out = tmp_dir.join("out");
+        fs::create_dir_all(&tmp_out)?;
+        fs::write(&tmp_prog, hm_prog.as_bytes())?;
+        let exe = std::env::current_exe()?;
+        let hm_out = std::process::Command::new(&exe)
+            .arg("run")
+            .arg("--program").arg(&tmp_prog)
+            .arg("--out").arg(&tmp_out)
+            .current_dir(&project_dir)
+            .output()?;
+        if !hm_out.status.success() {
+            let msg = String::from_utf8_lossy(&hm_out.stderr);
+            eprintln!("[hm-types] checker failed to run: {}", msg);
+        } else {
+            let result_path = tmp_out.join("result.json");
+            if let Ok(bs) = fs::read(&result_path) {
+                let v: serde_json::Value = serde_json::from_slice(&bs).unwrap_or(serde_json::Value::Null);
+                let result = v.get("result").unwrap_or(&v);
+                if result.get("t").and_then(|t| t.as_str()) == Some("type_error") {
+                    let e = result.get("e").and_then(|e| e.as_str()).unwrap_or("unknown");
+                    eprintln!("[hm-types] TYPE ERROR: {}", e);
+                    fs::create_dir_all(&out_dir).ok();
+                    let mut em = Map::new();
+                    em.insert("code".to_string(), J::Str("ERROR_HM_TYPE".to_string()));
+                    em.insert("message".to_string(), J::Str(format!("hm type error: {}", e)));
+                    em.insert("hm_types".to_string(), J::Bool(true));
+                    fs::write(out_dir.join("error.json"), json_to_string(&J::Object(em)).into_bytes())?;
+                    std::process::exit(2);
+                }
+                eprintln!("[hm-types] ok");
+            }
+        }
+        let _ = fs::remove_dir_all(&tmp_dir);
+    }
+
     let lockfile = run.lockfile;
     let registry_dir = run.registry;
     set_program_args(run.program_args.clone());

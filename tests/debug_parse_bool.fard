@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_expr("true")
+test "bool tag" { e.t == "lit_bool" }

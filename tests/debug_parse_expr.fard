@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_expr("1 + 2")
+test "tag" { e.t == "call_builtin" }
+test "name" { e.name == "int.add" }
+test "arg0" { e.args[0].t == "lit_int" }
+test "arg1" { e.args[1].t == "lit_int" }
