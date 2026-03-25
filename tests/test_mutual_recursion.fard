@@ -1,0 +1,10 @@
+fn is_even(n) {
+  if n == 0 then true else is_odd(n - 1)
+}
+
+fn is_odd(n) {
+  if n == 0 then false else is_even(n - 1)
+}
+
+test "even" { is_even(4) == true }
+test "odd" { is_odd(3) == true }

@@ -1,0 +1,17 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let add_like = {
+  t: "node_fn",
+  params: ["x", "y"],
+  body: { t: "var", name: "x" }
+}
+
+let call2 = {
+  t: "call",
+  "fn": add_like,
+  args: [{ t: "lit_int", v: 7 }, { t: "lit_bool", v: true }]
+}
+
+hm.infer(call2, env, {}, 0)

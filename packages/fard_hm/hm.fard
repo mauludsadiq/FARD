@@ -188,6 +188,7 @@ fn hm_infer_call_args(fn_ty, args, env, s, next_id) {
         hm_infer_call_args(apply_subst(tv, s2), list.drop(args, 1), env, s2, rarg.next + 1)
 }
 
+
 fn infer(node, env, s, next_id) {
   match node.t {
     "lit_int" => { ty: "int", s: s, next: next_id },
@@ -215,18 +216,41 @@ fn infer(node, env, s, next_id) {
       else
         hm_infer_call_args(r1.ty, node.args, env, r1.s, r1.next),
 
+    "if_node" =>
+      let rc = infer(rec.get(node, "cond"), env, s, next_id) in
+      if is_err_val(rc) then rc
+      else
+        let s1 = unify(rc.ty, "bool", rc.s) in
+        if is_err_val(s1) then s1
+        else
+          let rt = infer(rec.get(node, "t_branch"), env, s1, rc.next) in
+          if is_err_val(rt) then rt
+          else
+            let rf = infer(rec.get(node, "f_branch"), env, rt.s, rt.next) in
+            if is_err_val(rf) then rf
+            else
+              let s2 = unify(rt.ty, rf.ty, rf.s) in
+              if is_err_val(s2) then s2
+              else { ty: apply_subst(rt.ty, s2), s: s2, next: rf.next },
+
     "let" =>
       let b = node.bindings[0] in
-      let r1 = infer(b.value, env, s, next_id) in
-      if is_err_val(r1) then r1
-      else
-        let ty1 = apply_subst(r1.ty, r1.s) in
-        let sc1 = generalize(env, ty1) in
-        let env2 = rec.set(env, b.name, sc1) in
-        infer(node.body, env2, r1.s, r1.next),
+      infer_letrec(b, node.body, env, s, next_id),
 
     _ => { t: "type_error", e: "unsupported" }
   }
+}
+
+fn infer_letrec(binding, body, env, s, next_id) {
+  let seed = fresh(next_id) in
+  let env_seed = rec.set(env, binding.name, scheme([], seed)) in
+  let r1 = infer(binding.value, env_seed, s, next_id + 1) in
+  if is_err_val(r1) then r1
+  else
+    let ty1 = apply_subst(r1.ty, r1.s) in
+    let sc1 = generalize(env, ty1) in
+    let env2 = rec.set(env, binding.name, sc1) in
+    infer(body, env2, r1.s, r1.next)
 }
 
 {

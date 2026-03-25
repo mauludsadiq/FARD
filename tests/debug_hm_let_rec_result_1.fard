@@ -1,0 +1,27 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let fact = {
+  t: "let",
+  bindings: [{
+    name: "f",
+    value: {
+      t: "node_fn",
+      params: ["n"],
+      body: {
+        t: "if_node",
+        cond: { t: "lit_bool", v: true },
+        t_branch: { t: "lit_int", v: 1 },
+        f_branch: {
+          t: "call",
+          "fn": { t: "var", name: "f" },
+          args: [{ t: "var", name: "n" }]
+        }
+      }
+    }
+  }],
+  body: { t: "var", name: "f" }
+}
+
+hm.infer(fact, env, {}, 0)

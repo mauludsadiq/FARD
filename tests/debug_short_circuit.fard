@@ -1,0 +1,9 @@
+fn test_and(x) {
+  if (x != null) && rec.has(x, "t") then "has_t"
+  else "no_t"
+}
+
+import("std/record") as rec
+test "short circuit null" { test_and(null) == "no_t" }
+test "short circuit str" { test_and("hello") == "no_t" }
+test "short circuit rec" { test_and({ t: "foo" }) == "has_t" }

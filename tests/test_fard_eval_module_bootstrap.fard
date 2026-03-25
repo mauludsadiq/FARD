@@ -1,0 +1,8 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+import("../packages/fard_eval/eval") as fe
+
+let items = ast.parse("fn add1(x) { x + 1 }")
+let m = lower.lower_module(items)
+
+test "eval_module entry call" { fe.apply_fn(fe.eval_module(m, fe.env_empty()), [9]) == 10 }

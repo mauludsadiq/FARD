@@ -1,0 +1,11 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let add_like = {
+  t: "node_fn",
+  params: ["x", "y"],
+  body: { t: "var", name: "x" }
+}
+
+hm.infer(add_like, env, {}, 0)

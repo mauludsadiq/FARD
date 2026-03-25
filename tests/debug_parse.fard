@@ -1,0 +1,5 @@
+import("../packages/fard_parse/parse") as parse
+
+let m = parse.parse_module_text("fn add1(x) { x + 1 }")
+
+m

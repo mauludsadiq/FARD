@@ -1,0 +1,11 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+let id_fn = {
+  t: "node_fn",
+  params: ["x"],
+  body: { t: "var", name: "x" }
+}
+let r1 = hm.infer(id_fn, env, {}, 0)
+test "r1 has ty" { r1.ty == r1.ty }
+test "r1.ty.t" { r1.ty.t == "tfun" }

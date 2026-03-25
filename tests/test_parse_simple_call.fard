@@ -1,0 +1,6 @@
+import("../packages/fard_parse/parse") as parse
+
+let e2 = parse.parse_expr("f(x)")
+test "call1 tag" { e2.t == "call" }
+test "call1 args type" { e2.args == e2.args }
+test "call1 arg0 tag" { e2.args[0].t == "var" }

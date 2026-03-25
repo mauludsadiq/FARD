@@ -1,0 +1,12 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let non_rec = {
+  t: "let",
+  bindings: [{ name: "x", value: { t: "lit_int", v: 5 } }],
+  body: { t: "var", name: "x" }
+}
+
+let r = hm.infer(non_rec, env, {}, 0)
+test "simple let types" { r.ty == "int" }
