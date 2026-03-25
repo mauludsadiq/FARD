@@ -1257,6 +1257,8 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
 
 
 
+    let mut hm_result_json: Option<J> = None;
+
     // ── HM type checking ─────────────────────────────────────────────────────
     if run.hm_types {
         let src_text = match fs::read_to_string(&program) {
@@ -1313,13 +1315,35 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                     let e = e_msg;
                     eprintln!("[hm-types] TYPE ERROR: {}{}", e, loc_msg);
                     fs::create_dir_all(&out_dir).ok();
+                    let mut hm_map = Map::new();
+                    hm_map.insert("ok".to_string(), J::Bool(false));
+                    hm_map.insert("hm_types".to_string(), J::Bool(true));
+                    hm_map.insert("error".to_string(), J::Str(e.to_string()));
+                    if let Some(locv) = loc_obj {
+                        if let Ok(jloc) = serde_json_to_valuecore(locv.clone()) {
+                            hm_map.insert("loc".to_string(), jloc);
+                        }
+                    }
                     let mut em = Map::new();
                     em.insert("code".to_string(), J::Str("ERROR_HM_TYPE".to_string()));
                     em.insert("message".to_string(), J::Str(format!("hm type error: {}", e)));
                     em.insert("hm_types".to_string(), J::Bool(true));
+                    em.insert("hm".to_string(), J::Object(hm_map));
                     fs::write(out_dir.join("error.json"), json_to_string(&J::Object(em)).into_bytes())?;
                     std::process::exit(2);
                 }
+                let mut hm_map = Map::new();
+                hm_map.insert("ok".to_string(), J::Bool(true));
+                hm_map.insert("hm_types".to_string(), J::Bool(true));
+                if let Ok(jr) = serde_json_to_valuecore(result.clone()) {
+                    hm_map.insert("raw".to_string(), jr);
+                }
+                if let Some(locv) = loc_obj {
+                    if let Ok(jloc) = serde_json_to_valuecore(locv.clone()) {
+                        hm_map.insert("loc".to_string(), jloc);
+                    }
+                }
+                hm_result_json = Some(J::Object(hm_map));
                 eprintln!("[hm-types] ok");
             }
         }
@@ -1648,6 +1672,9 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
     let j = v.to_json().context("final result must be jsonable")?;
     let mut root = Map::new();
     root.insert("result".to_string(), j);
+    if let Some(hm) = hm_result_json.clone() {
+        root.insert("hm".to_string(), hm);
+    }
     {
         let v = J::Object(root);
         fs::write(&result_path, canonical_json_bytes(&v))?;
@@ -3974,6 +4001,33 @@ fn vcore_to_fardrun(v: valuecore::Val) -> Val {
             data: Box::new(vcore_to_fardrun(*data)),
         },
     }
+}
+
+fn serde_json_to_valuecore(v: serde_json::Value) -> Result<J> {
+    Ok(match v {
+        serde_json::Value::Null => J::Null,
+        serde_json::Value::Bool(b) => J::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                J::Int(i)
+            } else if let Some(f) = n.as_f64() {
+                J::Float(f)
+            } else {
+                bail!("unsupported json number")
+            }
+        }
+        serde_json::Value::String(s) => J::Str(s),
+        serde_json::Value::Array(xs) => {
+            J::Array(xs.into_iter().map(serde_json_to_valuecore).collect::<Result<Vec<_>>>()?)
+        }
+        serde_json::Value::Object(m) => {
+            let mut out = std::collections::BTreeMap::new();
+            for (k, v) in m {
+                out.insert(k, serde_json_to_valuecore(v)?);
+            }
+            J::Object(out)
+        }
+    })
 }
 
 fn val_from_json(j: &J) -> Result<Val> {
