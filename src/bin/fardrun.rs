@@ -9036,21 +9036,35 @@ fn call_builtin(
                     .map_err(|e| anyhow::anyhow!("ast.parse: {}", e))?;
                 let items = parser.parse_module()
                     .map_err(|e| anyhow::anyhow!("ast.parse: {}", e))?;
-                fn expr_to_val(e: &Expr) -> Val {
-                    match e {
-                        Expr::Int(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("int".to_string())); m.insert("v".to_string(), Val::Int(*n)); Val::Record(m) }
-                        Expr::Bool(b) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bool".to_string())); m.insert("v".to_string(), Val::Bool(*b)); Val::Record(m) }
-                        Expr::Str(s) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("str".to_string())); m.insert("v".to_string(), Val::Text(s.clone())); Val::Record(m) }
-                        Expr::Var(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("var".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); Val::Record(m) }
-                        Expr::Null => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("null".to_string())); Val::Record(m) }
-                        Expr::Bin(op, l, r) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bin".to_string())); m.insert("op".to_string(), Val::Text(op.clone())); m.insert("l".to_string(), expr_to_val(l)); m.insert("r".to_string(), expr_to_val(r)); Val::Record(m) }
-                        Expr::Call(f, args) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("call".to_string())); m.insert("f".to_string(), expr_to_val(f)); m.insert("args".to_string(), Val::List(args.iter().map(expr_to_val).collect())); Val::Record(m) }
-                        Expr::If(c, t, f) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("if".to_string())); m.insert("cond".to_string(), expr_to_val(c)); m.insert("then".to_string(), expr_to_val(t)); m.insert("else".to_string(), expr_to_val(f)); Val::Record(m) }
-                        Expr::Let(n, v, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("let".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("val".to_string(), expr_to_val(v)); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
-                        Expr::List(xs) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("list".to_string())); m.insert("items".to_string(), Val::List(xs.iter().map(expr_to_val).collect())); Val::Record(m) }
-                        _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("other".to_string())); Val::Record(m) }
-                    }
-                }
+                fn pat_to_val(p: &Pat) -> Val {
+                      match p {
+                          Pat::Bind(s) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bind".to_string())); m.insert("name".to_string(), Val::Text(s.clone())); Val::Record(m) }
+                          Pat::Wild => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("wildcard".to_string())); Val::Record(m) }
+                          Pat::LitInt(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("int".to_string())); m.insert("v".to_string(), Val::Int(*n)); Val::Record(m) }
+                          Pat::LitBool(b) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bool".to_string())); m.insert("v".to_string(), Val::Bool(*b)); Val::Record(m) }
+                          Pat::LitStr(s) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("str".to_string())); m.insert("v".to_string(), Val::Text(s.clone())); Val::Record(m) }
+                          _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("other_pat".to_string())); Val::Record(m) }
+                      }
+                  }
+                  fn expr_to_val(e: &Expr) -> Val {
+                      match e {
+                          Expr::Int(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("int".to_string())); m.insert("v".to_string(), Val::Int(*n)); Val::Record(m) }
+                          Expr::Bool(b) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bool".to_string())); m.insert("v".to_string(), Val::Bool(*b)); Val::Record(m) }
+                          Expr::Str(s) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("str".to_string())); m.insert("v".to_string(), Val::Text(s.clone())); Val::Record(m) }
+                          Expr::Var(n) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("var".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); Val::Record(m) }
+                          Expr::Null => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("null".to_string())); Val::Record(m) }
+                          Expr::Bin(op, l, r) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("bin".to_string())); m.insert("op".to_string(), Val::Text(op.clone())); m.insert("l".to_string(), expr_to_val(l)); m.insert("r".to_string(), expr_to_val(r)); Val::Record(m) }
+                          Expr::Call(f, args) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("call".to_string())); m.insert("f".to_string(), expr_to_val(f)); m.insert("args".to_string(), Val::List(args.iter().map(expr_to_val).collect())); Val::Record(m) }
+                          Expr::If(c, t, f) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("if".to_string())); m.insert("cond".to_string(), expr_to_val(c)); m.insert("then".to_string(), expr_to_val(t)); m.insert("else".to_string(), expr_to_val(f)); Val::Record(m) }
+                          Expr::Let(n, v, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("let".to_string())); m.insert("name".to_string(), Val::Text(n.clone())); m.insert("val".to_string(), expr_to_val(v)); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                          Expr::List(xs) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("list".to_string())); m.insert("items".to_string(), Val::List(xs.iter().map(expr_to_val).collect())); Val::Record(m) }
+                          Expr::Rec(kvs) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("rec".to_string())); m.insert("fields".to_string(), Val::List(kvs.iter().map(|(k, v)| { let mut fm = BTreeMap::new(); fm.insert("key".to_string(), Val::Text(k.clone())); fm.insert("val".to_string(), expr_to_val(v)); Val::Record(fm) }).collect())); Val::Record(m) }
+                          Expr::Get(obj, field) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("get".to_string())); m.insert("obj".to_string(), expr_to_val(obj)); m.insert("field".to_string(), Val::Text(field.clone())); Val::Record(m) }
+                          Expr::Fn(params, body) | Expr::Lambda(params, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("params".to_string(), Val::List(params.iter().map(|p| pat_to_val(p)).collect())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                          Expr::Match(scrut, arms) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("match".to_string())); m.insert("expr".to_string(), expr_to_val(scrut)); m.insert("arms".to_string(), Val::List(arms.iter().map(|arm| { let mut am = BTreeMap::new(); am.insert("pat".to_string(), pat_to_val(&arm.pat)); if let Some(g) = &arm.guard { am.insert("guard".to_string(), expr_to_val(g)); } am.insert("body".to_string(), expr_to_val(&arm.body)); Val::Record(am) }).collect())); Val::Record(m) }
+                          _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("other".to_string())); Val::Record(m) }
+                      }
+                  }
                 fn item_to_val(item: &Item) -> Val {
                     match item {
                         Item::Expr(e, _) => expr_to_val(e),
