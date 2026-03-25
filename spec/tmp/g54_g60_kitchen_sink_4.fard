@@ -1,9 +1,7 @@
 
-import("std/str") as str
+import("std/int") as int
 
-let s = "  AbC \nDeF  \n"
-let t = str.trim(s)
-let u = str.lower(t)
-let xs = str.split_lines(u)
-emit({tag: "g55", t: t, u: u, xs: xs})
-{t: t, u: u, xs: xs}
+let a = int.parse("42")?
+let b = int.pow(2, 10)
+emit({tag: "g58", a: a, b: b})
+{a: a, b: b}

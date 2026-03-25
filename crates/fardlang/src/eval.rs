@@ -125,7 +125,7 @@ impl Env {
 pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
     let mut m: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let modules: &[(&str, &[&str])] = &[
-        ("list", &["len","append","concat","reverse","contains","slice"]),
+        ("list", &["len","append","concat","reverse","contains","slice","get"]),
         ("text", &["len","contains","starts_with","split","trim","slice","replace","join"]),
         ("bytes", &["len","concat","slice","eq","from_text"]),
         ("map",   &["new","set","get","has","keys","delete"]),

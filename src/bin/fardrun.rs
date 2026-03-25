@@ -1292,6 +1292,18 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         if !hm_out.status.success() {
             let msg = String::from_utf8_lossy(&hm_out.stderr);
             eprintln!("[hm-types] checker failed to run: {}", msg);
+            fs::create_dir_all(&out_dir).ok();
+            let mut hm_map = Map::new();
+            hm_map.insert("ok".to_string(), J::Bool(false));
+            hm_map.insert("hm_types".to_string(), J::Bool(true));
+            hm_map.insert("error".to_string(), J::Str(msg.to_string()));
+            let mut em = Map::new();
+            em.insert("code".to_string(), J::Str("ERROR_HM_CHECKER".to_string()));
+            em.insert("message".to_string(), J::Str(format!("hm checker failed to run: {}", msg)));
+            em.insert("hm_types".to_string(), J::Bool(true));
+            em.insert("hm".to_string(), J::Object(hm_map));
+            fs::write(out_dir.join("error.json"), json_to_string(&J::Object(em)).into_bytes())?;
+            std::process::exit(2);
         } else {
             let result_path = tmp_out.join("result.json");
             if let Ok(bs) = fs::read(&result_path) {
@@ -1678,6 +1690,12 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
     {
         let v = J::Object(root);
         fs::write(&result_path, canonical_json_bytes(&v))?;
+        if let Some(hm) = hm_result_json.clone() {
+            let mut hm_receipt = Map::new();
+            hm_receipt.insert("hm_types".to_string(), J::Bool(true));
+            hm_receipt.insert("hm".to_string(), hm);
+            fs::write(out_dir.join("hm_receipt.json"), canonical_json_bytes(&J::Object(hm_receipt)))?;
+        }
 
         {
             let mg = loader.graph.to_json();
@@ -1724,9 +1742,14 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                             .and_then(|j| j.get("result").cloned())
                             .unwrap_or(J::Null);
                         let deps = WITNESS_DEPS.with(|d| d.borrow().clone());
+                        let hm_receipt: J = fs::read(out_dir.join("hm_receipt.json"))
+                            .ok()
+                            .and_then(|b| json_from_slice(&b).ok())
+                            .unwrap_or(J::Null);
                         let mut receipt = BTreeMap::new();
                         receipt.insert("derived_from".to_string(),
                             J::Array(deps.into_iter().map(J::Str).collect()));
+                        receipt.insert("hm_receipt".to_string(), hm_receipt);
                         receipt.insert("output".to_string(), output);
                         receipt.insert("run_id".to_string(), J::Str(run_id));
                         let _ = fs::write(&receipt_path, canonical_json_bytes(&J::Object(receipt)));
