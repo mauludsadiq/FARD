@@ -670,10 +670,13 @@ Static validation before evaluation. Handles:
 **Hindley-Milner Type Inference** (`packages/fard_hm/hm.fard`)
 Algorithm W implementation in FARD. Includes:
 - Type variables and substitution
-- Occurs check
-- Unification
-- Let generalization
-- Inference for literals, variables, functions, single-arg calls
+- Occurs check and unification
+- Let generalization and let-rec binding
+- Full multi-arg support via curried tfun folding
+- Inference for literals, variables, functions, multi-arg calls
+- Module-level HM with threaded type environment
+- Error locations with line/col via token_pos_to_line_col
+- Integrated into fardrun as `--hm-types` gate
 
 **End-to-end pipeline:** source text → parse → lower → typecheck → infer → eval → result, fully in FARD.
 Rust is no longer required for execution or type checking of core functional programs.
