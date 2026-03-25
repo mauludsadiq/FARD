@@ -167,6 +167,27 @@ fn instantiate(sc, next_id) {
     { ty: sc, next: next_id }
 }
 
+fn hm_fold_params(ps, env_acc, next_acc, vars) {
+  if list.len(ps) == 0 then { env: env_acc, next: next_acc, vars: vars }
+  else
+    let tv = fresh(next_acc) in
+    let env2 = rec.set(env_acc, ps[0], scheme([], tv)) in
+    hm_fold_params(list.drop(ps, 1), env2, next_acc + 1, list.concat([vars, [tv]]))
+}
+
+fn hm_infer_call_args(fn_ty, args, env, s, next_id) {
+  if list.len(args) == 0 then { ty: fn_ty, s: s, next: next_id }
+  else
+    let rarg = infer(args[0], env, s, next_id) in
+    if is_err_val(rarg) then rarg
+    else
+      let tv = fresh(rarg.next) in
+      let s2 = unify(fn_ty, tfun([rarg.ty], tv), rarg.s) in
+      if is_err_val(s2) then s2
+      else
+        hm_infer_call_args(apply_subst(tv, s2), list.drop(args, 1), env, s2, rarg.next + 1)
+}
+
 fn infer(node, env, s, next_id) {
   match node.t {
     "lit_int" => { ty: "int", s: s, next: next_id },
@@ -181,23 +202,18 @@ fn infer(node, env, s, next_id) {
         { ty: r.ty, s: s, next: r.next },
 
     "node_fn" =>
-      let tv = fresh(next_id) in
-      let env2 = rec.set(env, node.params[0], scheme([], tv)) in
-      let r = infer(node.body, env2, s, next_id + 1) in
+      let fp = hm_fold_params(node.params, env, next_id, []) in
+      let r = infer(node.body, fp.env, s, fp.next) in
       if is_err_val(r) then r
-      else { ty: tfun([apply_subst(tv, r.s)], r.ty), s: r.s, next: r.next },
+      else
+        let full_ty = list.fold(list.reverse(fp.vars), r.ty, fn(acc, v) { tfun([apply_subst(v, r.s)], acc) }) in
+        { ty: full_ty, s: r.s, next: r.next },
 
     "call" =>
       let r1 = infer(rec.get(node, "fn"), env, s, next_id) in
       if is_err_val(r1) then r1
       else
-        let r2 = infer(node.args[0], env, r1.s, r1.next) in
-        if is_err_val(r2) then r2
-        else
-          let tv = fresh(r2.next) in
-          let s3 = unify(r1.ty, tfun([r2.ty], tv), r2.s) in
-          if is_err_val(s3) then s3
-          else { ty: apply_subst(tv, s3), s: s3, next: r2.next + 1 },
+        hm_infer_call_args(r1.ty, node.args, env, r1.s, r1.next),
 
     "let" =>
       let b = node.bindings[0] in

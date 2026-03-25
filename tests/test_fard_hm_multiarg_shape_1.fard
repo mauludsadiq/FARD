@@ -1,0 +1,17 @@
+import("../packages/fard_hm/hm") as hm
+
+let env = {}
+
+let add_like = {
+  t: "node_fn",
+  params: ["x", "y"],
+  body: { t: "var", name: "x" }
+}
+
+let r = hm.infer(add_like, env, {}, 0)
+
+test "outer is tfun" { r.ty.t == "tfun" }
+test "outer arg is tvar" { r.ty.args[0].t == "tvar" }
+test "outer ret is tfun" { r.ty.ret.t == "tfun" }
+test "inner arg is tvar" { r.ty.ret.args[0].t == "tvar" }
+test "inner ret matches first arg" { r.ty.ret.ret.id == r.ty.args[0].id }
