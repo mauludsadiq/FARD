@@ -281,11 +281,77 @@ fn parse_module_text(src) {
   fir.module("main", [def], name)
 }
 
+fn parse_fn_body(parse_one, st) {
+  parse_if_from(st)
+}
+
+fn parse_param_list(st, acc) {
+  let tok = st_peek(st) in
+  if tok == ")" then
+    { params: acc, st: st_next(st) }
+  else if tok == "," then
+    parse_param_list(st_next(st), acc)
+  else
+    parse_param_list(st_next(st), list.concat([acc, [tok]]))
+}
+
+fn parse_top_fn(st) {
+  let name_tok = st_peek(st) in
+  let st1 = st_next(st) in
+  let st2 = st_next(st1) in
+  let r_params = parse_param_list(st2, []) in
+  let st3 = st_next(r_params.st) in
+  let r_body = parse_if_from(st3) in
+  let st4 = st_next(r_body.st) in
+  {
+    node: {
+      t: "def_fn",
+      name: name_tok,
+      params: r_params.params,
+      body: r_body.node
+    },
+    st: st4
+  }
+}
+
+fn parse_top_let(st) {
+  let name_tok = st_peek(st) in
+  let st1 = st_next(st) in
+  let st2 = st_next(st1) in
+  let r_val = parse_if_from(st2) in
+  {
+    node: { t: "top_let", name: name_tok, value: r_val.node },
+    st: r_val.st
+  }
+}
+
+fn parse_top_items(st, acc) {
+  let tok = st_peek(st) in
+  if tok == "" then acc
+  else if tok == "fn" then
+    let r = parse_top_fn(st_next(st)) in
+    parse_top_items(r.st, list.concat([acc, [r.node]]))
+  else if tok == "let" then
+    let r = parse_top_let(st_next(st)) in
+    parse_top_items(r.st, list.concat([acc, [r.node]]))
+  else
+    parse_top_items(st_next(st), acc)
+}
+
+fn parse_program(s) {
+  let s0 = str.replace(s, "\n", " ") in
+  let s1 = str.replace(s0, "{", " { ") in
+  let s2 = str.replace(s1, "}", " } ") in
+  let toks = tokenize(s2) in
+  parse_top_items(st_new(toks), [])
+}
+
 {
   tokenize: tokenize,
   parse_expr: parse_expr,
   parse_cmp: parse_cmp_text,
   parse_logic: parse_logic_text,
   parse_if: parse_if,
-  parse_module_text: parse_module_text
+  parse_module_text: parse_module_text,
+  parse_program: parse_program
 }

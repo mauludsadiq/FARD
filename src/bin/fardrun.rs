@@ -1268,7 +1268,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         let hm_pkg = project_dir.join("packages/fard_hm/hm");
         let parse_pkg = project_dir.join("packages/fard_parse/parse");
         let hm_prog = format!(
-            "import({:?}) as hm\nimport({:?}) as parse\n\nlet src = {:?}\nlet ast = parse.parse_expr(src)\nlet env = {{}}\nlet r = hm.infer(ast, env, {{}}, 0)\nr\n",
+            "import({:?}) as hm\nimport({:?}) as parse\nimport(\"std/list\") as list\n\nlet src = {:?}\nlet defs = parse.parse_program(src)\nlet expr = parse.parse_expr(src)\nlet env = {{}}\nlet r = if list.len(defs) == 0 then hm.infer(expr, env, {{}}, 0) else list.fold(defs, {{ ty: \"unit\", s: {{}}, next: 0 }}, fn(acc, d) {{ if hm.is_err(acc) then acc else hm.infer(d.value, env, acc.s, acc.next) }})\nr\n",
             hm_pkg.to_string_lossy(),
             parse_pkg.to_string_lossy(),
             src_text

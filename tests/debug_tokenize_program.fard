@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let toks = parse.tokenize("fn add(x, y) { x + y }")
+test "token count" { list.len(toks) > 5 }
+test "first tok" { toks[0] == "fn" }
+test "name tok" { toks[1] == "add" }

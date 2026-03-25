@@ -298,5 +298,6 @@ fn infer_letrec(binding, body, env, s, next_id) {
   tvar: tvar,
   tfun: tfun,
   scheme: scheme,
-  unify: unify
+  unify: unify,
+  is_err: is_err_val
 }

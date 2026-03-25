@@ -1,0 +1,11 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let toks = parse.tokenize("fn add ( x , y ) { x + y }")
+test "tok0" { toks[0] == "fn" }
+test "tok1" { toks[1] == "add" }
+test "tok2" { toks[2] == "(" }
+
+let defs = parse.parse_program("fn add(x, y) { x + y }")
+test "def count" { list.len(defs) == 1 }
+test "first tag" { defs[0].t == "def_fn" }
