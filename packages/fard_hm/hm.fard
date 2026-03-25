@@ -293,11 +293,47 @@ fn infer_letrec(binding, body, env, s, next_id) {
     infer(body, env2, r1.s, r1.next)
 }
 
+fn infer_def(def, acc) {
+  if def.t == "def_fn" then
+    let fp = hm_fold_params(def.params, acc.env, acc.next, []) in
+    let r = infer(def.body, fp.env, acc.s, fp.next) in
+    if is_err_val(r) then { ok: false, env: acc.env, s: acc.s, next: acc.next, err: r }
+    else
+      let param_tys = list.map(fp.vars, fn(v) { apply_subst(v, r.s) }) in
+      let ret_ty = apply_subst(r.ty, r.s) in
+      let fn_ty = list.fold(list.reverse(param_tys), ret_ty, fn(acc2, pt) { tfun([pt], acc2) }) in
+      let sc = generalize(acc.env, fn_ty) in
+      let env2 = rec.set(acc.env, def.name, sc) in
+      { ok: true, env: env2, s: r.s, next: r.next }
+  else if def.t == "top_let" then
+    let r = infer(def.value, acc.env, acc.s, acc.next) in
+    if is_err_val(r) then { ok: false, env: acc.env, s: acc.s, next: acc.next, err: r }
+    else
+      let ty = apply_subst(r.ty, r.s) in
+      let sc = generalize(acc.env, ty) in
+      let env2 = rec.set(acc.env, def.name, sc) in
+      { ok: true, env: env2, s: r.s, next: r.next }
+  else acc
+}
+
+fn infer_program_defs(defs, acc) {
+  if list.len(defs) == 0 then acc
+  else
+    let r = infer_def(defs[0], acc) in
+    if !r.ok then r
+    else infer_program_defs(list.drop(defs, 1), r)
+}
+
+fn infer_program(defs) {
+  infer_program_defs(defs, { ok: true, env: {}, s: {}, next: 0 })
+}
+
 {
   infer: infer,
   tvar: tvar,
   tfun: tfun,
   scheme: scheme,
   unify: unify,
-  is_err: is_err_val
+  is_err: is_err_val,
+  infer_program: infer_program
 }

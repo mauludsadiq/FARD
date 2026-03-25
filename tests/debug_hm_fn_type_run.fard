@@ -1,0 +1,5 @@
+import("../packages/fard_hm/hm") as hm
+import("../packages/fard_parse/parse") as parse
+
+let defs = parse.parse_program("fn add(x, y) { x + y }")
+hm.infer_program(defs)

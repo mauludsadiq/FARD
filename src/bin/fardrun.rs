@@ -1268,7 +1268,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         let hm_pkg = project_dir.join("packages/fard_hm/hm");
         let parse_pkg = project_dir.join("packages/fard_parse/parse");
         let hm_prog = format!(
-            "import({:?}) as hm\nimport({:?}) as parse\nimport(\"std/list\") as list\n\nlet src = {:?}\nlet defs = parse.parse_program(src)\nlet expr = parse.parse_expr(src)\nlet env = {{}}\nlet r = if list.len(defs) == 0 then hm.infer(expr, env, {{}}, 0) else list.fold(defs, {{ ty: \"unit\", s: {{}}, next: 0 }}, fn(acc, d) {{ if hm.is_err(acc) then acc else hm.infer(d.value, env, acc.s, acc.next) }})\nr\n",
+            "import({:?}) as hm\nimport({:?}) as parse\nimport(\"std/list\") as list\n\nlet src = {:?}\nlet defs = parse.parse_program(src)\nlet expr = parse.parse_expr(src)\nlet r = if list.len(defs) == 0 then hm.infer(expr, {{}}, {{}}, 0) else hm.infer_program(defs)\nr\n",
             hm_pkg.to_string_lossy(),
             parse_pkg.to_string_lossy(),
             src_text
@@ -1295,8 +1295,13 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
             if let Ok(bs) = fs::read(&result_path) {
                 let v: serde_json::Value = serde_json::from_slice(&bs).unwrap_or(serde_json::Value::Null);
                 let result = v.get("result").unwrap_or(&v);
-                if result.get("t").and_then(|t| t.as_str()) == Some("type_error") {
-                    let e = result.get("e").and_then(|e| e.as_str()).unwrap_or("unknown");
+                let is_type_err = result.get("t").and_then(|t| t.as_str()) == Some("type_error")
+                    || result.get("ok").and_then(|o| o.as_bool()) == Some(false);
+                let e_msg = result.get("e").and_then(|e| e.as_str())
+                    .or_else(|| result.get("err").and_then(|err| err.get("e")).and_then(|e| e.as_str()))
+                    .unwrap_or("unknown");
+                if is_type_err {
+                    let e = e_msg;
                     eprintln!("[hm-types] TYPE ERROR: {}", e);
                     fs::create_dir_all(&out_dir).ok();
                     let mut em = Map::new();
