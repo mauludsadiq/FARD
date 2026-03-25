@@ -677,6 +677,10 @@ Algorithm W implementation in FARD. Includes:
 - Module-level HM with threaded type environment
 - Error locations with line/col via token_pos_to_line_col
 - Integrated into fardrun as `--hm-types` gate
+- Forward reference resolution via preregister_defs pre-pass
+- Mutual recursion support
+- Graceful error node handling (fresh tvar, no crash)
+- All 4 core self-hosting packages pass --hm-types (M4)
 
 **End-to-end pipeline:** source text → parse → lower → typecheck → infer → eval → result, fully in FARD.
 Rust is no longer required for execution or type checking of core functional programs.
