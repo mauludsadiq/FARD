@@ -1,0 +1,4 @@
+import("std/ast") as ast
+
+let nodes = ast.parse("match x.t { \"a\" => 1, \"b\" => 2 }")
+nodes[0]

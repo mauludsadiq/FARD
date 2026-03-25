@@ -1,0 +1,9 @@
+import("../packages/fard_hm/hm") as hm
+import("../packages/fard_lower/lower") as lower
+import("std/ast") as ast
+import("std/list") as list
+
+let nodes = ast.parse("match x.t { \"a\" => 1, \"b\" => 2 }")
+let fir = lower.lower(nodes[0])
+test "fir is match" { fir.t == "match_expr" }
+fir

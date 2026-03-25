@@ -1,0 +1,9 @@
+import("../packages/fard_hm/hm") as hm
+
+let tv = hm.fresh(0)
+let s1 = hm.unify(tv, "int", {})
+test "s1 ok" { s1.t != "type_error" }
+let tv2 = hm.apply_subst(tv, s1)
+test "tv2 is int" { tv2 == "int" }
+let s2 = hm.unify(tv2, "bool", s1)
+test "s2 fails" { s2.t == "type_error" }

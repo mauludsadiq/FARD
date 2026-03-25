@@ -1,0 +1,4 @@
+import("../packages/fard_hm/hm") as hm
+
+let r = hm.unify("int", "bool", {})
+test "unify int bool fails" { r.t == "type_error" }

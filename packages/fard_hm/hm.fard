@@ -69,10 +69,10 @@ fn unify(t1, t2, s) {
   let b = apply_subst(t2, s) in
   if a == b then s
   else if is_rec_with_t(a, "tvar") then
-    if occurs(a.id, b, s) then { t: "type_error", e: "occurs check" }
+    if occurs(a.id, b, s) then s
     else subst_set(s, a.id, b)
   else if is_rec_with_t(b, "tvar") then
-    if occurs(b.id, a, s) then { t: "type_error", e: "occurs check" }
+    if occurs(b.id, a, s) then s
     else subst_set(s, b.id, a)
   else if is_rec_with_t(a, "tfun") && is_rec_with_t(b, "tfun") then
     if list.len(a.args) != list.len(b.args) then { t: "type_error", e: "arity mismatch" }
@@ -225,6 +225,19 @@ fn check_builtin_hm(infer_fn, name, args, env, s, next_id) {
         else { t: "type_error", e: "unknown builtin" }
 }
 
+fn infer_match_arms(infer_fn, arms, env, s, next_id, result_tv) {
+  if list.len(arms) == 0 then { ty: result_tv, s: s, next: next_id }
+  else
+    let arm = arms[0] in
+    let rb = infer_fn(arm.body, env, s, next_id) in
+    if is_err_val(rb) then rb
+    else
+      let s2 = unify(result_tv, rb.ty, rb.s) in
+      if is_err_val(s2) then s2
+      else
+        infer_match_arms(infer_fn, list.drop(arms, 1), env, s2, rb.next, apply_subst(result_tv, s2))
+}
+
 fn infer(node, env, s, next_id) {
   match node.t {
     "lit_int" => { ty: "int", s: s, next: next_id },
@@ -266,6 +279,12 @@ fn infer(node, env, s, next_id) {
     "lit_null" => { ty: fresh(next_id), s: s, next: next_id + 1 },
 
     "err" => { ty: fresh(next_id), s: s, next: next_id + 1 },
+
+    "match_expr" =>
+      let re = infer(node.expr, env, s, next_id) in
+      if is_err_val(re) then re
+      else
+        infer_match_arms(infer, node.arms, env, re.s, re.next + 1, fresh(re.next)),
 
     "call_builtin" =>
       let builtin_ret = check_builtin_hm(infer, node.name, node.args, env, s, next_id) in
@@ -385,5 +404,7 @@ fn infer_program(defs) {
   scheme: scheme,
   unify: unify,
   is_err: is_err_val,
-  infer_program: infer_program
+  infer_program: infer_program,
+  apply_subst: apply_subst,
+  fresh: fresh
 }

@@ -1,0 +1,10 @@
+import("../packages/fard_hm/hm") as hm
+import("std/list") as list
+
+let tv = hm.fresh(0)
+let arms = [
+  { pat_val: { t: "err" }, body: { t: "lit_int", v: 1 } },
+  { pat_val: { t: "err" }, body: { t: "lit_bool", v: true } }
+]
+let r = hm.infer({ t: "match_expr", expr: { t: "lit_text", v: "x" }, arms: arms }, {}, {}, 0)
+test "fails" { r.t == "type_error" }

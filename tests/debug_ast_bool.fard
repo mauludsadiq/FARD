@@ -1,0 +1,2 @@
+import("std/ast") as ast
+ast.parse("true")[0]

@@ -1,0 +1,10 @@
+import("../packages/fard_hm/hm") as hm
+
+let tv = hm.fresh(0)
+let rb1_ty = "int"
+let s1 = hm.unify(tv, rb1_ty, {})
+let resolved_tv = hm.apply_subst(tv, s1)
+test "resolved is int" { resolved_tv == "int" }
+let rb2_ty = "bool"
+let s2 = hm.unify(resolved_tv, rb2_ty, s1)
+test "s2 is error" { s2.t == "type_error" }

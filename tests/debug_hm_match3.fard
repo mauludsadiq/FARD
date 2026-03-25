@@ -1,0 +1,11 @@
+import("../packages/fard_hm/hm") as hm
+import("../packages/fard_lower/lower") as lower
+import("std/ast") as ast
+import("std/list") as list
+import("std/record") as rec
+
+let nodes = ast.parse("match x.t { \"a\" => 1, \"b\" => 2 }")
+let fir = lower.lower(nodes[0])
+let env = rec.set({}, "x", { t: "scheme", vars: [], ty: { t: "tvar", id: 99 } })
+let r = hm.infer(fir, env, {}, 100)
+test "ok" { r.ty == "int" }

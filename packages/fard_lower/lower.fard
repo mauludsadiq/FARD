@@ -10,6 +10,12 @@ fn lower(node) {
   match node.t {
     "int" => fir.lit_int(node.v),
 
+    "bool" => { t: "lit_bool", v: node.v },
+
+    "str" => fir.lit_text(node.v),
+
+    "null" => { t: "lit_null" },
+
     "text" => fir.lit_text(node.v),
 
     "var" => fir.var(node.name),
@@ -59,6 +65,12 @@ fn lower(node) {
 
         _ => { t: "err", e: "unsupported_bin_op" }
       },
+
+    "match" =>
+      let lowered_arms = list.map(node.arms, fn(arm) {
+        { pat_val: lower(arm.pat), body: lower(arm.body) }
+      }) in
+      { t: "match_expr", expr: lower(node.expr), arms: lowered_arms },
 
     "import" =>
       { t: "top_import", alias: node.alias, path: node.path },

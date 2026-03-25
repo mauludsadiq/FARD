@@ -1,0 +1,7 @@
+import("std/ast") as ast
+import("../packages/fard_lower/lower") as lower
+import("std/record") as rec
+
+let nodes2 = ast.parse("match x.t { \"a\" => 1, \"b\" => true }")
+let fir2 = lower.lower(nodes2[0])
+fir2
