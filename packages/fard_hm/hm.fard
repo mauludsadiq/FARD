@@ -234,8 +234,8 @@ fn infer(node, env, s, next_id) {
     "var" =>
       let sc = rec.get(env, node.name) in
       if sc == null then
-        if rec.has(node, "loc") then { t: "type_error", e: "unbound var", loc: node.loc }
-        else { t: "type_error", e: "unbound var" }
+        if rec.has(node, "loc") then { t: "type_error", e: "unbound var", name: node.name, loc: node.loc }
+        else { t: "type_error", e: "unbound var", name: node.name }
       else
         let r = instantiate(sc, next_id) in
         { ty: r.ty, s: s, next: r.next },
@@ -264,6 +264,8 @@ fn infer(node, env, s, next_id) {
       { ty: tv, s: s, next: next_id + 1 },
 
     "lit_null" => { ty: fresh(next_id), s: s, next: next_id + 1 },
+
+    "err" => { ty: fresh(next_id), s: s, next: next_id + 1 },
 
     "call_builtin" =>
       let builtin_ret = check_builtin_hm(infer, node.name, node.args, env, s, next_id) in
@@ -303,7 +305,7 @@ fn infer(node, env, s, next_id) {
       let b = node.bindings[0] in
       infer_letrec(b, node.body, env, s, next_id),
 
-    _ => { t: "type_error", e: "unsupported" }
+    _ => { t: "type_error", e: "unsupported", node_t: node.t }
   }
 }
 
@@ -326,7 +328,10 @@ fn infer_def(def, acc) {
     let env2 = rec.set(acc.env, def.alias, sc) in
     { ok: true, env: env2, s: acc.s, next: acc.next + 1 }
   else if def.t == "def_fn" then
-    let fp = hm_fold_params(def.params, acc.env, acc.next, []) in
+    let self_tv = tvar(acc.next) in
+    let self_sc = scheme([], self_tv) in
+    let env_with_self = rec.set(acc.env, def.name, self_sc) in
+    let fp = hm_fold_params(def.params, env_with_self, acc.next + 1, []) in
     let r = infer(def.body, fp.env, acc.s, fp.next) in
     if is_err_val(r) then { ok: false, env: acc.env, s: acc.s, next: acc.next, err: r }
     else
@@ -355,8 +360,22 @@ fn infer_program_defs(defs, acc) {
     else infer_program_defs(list.drop(defs, 1), r)
 }
 
+fn preregister_defs(defs, acc) {
+  if list.len(defs) == 0 then acc
+  else
+    let def = defs[0] in
+    let acc2 = if def.t == "def_fn" then
+      let tv = tvar(acc.next) in
+      let sc = scheme([], tv) in
+      { ok: acc.ok, env: rec.set(acc.env, def.name, sc), next: acc.next + 1, s: acc.s }
+    else acc in
+    preregister_defs(list.drop(defs, 1), acc2)
+}
+
 fn infer_program(defs) {
-  infer_program_defs(defs, { ok: true, env: {}, s: {}, next: 0 })
+  let init = { ok: true, env: {}, s: {}, next: 0 } in
+  let pre = preregister_defs(defs, init) in
+  infer_program_defs(defs, pre)
 }
 
 {
