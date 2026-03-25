@@ -46,18 +46,13 @@ fn st_peek(st) {
 
 fn st_next(st) { { tokens: st.tokens, pos: st.pos + 1 } }
 
+fn is_digit_char(c) {
+  c == "0" || c == "1" || c == "2" || c == "3" || c == "4" ||
+  c == "5" || c == "6" || c == "7" || c == "8" || c == "9"
+}
+
 fn is_digit_token(t) {
-  if t == "0" then true
-  else if t == "1" then true
-  else if t == "2" then true
-  else if t == "3" then true
-  else if t == "4" then true
-  else if t == "5" then true
-  else if t == "6" then true
-  else if t == "7" then true
-  else if t == "8" then true
-  else if t == "9" then true
-  else false
+  str.len(t) > 0 && is_digit_char(str.slice(t, 0, 1))
 }
 
 fn parse_int_atom(t) {
@@ -110,9 +105,19 @@ fn parse_primary(parse_one, st) {
       base
 }
 
+fn parse_list_items(parse_one, st, acc) {
+  let tok = st_peek(st) in
+  if tok == "]" then { items: acc, st: st_next(st) }
+  else if tok == "," then parse_list_items(parse_one, st_next(st), acc)
+  else if tok == "" then { items: acc, st: st }
+  else
+    let r = parse_one(st) in
+    parse_list_items(parse_one, r.st, list.concat([acc, [r.node]]))
+}
+
 fn parse_unary(parse_one, st) {
   let tok = st_peek(st) in
-  if tok == "not" then
+  if tok == "not" || tok == "!" then
     let r = parse_unary(parse_one, st_next(st)) in
     { node: fir.call_builtin("bool.not", [r.node]), st: r.st }
   else
@@ -187,6 +192,10 @@ fn parse_not_from(parse_one, st) {
   if tok == "not" then
     let r = parse_not_from(parse_one, st_next(st)) in
     { node: fir.call_builtin("bool.not", [r.node]), st: r.st }
+  else if str.starts_with(tok, "!") then
+    let inner_tok = str.slice(tok, 1, str.len(tok)) in
+    let inner_node = parse_int_atom(inner_tok) in
+    { node: fir.call_builtin("bool.not", [rec.set(inner_node, "loc", 0)]), st: st_next(st) }
   else
     parse_cmp(parse_one, st)
 }
@@ -219,9 +228,83 @@ fn parse_logic(parse_one, st) {
   fold_or(parse_one, r.node, r.st)
 }
 
+fn parse_match_arms(parse_expr_fn, st, acc) {
+  let tok = st_peek(st) in
+  if tok == "}" then
+    { arms: acc, st: st_next(st) }
+  else if tok == "" then
+    { arms: acc, st: st }
+  else if tok == "," then
+    parse_match_arms(parse_expr_fn, st_next(st), acc)
+  else
+    let rpat = parse_primary(parse_expr_fn, st) in
+    let st1 = st_next(rpat.st) in
+    let st2 = st_next(st1) in
+    let rbody = parse_expr_fn(st2) in
+    let arm = { pat_val: rpat.node, body: rbody.node } in
+    parse_match_arms(parse_expr_fn, rbody.st, list.concat([acc, [arm]]))
+}
+fn parse_param_list(st, acc) {
+  let tok = st_peek(st) in
+  if tok == ")" then
+    { params: acc, st: st_next(st) }
+  else if tok == "," then
+    parse_param_list(st_next(st), acc)
+  else
+    parse_param_list(st_next(st), list.concat([acc, [tok]]))
+}
+fn strip_colon(s) {
+  if str.ends_with(s, ":") then str.slice(s, 0, str.len(s) - 1) else s
+}
+
+fn parse_record_fields_expr(parse_expr_fn, st, acc) {
+  let tok = st_peek(st) in
+  if tok == "}" then { fields: acc, st: st_next(st) }
+  else if tok == "," then parse_record_fields_expr(parse_expr_fn, st_next(st), acc)
+  else if tok == "" then { fields: acc, st: st }
+  else
+    let key = strip_colon(tok) in
+    let st1 = st_next(st) in
+    let has_sep_colon = st_peek(st1) == ":" in
+    let st2 = if has_sep_colon then st_next(st1) else st1 in
+    let r = parse_expr_fn(st2) in
+    parse_record_fields_expr(parse_expr_fn, r.st, list.concat([acc, [{ key: key, value: r.node }]]))
+}
+
+fn parse_record_expr(parse_expr_fn, st, acc) {
+  let r = parse_record_fields_expr(parse_expr_fn, st, []) in
+  { node: { t: "lit_record", fields: r.fields }, st: r.st }
+}
 fn parse_if_from(st) {
   let tok = st_peek(st) in
-  if tok == "if" then
+  if tok == "fn" then
+    let st1 = st_next(st) in
+    let r_params = parse_param_list(st_next(st1), []) in
+    let st_brace = st_next(r_params.st) in
+    let r_body = parse_if_from(st_brace) in
+    let st_end = st_next(r_body.st) in
+    { node: { t: "node_fn", params: r_params.params, body: r_body.node }, st: st_end }
+  else if tok == "[" then
+    let r_items = parse_list_items(parse_if_from, st_next(st), []) in
+    { node: { t: "lit_list", items: r_items.items }, st: r_items.st }
+  else if tok == "let" then
+    let name = st_peek(st_next(st)) in
+    let st1 = st_next(st_next(st_next(st))) in
+    let rval = parse_if_from(st1) in
+    let tok_in = st_peek(rval.st) in
+    if tok_in == "in" then
+      let rbody = parse_if_from(st_next(rval.st)) in
+      let binding = { name: name, value: rval.node } in
+      let let_node = { t: "let", bindings: [binding], body: rbody.node } in
+      { node: let_node, st: rbody.st }
+    else
+      { node: { t: "err", e: "expected_in" }, st: rval.st }
+  else if tok == "match" then
+    let rexpr = parse_logic(parse_if_from, st_next(st)) in
+    let st_brace = st_next(rexpr.st) in
+    let rarms = parse_match_arms(parse_if_from, st_brace, []) in
+    { node: { t: "match_expr", expr: rexpr.node, arms: rarms.arms }, st: rarms.st }
+  else if tok == "if" then
     let rcond = parse_logic(parse_if_from, st_next(st)) in
     let tok_then = st_peek(rcond.st) in
     if tok_then == "then" then
@@ -234,6 +317,8 @@ fn parse_if_from(st) {
         { node: { t: "err", e: "expected_else" }, st: rthen.st }
     else
       { node: { t: "err", e: "expected_then" }, st: rcond.st }
+  else if tok == "{" then
+    parse_record_expr(parse_if_from, st_next(st), [])
   else
     parse_logic(parse_if_from, st)
 }
@@ -289,15 +374,6 @@ fn parse_fn_body(parse_one, st) {
   parse_if_from(st)
 }
 
-fn parse_param_list(st, acc) {
-  let tok = st_peek(st) in
-  if tok == ")" then
-    { params: acc, st: st_next(st) }
-  else if tok == "," then
-    parse_param_list(st_next(st), acc)
-  else
-    parse_param_list(st_next(st), list.concat([acc, [tok]]))
-}
 
 fn parse_top_fn(st) {
   let name_tok = st_peek(st) in

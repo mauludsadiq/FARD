@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let src = "fn f(node, env) {\n  match node.t {\n    \"let\" =>\n      let b = node.bindings[0] in\n      let v = 1 in\n      let env2 = 2 in\n      v,\n    \"other\" => 3\n  }\n}"
+let defs = parse.parse_program(src)
+test "one def" { list.len(defs) == 1 }
+test "two arms" { list.len(defs[0].body.arms) == 2 }

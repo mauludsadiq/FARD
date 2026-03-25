@@ -1,0 +1,17 @@
+import("std/ast") as ast
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let src = "import(\"std/list\") as list\nfn add(x, y) { x + y }\nlet z = add(1, 2)"
+
+let ast_result = ast.parse(src)
+let parse_result = parse.parse_program(src)
+
+test "ast count" { list.len(ast_result) == 3 }
+test "parse count" { list.len(parse_result) == 3 }
+test "ast import t" { ast_result[0].t == "import" }
+test "parse import t" { parse_result[0].t == "import" }
+test "ast fn t" { ast_result[1].t == "fn" }
+test "parse fn t" { parse_result[1].t == "fn" }
+test "ast let t" { ast_result[2].t == "let" }
+test "parse let t" { parse_result[2].t == "let" }

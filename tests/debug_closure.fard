@@ -1,0 +1,10 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+
+let defs = parse.parse_program("fn double(x) { x + x }")
+let closure = ev.eval(defs[0], ev.env_empty())
+test "closure t" { closure.t == "closure" }
+test "closure name" { closure.name == "double" }
+test "params type" { closure.params[0] == "x" }
+let result = ev.apply_fn(closure, [21])
+test "result" { result == 42 }

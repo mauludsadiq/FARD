@@ -1,0 +1,11 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/io") as io
+import("std/str") as str
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let lines = str.split(src, "\n")
+
+let s75 = str.join(list.take(lines, 75), "\n")
+let defs75 = parse.parse_program(s75)
+list.map(defs75, fn(d) { d.t })

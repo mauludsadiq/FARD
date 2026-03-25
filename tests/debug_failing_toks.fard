@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let src = "fn f(x) {\n  match x {\n    \"a\" => 1,\n    _ => { t: \"err\", e: \"bad\" }\n  }\n}\nfn g(x) { x + 1 }"
+parse.tokenize(src)

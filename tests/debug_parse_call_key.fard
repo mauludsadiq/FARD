@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+import("std/record") as rec
+
+let defs = parse.parse_program("let result = double(21)")
+let call_node = defs[0].value
+test "call t" { call_node.t == "call" }
+test "has fn" { rec.has(call_node, "fn") == true }

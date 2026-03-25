@@ -1,0 +1,3 @@
+import("../packages/fard_parse/parse") as parse
+
+parse.tokenize("fn eval_bool_and(arg1, arg2, env) { let a = 1 in if a then 2 else false }")

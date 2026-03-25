@@ -1,0 +1,12 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/io") as io
+import("std/str") as str
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let lines = str.split(src, "\n")
+let subset = list.take(list.drop(lines, 60), 21)
+let subset_src = str.join(subset, "\n")
+let defs = parse.parse_program(subset_src)
+let top_lets = list.filter(defs, fn(d) { d.t == "top_let" })
+list.map(top_lets, fn(d) { d.name })

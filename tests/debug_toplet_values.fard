@@ -1,0 +1,8 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let top_lets = list.filter(defs, fn(d) { d.t == "top_let" })
+list.map(top_lets, fn(d) { { name: d.name, val_t: d.value.t } })

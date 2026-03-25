@@ -1,0 +1,3 @@
+import("../packages/fard_parse/parse") as parse
+
+parse.parse_program("fn double(x) { x + x }\ndouble(21)")

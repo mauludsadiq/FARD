@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let defs = parse.parse_program("fn f(arms) {\n  let arm = arms[0] in\n  arm\n}")
+test "one def" { list.len(defs) == 1 }
+test "def_fn" { defs[0].t == "def_fn" }
+test "body is let" { defs[0].body.t == "let" }

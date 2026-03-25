@@ -1,0 +1,4 @@
+import("std/ast") as ast
+
+let src = "import(\"std/list\") as list\n\nfn add(x, y) { x + y }\n\nlet z = add(1, 2)\n\nfn fact(n) {\n  if n == 0 then 1 else n * fact(n - 1)\n}"
+ast.parse(src)

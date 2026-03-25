@@ -1,0 +1,6 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let defs = parse.parse_program("let r = list.fold(xs, 0, fn(acc, x) { let v = acc + x in v })")
+test "one def" { list.len(defs) == 1 }
+defs[0].value

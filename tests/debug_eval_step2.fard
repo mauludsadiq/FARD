@@ -1,0 +1,19 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+
+let env0 = ev.env_empty()
+let env1 = ev.env_set(env0, "double_fn_0", ev.eval(defs[0], env0))
+let env2 = ev.env_set(env1, defs[0].name, ev.eval(defs[0], env1))
+let env3 = ev.env_set(env2, defs[1].name, ev.eval(defs[1], env2))
+let env4 = ev.env_set(env3, defs[2].name, ev.eval(defs[2], env3))
+let env5 = ev.env_set(env4, defs[3].name, ev.eval(defs[3], env4))
+let env6 = ev.env_set(env5, defs[4].name, ev.eval(defs[4], env5))
+let env7 = ev.env_set(env6, defs[5].name, ev.eval(defs[5], env6))
+let env8 = ev.env_set(env7, defs[6].name, ev.eval(defs[6], env7))
+let env9 = ev.env_set(env8, defs[7].name, ev.eval(defs[7], env8))
+defs[9].name

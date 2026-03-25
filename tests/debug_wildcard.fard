@@ -1,0 +1,6 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let src = "fn f(x) {\n  match x {\n    \"a\" => 1,\n    _ => 2\n  }\n}\nfn g(x) { x }"
+let defs = parse.parse_program(src)
+test "two defs" { list.len(defs) == 2 }

@@ -1,0 +1,11 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+
+let src = "fn double(x) { x + x }\nlet result = double(21)"
+let defs = parse.parse_program(src)
+
+let env0 = ev.env_empty()
+let env1 = ev.env_set(env0, "double", ev.eval(defs[0], env0))
+let v = ev.eval(defs[1], env1)
+v

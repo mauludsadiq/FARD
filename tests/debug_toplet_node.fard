@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let defs = parse.parse_program("fn double(x) { x + x }\nlet result = double(21)")
+defs[1]

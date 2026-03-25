@@ -1,0 +1,6 @@
+import("std/ast") as ast
+import("std/list") as list
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+list.len(ast.parse(src))

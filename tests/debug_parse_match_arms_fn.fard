@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let src = "fn eval_match_arms(v, arms, env) {\n  if list.len(arms) == 0 then 0\n  else\n    let arm = arms[0] in\n    if true then arm\n    else eval_match_arms(v, arms, env)\n}"
+let defs = parse.parse_program(src)
+test "one def" { list.len(defs) == 1 }
+test "def_fn" { defs[0].t == "def_fn" }

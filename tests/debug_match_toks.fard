@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let toks = parse.tokenize("match x { \"a\" => let v = 1 in v }")
+toks

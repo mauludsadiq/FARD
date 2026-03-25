@@ -1,0 +1,3 @@
+import("../packages/fard_parse/parse") as parse
+
+parse.tokenize("args[0] + args[1]")

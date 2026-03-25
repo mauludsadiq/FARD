@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let src = "import(\"std/list\") as list\nfn add(x, y) { x + y }\nlet z = add(1, 2)"
+parse.parse_program(src)

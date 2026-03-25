@@ -1,0 +1,8 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let src = "fn eval(node, env) {\n  match node.t {\n    \"lit_int\" => node.v,\n    \"call\" =>\n      let fn_val = 1 in\n      let args2 = 2 in\n      fn_val\n  }\n}"
+let defs = parse.parse_program(src)
+test "one def" { list.len(defs) == 1 }
+test "def_fn" { defs[0].t == "def_fn" }
+test "body is match" { defs[0].body.t == "match_expr" }

@@ -1,0 +1,5 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let toks = parse.tokenize("fn f(x) { match x { \"a\" => { t: \"err\" } } }")
+list.filter(toks, fn(t) { t == "}" })

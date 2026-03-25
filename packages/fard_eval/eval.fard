@@ -82,6 +82,22 @@ fn eval_call_builtin(node, env) {
   }
 }
 
+fn match_pat(pat_val, v) {
+  if pat_val.t == "err" then true
+  else if pat_val.t == "lit_int" then v == pat_val.v
+  else if pat_val.t == "lit_bool" then v == pat_val.v
+  else if pat_val.t == "lit_text" then v == pat_val.v
+  else true
+}
+
+fn eval_match_arms(v, arms, env) {
+  if list.len(arms) == 0 then { t: "err", e: "no_matching_arm" }
+  else
+    let arm = arms[0] in
+    if match_pat(arm.pat_val, v) then eval(arm.body, env)
+    else eval_match_arms(v, list.drop(arms, 1), env)
+}
+
 fn eval(node, env) {
   match node.t {
     "lit_int" => node.v,
@@ -106,6 +122,23 @@ fn eval(node, env) {
       eval(node.body, env2),
 
     "def_fn" => make_named_closure(node.name, node.params, node.body, env),
+
+    "top_let" => eval(node.value, env),
+
+    "top_import" => null,
+
+    "get_field" => rec.get(eval(node.obj, env), node.field),
+
+    "lit_record" =>
+      list.fold(node.fields, {}, fn(acc, f) { rec.set(acc, f.key, eval(f.value, env)) }),
+
+    "lit_list" => list.map(node.items, fn(x) { eval(x, env) }),
+
+    "lit_null" => null,
+
+    "match_expr" =>
+      let v = eval(node.expr, env) in
+      eval_match_arms(v, node.arms, env),
 
     "if_node" =>
       let cond = eval(rec.get(node, "cond"), env) in
