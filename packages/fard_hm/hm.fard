@@ -233,7 +233,9 @@ fn infer(node, env, s, next_id) {
 
     "var" =>
       let sc = rec.get(env, node.name) in
-      if sc == null then { t: "type_error", e: "unbound var" }
+      if sc == null then
+        if rec.has(node, "loc") then { t: "type_error", e: "unbound var", loc: node.loc }
+        else { t: "type_error", e: "unbound var" }
       else
         let r = instantiate(sc, next_id) in
         { ty: r.ty, s: s, next: r.next },
@@ -248,13 +250,20 @@ fn infer(node, env, s, next_id) {
 
     "call_builtin" =>
       let builtin_ret = check_builtin_hm(infer, node.name, node.args, env, s, next_id) in
-      builtin_ret,
+      if is_err_val(builtin_ret) then
+        if rec.has(node, "loc") then rec.set(builtin_ret, "loc", node.loc)
+        else builtin_ret
+      else builtin_ret,
 
     "call" =>
       let r1 = infer(rec.get(node, "fn"), env, s, next_id) in
       if is_err_val(r1) then r1
       else
-        hm_infer_call_args(r1.ty, node.args, env, r1.s, r1.next),
+        let call_result = hm_infer_call_args(r1.ty, node.args, env, r1.s, r1.next) in
+        if is_err_val(call_result) then
+          if rec.has(node, "loc") then rec.set(call_result, "loc", node.loc)
+          else call_result
+        else call_result,
 
     "if_node" =>
       let rc = infer(rec.get(node, "cond"), env, s, next_id) in

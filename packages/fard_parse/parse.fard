@@ -89,6 +89,7 @@ fn parse_args(parse_one, st, acc) {
 
 fn parse_primary(parse_one, st) {
   let tok = st_peek(st) in
+  let loc = st.pos in
   if tok == "(" then
     let r1 = parse_one(st_next(st)) in
     let tok2 = st_peek(r1.st) in
@@ -97,11 +98,14 @@ fn parse_primary(parse_one, st) {
     else
       { node: { t: "err", e: "expected_rparen" }, st: r1.st }
   else
-    let base = { node: parse_int_atom(tok), st: st_next(st) } in
+    let atom = parse_int_atom(tok) in
+    let atom_loc = rec.set(atom, "loc", loc) in
+    let base = { node: atom_loc, st: st_next(st) } in
     let tok2 = st_peek(base.st) in
     if tok2 == "(" then
       let r2 = parse_args(parse_one, st_next(base.st), []) in
-      { node: make_call_node(base.node, r2.args), st: r2.st }
+      let call_node = rec.set(make_call_node(base.node, r2.args), "loc", loc) in
+      { node: call_node, st: r2.st }
     else
       base
 }
@@ -119,10 +123,10 @@ fn fold_mul_div(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "*" then
     let r = parse_unary(parse_one, st_next(st)) in
-    fold_mul_div(parse_one, fir.call_builtin("int.mul", [lhs, r.node]), r.st)
+    fold_mul_div(parse_one, rec.set(fir.call_builtin("int.mul", [lhs, r.node]), "loc", lhs.loc), r.st)
   else if tok == "/" then
     let r = parse_unary(parse_one, st_next(st)) in
-    fold_mul_div(parse_one, fir.call_builtin("int.div", [lhs, r.node]), r.st)
+    fold_mul_div(parse_one, rec.set(fir.call_builtin("int.div", [lhs, r.node]), "loc", lhs.loc), r.st)
   else
     { node: lhs, st: st }
 }
@@ -136,10 +140,10 @@ fn fold_add_sub(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "+" then
     let r = parse_mul_div(parse_one, st_next(st)) in
-    fold_add_sub(parse_one, fir.call_builtin("int.add", [lhs, r.node]), r.st)
+    fold_add_sub(parse_one, rec.set(fir.call_builtin("int.add", [lhs, r.node]), "loc", lhs.loc), r.st)
   else if tok == "-" then
     let r = parse_mul_div(parse_one, st_next(st)) in
-    fold_add_sub(parse_one, fir.call_builtin("int.sub", [lhs, r.node]), r.st)
+    fold_add_sub(parse_one, rec.set(fir.call_builtin("int.sub", [lhs, r.node]), "loc", lhs.loc), r.st)
   else
     { node: lhs, st: st }
 }
@@ -153,22 +157,22 @@ fn parse_cmp_tail(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "==" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: fir.call_builtin("int.eq", [lhs, r.node]), st: r.st }
+    { node: rec.set(fir.call_builtin("int.eq", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "!=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: fir.call_builtin("int.ne", [lhs, r.node]), st: r.st }
+    { node: rec.set(fir.call_builtin("int.ne", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "<=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: fir.call_builtin("int.le", [lhs, r.node]), st: r.st }
+    { node: rec.set(fir.call_builtin("int.le", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == ">=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: fir.call_builtin("int.ge", [lhs, r.node]), st: r.st }
+    { node: rec.set(fir.call_builtin("int.ge", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "<" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: fir.call_builtin("int.lt", [lhs, r.node]), st: r.st }
+    { node: rec.set(fir.call_builtin("int.lt", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == ">" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: fir.call_builtin("int.gt", [lhs, r.node]), st: r.st }
+    { node: rec.set(fir.call_builtin("int.gt", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else
     { node: lhs, st: st }
 }
@@ -191,7 +195,7 @@ fn fold_and(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "and" then
     let r = parse_not_from(parse_one, st_next(st)) in
-    fold_and(parse_one, fir.call_builtin("bool.and", [lhs, r.node]), r.st)
+    fold_and(parse_one, rec.set(fir.call_builtin("bool.and", [lhs, r.node]), "loc", lhs.loc), r.st)
   else
     { node: lhs, st: st }
 }
@@ -205,7 +209,7 @@ fn fold_or(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "or" then
     let r = parse_and(parse_one, st_next(st)) in
-    fold_or(parse_one, fir.call_builtin("bool.or", [lhs, r.node]), r.st)
+    fold_or(parse_one, rec.set(fir.call_builtin("bool.or", [lhs, r.node]), "loc", lhs.loc), r.st)
   else
     { node: lhs, st: st }
 }
@@ -225,7 +229,7 @@ fn parse_if_from(st) {
       let tok_else = st_peek(rthen.st) in
       if tok_else == "else" then
         let relse = parse_if_from(st_next(rthen.st)) in
-        { node: { t: "if_node", cond: rcond.node, t_branch: rthen.node, f_branch: relse.node }, st: relse.st }
+        { node: { t: "if_node", cond: rcond.node, t_branch: rthen.node, f_branch: relse.node, loc: 0 }, st: relse.st }
       else
         { node: { t: "err", e: "expected_else" }, st: rthen.st }
     else
@@ -346,6 +350,24 @@ fn parse_program(s) {
   parse_top_items(st_new(toks), [])
 }
 
+fn count_newlines_before(src, pos, i, line, col) {
+  if i >= pos then { line: line, col: col }
+  else
+    let ch = str.slice(src, i, i + 1) in
+    if ch == "\n" then
+      count_newlines_before(src, pos, i + 1, line + 1, 0)
+    else
+      count_newlines_before(src, pos, i + 1, line, col + 1)
+}
+
+fn token_pos_to_line_col(src, tok_idx) {
+  let toks = tokenize(src) in
+  let before = list.take(toks, tok_idx) in
+  let prefix = str.join(before, " ") in
+  let pos = str.len(prefix) in
+  count_newlines_before(src, pos, 0, 1, 0)
+}
+
 {
   tokenize: tokenize,
   parse_expr: parse_expr,
@@ -353,5 +375,6 @@ fn parse_program(s) {
   parse_logic: parse_logic_text,
   parse_if: parse_if,
   parse_module_text: parse_module_text,
-  parse_program: parse_program
+  parse_program: parse_program,
+  token_pos_to_line_col: token_pos_to_line_col
 }

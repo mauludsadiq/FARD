@@ -1,0 +1,5 @@
+import("std/str") as str
+
+let s = "fn add(x, y) { x + y }"
+test "len" { str.len(s) > 0 }
+test "index_of" { str.index_of(s, "add") == 3 }

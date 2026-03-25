@@ -1,0 +1,10 @@
+import("../packages/fard_parse/parse") as parse
+import("std/str") as str
+import("std/cast") as cast
+
+let e = parse.parse_expr("1 + 2")
+let e2 = parse.parse_expr("x + y")
+test "add loc" { e.loc == 0 }
+test "lhs loc" { e.args[0].loc == 0 }
+test "rhs loc" { e.args[1].loc == 2 }
+test "var loc" { e2.args[0].loc == 0 }

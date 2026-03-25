@@ -1,0 +1,5 @@
+import("../packages/fard_parse/parse") as parse
+
+let e = parse.parse_expr("1 + 2")
+test "has loc" { e.loc == e.loc }
+test "loc value" { e.loc == 1 }

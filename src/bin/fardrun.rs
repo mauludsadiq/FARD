@@ -1268,7 +1268,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         let hm_pkg = project_dir.join("packages/fard_hm/hm");
         let parse_pkg = project_dir.join("packages/fard_parse/parse");
         let hm_prog = format!(
-            "import({:?}) as hm\nimport({:?}) as parse\nimport(\"std/list\") as list\n\nlet src = {:?}\nlet defs = parse.parse_program(src)\nlet expr = parse.parse_expr(src)\nlet r = if list.len(defs) == 0 then hm.infer(expr, {{}}, {{}}, 0) else hm.infer_program(defs)\nr\n",
+            "import({:?}) as hm\nimport({:?}) as parse\nimport(\"std/list\") as list\nimport(\"std/record\") as rec\n\nlet src = {:?}\nlet defs = parse.parse_program(src)\nlet raw = if list.len(defs) == 0 then hm.infer(parse.parse_expr(src), {{}}, {{}}, 0) else hm.infer_program(defs)\nlet r = if rec.has(raw, \"ok\") then raw else {{ ok: !hm.is_err(raw), err: raw }}\nlet err = if r.ok then null else r.err\nlet loc = if err == null then null else if rec.has(err, \"loc\") then parse.token_pos_to_line_col(src, err.loc) else null\n{{ r: r, loc: loc }}\n",
             hm_pkg.to_string_lossy(),
             parse_pkg.to_string_lossy(),
             src_text
@@ -1294,15 +1294,24 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
             let result_path = tmp_out.join("result.json");
             if let Ok(bs) = fs::read(&result_path) {
                 let v: serde_json::Value = serde_json::from_slice(&bs).unwrap_or(serde_json::Value::Null);
-                let result = v.get("result").unwrap_or(&v);
+                let top = v.get("result").unwrap_or(&v);
+                let result = top.get("r").unwrap_or(top);
+                let loc_obj = top.get("loc");
                 let is_type_err = result.get("t").and_then(|t| t.as_str()) == Some("type_error")
                     || result.get("ok").and_then(|o| o.as_bool()) == Some(false);
                 let e_msg = result.get("e").and_then(|e| e.as_str())
                     .or_else(|| result.get("err").and_then(|err| err.get("e")).and_then(|e| e.as_str()))
                     .unwrap_or("unknown");
+                let loc_msg = loc_obj
+                    .and_then(|l| {
+                        let line = l.get("line").and_then(|x| x.as_i64())?;
+                        let col = l.get("col").and_then(|x| x.as_i64())?;
+                        Some(format!(" (line {}, col {})", line, col))
+                    })
+                    .unwrap_or_default();
                 if is_type_err {
                     let e = e_msg;
-                    eprintln!("[hm-types] TYPE ERROR: {}", e);
+                    eprintln!("[hm-types] TYPE ERROR: {}{}", e, loc_msg);
                     fs::create_dir_all(&out_dir).ok();
                     let mut em = Map::new();
                     em.insert("code".to_string(), J::Str("ERROR_HM_TYPE".to_string()));
