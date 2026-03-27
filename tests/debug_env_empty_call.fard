@@ -1,0 +1,17 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/io") as io
+import("std/record") as rec
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_empty()
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc))
+  else acc
+})
+let f = ev.env_get(env1, "env_empty")
+test "f is closure" { f.t == "closure" }
+test "f body t" { f.body.t == "lit_record" }
+ev.apply_fn(f, [])

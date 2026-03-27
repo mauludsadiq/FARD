@@ -16,6 +16,8 @@ fn lower(node) {
 
     "null" => { t: "lit_null" },
 
+    "index" => { t: "index", obj: lower(node.obj), idx: lower(node.idx) },
+
     "text" => fir.lit_text(node.v),
 
     "var" => fir.var(node.name),

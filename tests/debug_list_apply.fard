@@ -1,0 +1,6 @@
+import("std/list") as list
+import("std/record") as rec
+
+let set_fn = rec.get(rec, "set")
+let result = list.apply(set_fn, [{}, "x", 42])
+test "result" { result.x == 42 }

@@ -1,0 +1,6 @@
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+
+let set_fn = rec.get(rec, "set")
+type.of(set_fn)

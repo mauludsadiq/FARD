@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let defs = parse.parse_program("fn f(env, name, value) { rec.set(env, name, value) }")
+defs[0].body

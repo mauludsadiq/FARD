@@ -1,0 +1,20 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("../packages/fard_parse/parse") as parse
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+
+let d0 = defs[0]
+let v0 = ev.eval(d0, env0)
+test "d0 name" { d0.name == "env_empty" }
+test "v0 is closure" { v0.t == "closure" }
+
+let d5 = defs[5]
+test "d5 name" { d5.name == "eval_match_arms" }
+let v5 = ev.eval(d5, env0)
+test "v5 is closure" { v5.t == "closure" }

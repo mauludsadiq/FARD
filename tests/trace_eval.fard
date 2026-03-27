@@ -1,0 +1,46 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("../packages/fard_parse/parse") as parse
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+
+// Create environment with trace wrappers
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+
+// First, define all functions but with tracing
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then 
+    let fn_val = ev.eval(d, acc)
+    // Wrap eval function to trace calls
+    if d.name == "eval" then
+      let wrapped = fn(node, env) {
+        io.print("eval called with node type: " + node.t)
+        let result = fn_val(node, env)
+        io.print("eval returned: " + result)
+        result
+      }
+      ev.env_set(acc, d.name, wrapped)
+    else
+      ev.env_set(acc, d.name, fn_val)
+  else acc
+})
+
+let self_eval = ev.env_get(env1, "eval")
+let user_env = ev.env_empty()
+
+io.print("Testing lit_int...")
+let r1 = ev.apply_fn(self_eval, [{ t: "lit_int", v: 42 }, user_env])
+io.print("lit_int result: " + r1)
+
+io.print("\nTesting lit_bool...")
+let r2 = ev.apply_fn(self_eval, [{ t: "lit_bool", v: true }, user_env])
+io.print("lit_bool result: " + r2)
+
+io.print("\nTesting var...")
+let env_x = ev.env_set(user_env, "x", 99)
+let r3 = ev.apply_fn(self_eval, [{ t: "var", name: "x" }, env_x])
+io.print("var result: " + r3)

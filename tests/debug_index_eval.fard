@@ -1,0 +1,12 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+
+let src = "fn first(xs) { xs[0] }\nfn add_first_two(xs) { xs[0] + xs[1] }"
+let defs = parse.parse_program(src)
+let env0 = ev.env_empty()
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  ev.env_set(acc, d.name, ev.eval(d, acc))
+})
+test "first" { ev.apply_fn(ev.env_get(env1, "first"), [[10, 20, 30]]) == 10 }
+test "add_first_two" { ev.apply_fn(ev.env_get(env1, "add_first_two"), [[5, 7]]) == 12 }

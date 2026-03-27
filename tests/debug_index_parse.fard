@@ -1,0 +1,4 @@
+import("../packages/fard_parse/parse") as parse
+
+let defs = parse.parse_program("fn f(args) { args[0] + args[1] }")
+defs[0].body

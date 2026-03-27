@@ -1,0 +1,7 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+
+let e0 = ev.env_empty()
+test "empty" { e0 == {} }
+let e1 = ev.env_set(e0, "list", list)
+test "has list" { e1.list == list }

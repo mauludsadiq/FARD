@@ -1,0 +1,5 @@
+import("std/type") as type
+import("std/record") as rec
+
+let r = rec.set({}, "type", type)
+test "has type" { rec.has(r, "type") }

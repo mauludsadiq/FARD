@@ -1,0 +1,6 @@
+import("../packages/fard_parse/parse") as parse
+
+let defs = parse.parse_program("fn f(x) { match x { \"lit_int\" => 1, \"lit_bool\" => 2 } }")
+let arms = defs[0].body.arms
+test "arm0 pat t" { arms[0].pat_val.t == "lit_text" }
+test "arm0 pat v" { arms[0].pat_val.v == "lit_int" }

@@ -1,0 +1,31 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("../packages/fard_parse/parse") as parse
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc))
+  else acc
+})
+
+let self_eval = ev.env_get(env1, "eval")
+let self_eval_args = ev.env_get(env1, "eval_args")
+
+let lit_int_42 = { t: "lit_int", v: 42 }
+let eval_env = ev.env_set(env1, "node", lit_int_42)
+
+let body_node = self_eval.body
+test "body is match" { body_node.t == "match_expr" }
+
+let arm0 = body_node.arms[0]
+test "arm0 pat" { arm0.pat_val.v == "lit_int" }
+test "arm0 body t" { arm0.body.t == "get_field" }
+test "arm0 body field" { arm0.body.field == "v" }
+
+let arm0_result = ev.eval(arm0.body, eval_env)
+test "arm0 body eval" { arm0_result == 42 }

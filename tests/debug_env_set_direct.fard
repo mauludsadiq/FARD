@@ -1,0 +1,13 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+
+let src = "fn env_set(env, name, value) { rec.set(env, name, value) }"
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec)
+let env1 = ev.env_set(env0, "env_set", ev.eval(defs[0], env0))
+let f = ev.env_get(env1, "env_set")
+test "f is closure" { f.t == "closure" }
+let result = ev.apply_fn(f, [{}, "x", 42])
+test "result" { result.x == 42 }

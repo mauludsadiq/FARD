@@ -1,0 +1,7 @@
+import("../packages/fard_eval/eval") as ev
+import("std/record") as rec
+
+let node = { t: "get_field", obj: { t: "var", name: "rec" }, field: "set" }
+let env = ev.env_set(ev.env_empty(), "rec", rec)
+let result = ev.eval(node, env)
+test "result not null" { result != null }

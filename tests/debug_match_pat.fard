@@ -1,0 +1,27 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("../packages/fard_parse/parse") as parse
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+
+// Create a simple test pattern
+let test_pat = { t: "lit_int", v: 42 }
+let test_val = 42
+
+// Check if match_pat works
+let result = ev.match_pat(test_pat, test_val)
+
+// Now test with a pattern that might be a function
+let weird_pat = fn(x) { x }
+
+// Return results as an object
+{
+  test_pat_type: type(test_pat),
+  test_pat_t: test_pat.t,
+  match_result: result,
+  weird_pat_type: type(weird_pat)
+}

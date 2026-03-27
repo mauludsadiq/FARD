@@ -1,0 +1,8 @@
+import("../packages/fard_parse/parse") as parse
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env_set_def = defs[2]
+test "name" { env_set_def.name == "env_set" }
+env_set_def.body

@@ -1,0 +1,7 @@
+import("std/record") as rec
+import("std/list") as list
+
+let set_fn = rec.get(rec, "set")
+test "set_fn not null" { set_fn != null }
+let result = set_fn({}, "x", 42)
+test "result" { result.x == 42 }

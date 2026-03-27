@@ -1,0 +1,8 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+
+let e0 = ev.env_empty()
+let e1 = ev.env_set(e0, "list", list)
+test "type of e1" { e1 != null }
+test "has list key" { rec.has(e1, "list") }

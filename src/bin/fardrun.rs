@@ -3580,6 +3580,7 @@ enum Builtin {
     // std/path
     PathBase, PathDir, PathExt, PathIsAbs, PathJoin, PathJoinAll, PathNormalize,
     ListMap,
+    ListApply,
     ListFilter,
     ListRange,
     ListRepeat,
@@ -8181,6 +8182,12 @@ fn call_builtin(
             let parts: Vec<Val> = s.lines().map(|x| Val::Text(x.to_string())).collect();
             Ok(Val::List(parts))
         }
+        Builtin::ListApply => {
+            if args.len() != 2 { bail!("ERROR_BADARG list.apply expects 2 args"); }
+            let f = args[0].clone();
+            let xs = match &args[1] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.apply arg1 must be list") };
+            call(f, xs, tracer, loader)
+        }
         Builtin::ListMap => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG list.map expects 2 args");
@@ -10892,6 +10899,7 @@ impl ModuleLoader {
                 m.insert("group_by".to_string(), Val::Builtin(Builtin::ListGroupBy));
                 m.insert("fold".to_string(), Val::Builtin(Builtin::ListFold));
                 m.insert("map".to_string(), Val::Builtin(Builtin::ListMap));
+                m.insert("apply".to_string(), Val::Builtin(Builtin::ListApply));
                 m.insert("filter".to_string(), Val::Builtin(Builtin::ListFilter));
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
                 m.insert("len".to_string(), Val::Builtin(Builtin::ListLen));

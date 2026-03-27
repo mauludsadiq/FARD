@@ -1,0 +1,27 @@
+import("../packages/fard_parse/parse") as parse
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/io") as io
+import("std/record") as rec
+import("std/type") as type
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+
+let env0 = ev.env_empty()
+let env0b = ev.env_set(ev.env_set(ev.env_set(env0, "list", list), "rec", rec), "type", type)
+
+let env1 = list.fold(defs, env0b, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc))
+  else acc
+})
+
+let self_env_empty = ev.apply_fn(ev.env_get(env1, "env_empty"), [])
+test "env_empty" { self_env_empty == {} }
+
+let self_env_set = ev.env_get(env1, "env_set")
+let e1 = ev.apply_fn(self_env_set, [{}, "x", 42])
+test "env_set" { e1.x == 42 }
+
+let self_env_get = ev.env_get(env1, "env_get")
+test "env_get" { ev.apply_fn(self_env_get, [e1, "x"]) == 42 }

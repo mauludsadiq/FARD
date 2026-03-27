@@ -1,0 +1,5 @@
+import("std/str") as str
+import("std/list") as list
+
+let toks = ["a", "b", "c"]
+str.join(toks, " ")
