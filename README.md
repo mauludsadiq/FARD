@@ -686,11 +686,20 @@ Algorithm W implementation in FARD. Includes:
 Rust is no longer required for execution or type checking of core functional programs.
 This is a complete compiler frontend written in FARD.
 
-**Self-host bootstrap (v1.6.0):** FARD's parser can parse FARD's evaluator (`eval.fard`).
-FARD's evaluator can execute the parsed evaluator and produce correct results.
-Verified: `fard_parse` parses `eval.fard` with 0 leaked bindings.
-Verified: self-hosted `env_empty` executes correctly via `fard_eval`.
-This is the bootstrap point — FARD is partially self-hosting.
+**Self-host bootstrap (v1.6.0):** FARD's evaluator executes FARD's evaluator.
+
+Infrastructure added:
+- `Val::MutEnv` — arc-shared mutable environment for bootstrap cycles
+- `std/menv` — module: new/set/get/has/child/call_eval/apply_closure
+- `fir_val_to_expr` — converts FIR record values to native Rust Expr
+- `apply_record_closure` — executes FARD closures stored as records
+- `get_field` pattern — handles `int.add` style dotted match patterns
+
+Verified self-hosted execution:
+- lit_int, lit_bool, var, call_builtin, if_node, eval_args
+
+The self-hosted evaluator is now the execution substrate for the
+self-hosting pipeline. FARD evaluates FARD.
 
 -----
 
