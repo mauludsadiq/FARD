@@ -1,0 +1,11 @@
+import("../packages/fard-snapshot/main") as snap
+
+test "snapshot basic" {
+  let r = snap.snapshot("basic", {x: 1, y: 2}, "{\"x\":1,\"y\":2}")
+  r.ok == true
+}
+
+test "snapshot mismatch" {
+  let r = snap.snapshot("mismatch", {x: 1}, "{\"x\":2}")
+  r.ok == false
+}
