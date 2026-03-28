@@ -1,0 +1,31 @@
+// ffi-sandbox@1.6.0 — Sandboxed FFI execution for FARD
+// Depends on ffi-core, ffi-runtime, process-exec, fs-core.
+// Restricts FFI calls to an allowlist of symbols and libraries.
+
+import("std/ffi")  as ffi
+import("std/list") as list
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn sandbox(allowed_libs, allowed_syms) {
+  { libs: allowed_libs, syms: allowed_syms, t: "ffi-sandbox" }
+}
+
+fn is_allowed_lib(sb, lib) {
+  list.any(sb.libs, fn(l) { l == lib })
+}
+
+fn is_allowed_sym(sb, sym) {
+  list.any(sb.syms, fn(s) { s == sym })
+}
+
+fn call(sb, lib_path, sym, args) {
+  if is_allowed_lib(sb, lib_path) && is_allowed_sym(sb, sym) then
+    ffi.call(ffi.load(lib_path), sym, args)
+  else
+    { error: str.concat(["ffi-sandbox: denied — ", lib_path, ":", sym]) }
+}
+
+fn is_error(r) { rec.has(r, "error") }
+
+export { sandbox, is_allowed_lib, is_allowed_sym, call, is_error }

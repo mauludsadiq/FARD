@@ -1,0 +1,4 @@
+name = "store-azure"
+version = "1.6.0"
+entry = "main.fard"
+description = "Azure Blob Storage-backed store for FARD"

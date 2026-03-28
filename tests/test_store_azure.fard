@@ -1,0 +1,7 @@
+import("../packages/store-azure/main") as az
+
+let store = az.open("myaccount", "mycontainer", { key: "abc" })
+
+test "type"      { store.t == "store-azure" }
+test "account"   { az.account(store) == "myaccount" }
+test "container" { az.container(store) == "mycontainer" }

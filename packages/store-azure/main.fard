@@ -1,0 +1,44 @@
+// store-azure@1.6.0 — Azure Blob Storage-backed store for FARD
+// Depends on store-fs, core-serde, http-client-async.
+// Key-value store backed by Azure Blob objects. Mirrors store-fs API shape.
+
+import("std/http") as http
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn open(account, container, credentials) {
+  { account: account, container: container, creds: credentials, t: "store-azure" }
+}
+
+fn key_url(store, key) {
+  str.concat([
+    "https://", store.account, ".blob.core.windows.net/",
+    store.container, "/", key
+  ])
+}
+
+fn get(store, key) {
+  let resp = http.get(key_url(store, key), {})
+  if resp.status == 200 then { ok: true, value: resp.body }
+  else { ok: false, value: null }
+}
+
+fn set(store, key, value) {
+  http.put(key_url(store, key), { "x-ms-blob-type": "BlockBlob" }, value)
+  store
+}
+
+fn delete(store, key) {
+  http.delete(key_url(store, key), {})
+  store
+}
+
+fn has(store, key) {
+  let resp = http.get(key_url(store, key), {})
+  resp.status == 200
+}
+
+fn account(store)   { store.account }
+fn container(store) { store.container }
+
+export { open, get, set, delete, has, account, container }

@@ -1,0 +1,42 @@
+// store-s3@1.6.0 — AWS S3-backed store for FARD
+// Depends on store-fs, core-serde, http-client-async.
+// Key-value store backed by S3 objects. Mirrors store-fs API shape.
+
+import("std/http")  as http
+import("std/json")  as json
+import("std/rec")   as rec
+import("std/str")   as str
+
+fn open(bucket, region, credentials) {
+  { bucket: bucket, region: region, creds: credentials, t: "store-s3" }
+}
+
+fn key_url(store, key) {
+  str.concat(["https://", store.bucket, ".s3.", store.region, ".amazonaws.com/", key])
+}
+
+fn get(store, key) {
+  let resp = http.get(key_url(store, key), {})
+  if resp.status == 200 then { ok: true, value: resp.body }
+  else { ok: false, value: null }
+}
+
+fn set(store, key, value) {
+  http.put(key_url(store, key), { "Content-Type": "application/octet-stream" }, value)
+  store
+}
+
+fn delete(store, key) {
+  http.delete(key_url(store, key), {})
+  store
+}
+
+fn has(store, key) {
+  let resp = http.get(key_url(store, key), {})
+  resp.status == 200
+}
+
+fn bucket(store)  { store.bucket }
+fn region(store)  { store.region }
+
+export { open, get, set, delete, has, bucket, region }

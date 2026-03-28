@@ -1,0 +1,4 @@
+name = "ffi-wasm"
+version = "1.6.0"
+entry = "main.fard"
+description = "WebAssembly FFI bridge for FARD"

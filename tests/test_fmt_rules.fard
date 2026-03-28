@@ -1,0 +1,12 @@
+import("../packages/fmt-rules/main") as rules
+import("std/str") as str
+
+let tnl = rules.trailing_newline()
+let mll = rules.max_line_length(80)
+
+test "rule type"             { tnl.t == "fmt-rule" }
+test "trailing_newline ok"   { rules.check(tnl, "hello\n") == true }
+test "trailing_newline fail" { rules.check(tnl, "hello") == false }
+test "trailing_newline fix"  { str.ends_with(rules.apply(tnl, "hello"), "\n") == true }
+test "max_line ok"           { rules.check(mll, "short line\n") == true }
+test "apply_all"             { str.ends_with(rules.apply_all([tnl], "hello"), "\n") == true }

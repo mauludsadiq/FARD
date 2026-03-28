@@ -1,0 +1,4 @@
+name = "fmt-rules"
+version = "1.6.0"
+entry = "main.fard"
+description = "Formatting rule definitions for FARD"

@@ -1,0 +1,12 @@
+import("../packages/docgen-core/main") as dg
+import("std/str") as str
+import("std/list") as list
+
+let src = "// adds two numbers\nfn add(a, b) { a + b }"
+let e   = dg.doc_entry("add", "fn", ["adds two numbers"], "fn add(a, b)")
+
+test "extract_comments"   { list.len(dg.extract_comments(src)) == 1 }
+test "comment content"    { list.get(dg.extract_comments(src), 0) == " adds two numbers" }
+test "doc_entry type"     { e.t == "doc-entry" }
+test "to_markdown header" { str.contains(dg.to_markdown(e), "## add") == true }
+test "to_markdown kind"   { str.contains(dg.to_markdown(e), "fn") == true }

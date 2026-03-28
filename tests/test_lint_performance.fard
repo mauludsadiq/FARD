@@ -1,0 +1,12 @@
+import("../packages/lint-performance/main") as perf
+import("std/list") as list
+
+let clean   = "fn hello() { 42 }"
+let concat  = "list.map(xs, fn(x) { str.concat([acc, x]) })"
+let rep_len = "if list.len(xs) > list.len(ys) then 1 else 0"
+
+test "clean no diags"    { list.len(perf.run(clean)) == 0 }
+test "concat detected"   { list.len(perf.nested_concat(concat)) == 1 }
+test "concat code"       { list.get(perf.nested_concat(concat), 0).code == "P001" }
+test "rep_len detected"  { list.len(perf.repeated_len(rep_len)) == 1 }
+test "rep_len code"      { list.get(perf.repeated_len(rep_len), 0).code == "P002" }

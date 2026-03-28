@@ -1,0 +1,34 @@
+// doc-theme-default@1.6.0 — Default documentation theme for FARD
+// Depends on docgen-core.
+// Wraps rendered markdown in HTML with default styling.
+
+import("std/str")  as str
+import("std/list") as list
+
+fn theme() {
+  { name: "default", version: "1.6.0", t: "doc-theme" }
+}
+
+fn html_wrap(title, body) {
+  str.concat([
+    "<!DOCTYPE html>\n<html>\n<head>\n",
+    "<title>", title, "</title>\n",
+    "<style>body{font-family:sans-serif;max-width:800px;margin:auto;padding:2rem}</style>\n",
+    "</head>\n<body>\n",
+    body,
+    "\n</body>\n</html>"
+  ])
+}
+
+fn render(title, markdown_body) {
+  html_wrap(title, str.concat(["<pre>", markdown_body, "</pre>"]))
+}
+
+fn nav(entries) {
+  let links = list.map(entries, fn(e) {
+    str.concat(["<a href=\"#", e, "\">", e, "</a>"])
+  })
+  str.concat(["<nav>", str.join(links, " | "), "</nav>"])
+}
+
+export { theme, html_wrap, render, nav }

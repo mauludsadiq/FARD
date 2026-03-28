@@ -1,0 +1,32 @@
+// core-env@1.6.0 — Environment variable access for FARD
+// No dependencies outside std.
+// Typed accessors for environment variables with defaults.
+
+import("std/env") as env
+import("std/str") as str
+import("std/int") as ints
+
+fn get(key)            { env.get(key) }
+fn get_or(key, def)    { let v = env.get(key) in if v == null then def else v }
+fn has(key)            { env.get(key) != null }
+fn all()               { env.all() }
+
+fn get_int(key, def) {
+  let v = env.get(key)
+  if v == null then def
+  else ints.parse(v)
+}
+
+fn get_bool(key, def) {
+  let v = env.get(key)
+  if v == null then def
+  else v == "true" || v == "1" || v == "yes"
+}
+
+fn require(key) {
+  let v = env.get(key)
+  if v == null then { error: str.concat(["missing required env var: ", key]) }
+  else v
+}
+
+export { get, get_or, has, all, get_int, get_bool, require }

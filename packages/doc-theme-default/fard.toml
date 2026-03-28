@@ -1,0 +1,4 @@
+name = "doc-theme-default"
+version = "1.6.0"
+entry = "main.fard"
+description = "Default documentation theme for FARD"

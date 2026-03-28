@@ -1,0 +1,11 @@
+import("../packages/http-retry/main") as retry
+
+let pol = retry.default_policy()
+let custom = retry.policy(5, 100, [503])
+
+test "default max"        { retry.max_attempts(pol) == 3 }
+test "default backoff"    { retry.backoff_ms(pol) == 500 }
+test "custom max"         { retry.max_attempts(custom) == 5 }
+test "should_retry 500"   { retry.should_retry(pol, { status: 500, headers: {}, body: "" }) == true }
+test "should_retry 200"   { retry.should_retry(pol, { status: 200, headers: {}, body: "" }) == false }
+test "policy type"        { pol.t == "retry-policy" }

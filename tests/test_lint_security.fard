@@ -1,0 +1,12 @@
+import("../packages/lint-security/main") as sec
+import("std/list") as list
+
+let clean  = "fn hello() { 42 }"
+let secret = "let password=\"abc123\""
+let inject = "shell(user_input)"
+
+test "clean no diags"     { list.len(sec.run(clean)) == 0 }
+test "secret detected"    { list.len(sec.hardcoded_secret(secret)) == 1 }
+test "secret code"        { list.get(sec.hardcoded_secret(secret), 0).code == "S001" }
+test "inject detected"    { list.len(sec.shell_injection(inject)) == 1 }
+test "inject code"        { list.get(sec.shell_injection(inject), 0).code == "S002" }

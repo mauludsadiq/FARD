@@ -1,0 +1,38 @@
+// lint-performance@1.6.0 — Performance lint rules for FARD
+// Depends on lint-core.
+// Detects quadratic loops, excessive allocations, and repeated work patterns.
+
+import("std/str")  as str
+import("std/list") as list
+
+fn diag(code, message, line) {
+  { level: "warning", code: code, message: message, line: line }
+}
+
+fn nested_concat(src) {
+  let lines = str.split(src, "\n")
+  list.flat_map(list.range(0, list.len(lines)), fn(i) {
+    let l = list.get(lines, i)
+    if str.contains(l, "str.concat") && str.contains(l, "list.map") then
+      [diag("P001", "possible O(n^2) string concat in loop", i + 1)]
+    else []
+  })
+}
+
+fn repeated_len(src) {
+  let lines = str.split(src, "\n")
+  list.flat_map(list.range(0, list.len(lines)), fn(i) {
+    let l = list.get(lines, i)
+    if str.contains(l, "list.len") && str.contains(l, "list.len") then
+      [diag("P002", "repeated list.len call — cache the value", i + 1)]
+    else []
+  })
+}
+
+fn all_rules() { [nested_concat, repeated_len] }
+
+fn run(src) {
+  list.flat_map(all_rules(), fn(r) { r(src) })
+}
+
+export { nested_concat, repeated_len, all_rules, run }

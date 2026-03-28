@@ -1,0 +1,4 @@
+name = "ndarray-simd"
+version = "1.6.0"
+entry = "main.fard"
+description = "SIMD-accelerated N-dimensional arrays for FARD"

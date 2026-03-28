@@ -1,0 +1,4 @@
+name = "ffi-c"
+version = "1.6.0"
+entry = "main.fard"
+description = "C FFI bridge for FARD"

@@ -1,0 +1,6 @@
+import("../packages/ffi-wasm/main") as w
+
+let descriptor = { path: "/usr/lib/mymod.wasm", t: "ffi-wasm" }
+
+test "type" { descriptor.t == "ffi-wasm" }
+test "path" { descriptor.path == "/usr/lib/mymod.wasm" }

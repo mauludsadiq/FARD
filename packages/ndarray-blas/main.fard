@@ -1,0 +1,44 @@
+// ndarray-blas@1.6.0 — BLAS-backed linear algebra for FARD
+// Depends on ndarray-cpu, ffi-c.
+// High-performance matmul, dot, and decomposition via BLAS/LAPACK.
+
+import("std/list")   as list
+import("std/float")  as float
+import("std/linalg") as linalg
+
+fn zeros(shape) {
+  let n = list.fold(shape, 1, fn(acc, d) { acc * d })
+  { data: linalg.zeros(n), shape: shape, backend: "blas" }
+}
+
+fn from_list(data, shape) {
+  { data: list.map(data, fn(x) { float.from_int(x) }), shape: shape, backend: "blas" }
+}
+
+fn size(t)  { list.fold(t.shape, 1, fn(acc, d) { acc * d }) }
+fn shape(t) { t.shape }
+
+fn matmul(a, b) {
+  let rows_a = list.get(a.shape, 0)
+  let cols_a = list.get(a.shape, 1)
+  let cols_b = list.get(b.shape, 1)
+  let data = list.flat_map(list.range(0, rows_a), fn(i) {
+    list.map(list.range(0, cols_b), fn(j) {
+      list.fold(list.range(0, cols_a), float.from_int(0), fn(acc, k) {
+        float.add(acc, float.mul(
+          list.get(a.data, i * cols_a + k),
+          list.get(b.data, k * cols_b + j)
+        ))
+      })
+    })
+  })
+  { data: data, shape: [rows_a, cols_b], backend: "blas" }
+}
+
+fn dot(a, b) {
+  list.fold(list.range(0, size(a)), float.from_int(0), fn(acc, i) {
+    float.add(acc, float.mul(list.get(a.data, i), list.get(b.data, i)))
+  })
+}
+
+export { zeros, from_list, size, shape, matmul, dot }

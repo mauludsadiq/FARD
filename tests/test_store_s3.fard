@@ -1,0 +1,7 @@
+import("../packages/store-s3/main") as s3
+
+let store = s3.open("my-bucket", "us-east-1", { key: "AK", secret: "SK" })
+
+test "type"    { store.t == "store-s3" }
+test "bucket"  { s3.bucket(store) == "my-bucket" }
+test "region"  { s3.region(store) == "us-east-1" }

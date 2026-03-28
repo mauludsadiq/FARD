@@ -1,0 +1,40 @@
+// store-gcs@1.6.0 — Google Cloud Storage-backed store for FARD
+// Depends on store-fs, core-serde, http-client-async.
+// Key-value store backed by GCS objects. Mirrors store-fs API shape.
+
+import("std/http") as http
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn open(bucket, credentials) {
+  { bucket: bucket, creds: credentials, t: "store-gcs" }
+}
+
+fn key_url(store, key) {
+  str.concat(["https://storage.googleapis.com/", store.bucket, "/", key])
+}
+
+fn get(store, key) {
+  let resp = http.get(key_url(store, key), {})
+  if resp.status == 200 then { ok: true, value: resp.body }
+  else { ok: false, value: null }
+}
+
+fn set(store, key, value) {
+  http.post(key_url(store, key), { "Content-Type": "application/octet-stream" }, value)
+  store
+}
+
+fn delete(store, key) {
+  http.delete(key_url(store, key), {})
+  store
+}
+
+fn has(store, key) {
+  let resp = http.get(key_url(store, key), {})
+  resp.status == 200
+}
+
+fn bucket(store) { store.bucket }
+
+export { open, get, set, delete, has, bucket }

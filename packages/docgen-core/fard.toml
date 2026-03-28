@@ -1,0 +1,4 @@
+name = "docgen-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "Documentation generation primitives for FARD"

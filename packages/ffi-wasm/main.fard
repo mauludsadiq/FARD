@@ -1,0 +1,17 @@
+// ffi-wasm@1.6.0 — WebAssembly FFI bridge for FARD
+// Depends on ffi-core, core-bytes.
+// Loads and executes WASM modules with linear memory access.
+
+import("std/wasm")  as wasm
+import("std/bytes") as bytes
+import("std/rec")   as rec
+
+fn load(path)          { { module: wasm.load(path), path: path, t: "ffi-wasm" } }
+fn load_bytes(b)       { { module: wasm.load_bytes(b), path: null, t: "ffi-wasm" } }
+fn call(rt, fn_, args) { wasm.call(rt.module, fn_, args) }
+fn has_export(rt, name){ wasm.has_export(rt.module, name) }
+fn exports(rt)         { wasm.exports(rt.module) }
+fn memory(rt)          { wasm.memory(rt.module) }
+fn path(rt)            { rt.path }
+
+export { load, load_bytes, call, has_export, exports, memory, path }

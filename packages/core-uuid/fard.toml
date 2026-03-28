@@ -1,0 +1,4 @@
+name = "core-uuid"
+version = "1.6.0"
+entry = "main.fard"
+description = "UUID generation and validation for FARD"

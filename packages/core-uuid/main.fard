@@ -1,0 +1,21 @@
+// core-uuid@1.6.0 — UUID generation and validation for FARD
+// Depends on core-random, core-bytes.
+// Generates v4 UUIDs and validates UUID strings.
+
+import("std/uuid") as uuid
+import("std/str")  as str
+
+fn v4()            { uuid.v4() }
+fn validate(s)     { uuid.validate(s) }
+fn nil()           { "00000000-0000-0000-0000-000000000000" }
+fn is_nil(s)       { s == nil() }
+
+fn parse(s) {
+  if validate(s) then { ok: true, value: s }
+  else { ok: false, error: "invalid UUID" }
+}
+
+fn namespace_dns()  { "6ba7b810-9dad-11d1-80b4-00c04fd430c8" }
+fn namespace_url()  { "6ba7b811-9dad-11d1-80b4-00c04fd430c8" }
+
+export { v4, validate, nil, is_nil, parse, namespace_dns, namespace_url }

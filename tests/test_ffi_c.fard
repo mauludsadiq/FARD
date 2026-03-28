@@ -1,0 +1,9 @@
+import("../packages/ffi-c/main") as c
+
+let sym = c.symbol("strlen", ["ptr"], "size_t")
+let descriptor = { path: "/usr/lib/libc.so", t: "ffi-c" }
+
+test "symbol name" { sym.name == "strlen" }
+test "symbol ret"  { sym.ret == "size_t" }
+test "symbol type" { sym.t == "c-symbol" }
+test "rt type"     { descriptor.t == "ffi-c" }

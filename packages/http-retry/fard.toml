@@ -1,0 +1,4 @@
+name = "http-retry"
+version = "1.6.0"
+entry = "main.fard"
+description = "HTTP retry logic for FARD"

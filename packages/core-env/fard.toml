@@ -1,0 +1,4 @@
+name = "core-env"
+version = "1.6.0"
+entry = "main.fard"
+description = "Environment variable access for FARD"

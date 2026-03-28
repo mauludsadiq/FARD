@@ -1,0 +1,44 @@
+// docgen-core@1.6.0 — Documentation generation primitives for FARD
+// Depends on core-serde, core-errors.
+// Extracts doc comments, builds doc records, and renders to markdown.
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn doc_comment(lines) {
+  { lines: lines, t: "doc-comment" }
+}
+
+fn extract_comments(src) {
+  let lines = str.split(src, "\n")
+  let comment_lines = list.filter(lines, fn(l) { str.starts_with(str.trim(l), "//") })
+  list.map(comment_lines, fn(l) {
+    let trimmed = str.trim(l)
+    str.slice(trimmed, 3, str.len(trimmed))
+  })
+}
+
+fn doc_entry(name, kind, comments, signature) {
+  { name: name, kind: kind, comments: comments, signature: signature, t: "doc-entry" }
+}
+
+fn to_markdown(entry) {
+  let header = str.concat(["## ", entry.name, "\n"])
+  let kind   = str.concat(["**", entry.kind, "**\n\n"])
+  let sig    = str.concat(["```\n", entry.signature, "\n```\n\n"])
+  let body   = str.join(entry.comments, "\n")
+  str.concat([header, kind, sig, body, "\n"])
+}
+
+fn module_doc(name, entries) {
+  { name: name, entries: entries, t: "module-doc" }
+}
+
+fn render_module(mod_) {
+  let header = str.concat(["# ", mod_.name, "\n\n"])
+  let body   = str.join(list.map(mod_.entries, to_markdown), "\n")
+  str.concat([header, body])
+}
+
+export { doc_comment, extract_comments, doc_entry, to_markdown, module_doc, render_module }

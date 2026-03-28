@@ -1,0 +1,38 @@
+// lint-security@1.6.0 — Security lint rules for FARD
+// Depends on lint-core.
+// Detects hardcoded secrets, unsafe FFI calls, and shell injection patterns.
+
+import("std/str")  as str
+import("std/list") as list
+
+fn diag(code, message, line) {
+  { level: "error", code: code, message: message, line: line }
+}
+
+fn hardcoded_secret(src) {
+  let lines = str.split(src, "\n")
+  list.flat_map(list.range(0, list.len(lines)), fn(i) {
+    let l = list.get(lines, i)
+    if str.contains(l, "password=") || str.contains(l, "secret=") || str.contains(l, "api_key=") then
+      [diag("S001", "possible hardcoded secret", i + 1)]
+    else []
+  })
+}
+
+fn shell_injection(src) {
+  let lines = str.split(src, "\n")
+  list.flat_map(list.range(0, list.len(lines)), fn(i) {
+    let l = list.get(lines, i)
+    if str.contains(l, "shell(") && str.contains(l, "user") then
+      [diag("S002", "possible shell injection", i + 1)]
+    else []
+  })
+}
+
+fn all_rules() { [hardcoded_secret, shell_injection] }
+
+fn run(src) {
+  list.flat_map(all_rules(), fn(r) { r(src) })
+}
+
+export { hardcoded_secret, shell_injection, all_rules, run }

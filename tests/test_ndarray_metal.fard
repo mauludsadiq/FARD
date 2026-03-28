@@ -1,0 +1,10 @@
+import("../packages/ndarray-metal/main") as nd
+
+let a = nd.from_list([1,2,3,4], [2,2])
+let c = nd.to_cpu(a)
+
+test "backend metal" { a.backend == "metal" }
+test "shape"         { nd.shape(a) == [2,2] }
+test "to_cpu"        { c.backend == "cpu" }
+test "from_cpu"      { nd.from_cpu(c).backend == "metal" }
+test "sum"           { nd.sum(nd.from_list([1,2,3,4], [4])) == 10.0 }

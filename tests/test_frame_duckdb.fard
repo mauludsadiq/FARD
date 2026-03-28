@@ -1,0 +1,6 @@
+import("../packages/frame-duckdb/main") as fd
+
+let f = fd.open_memory()
+
+test "type" { f.t == "frame-duckdb" }
+test "path" { fd.path(f) == ":memory:" }

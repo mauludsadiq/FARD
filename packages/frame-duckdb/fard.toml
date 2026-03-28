@@ -1,0 +1,4 @@
+name = "frame-duckdb"
+version = "1.6.0"
+entry = "main.fard"
+description = "DuckDB-backed dataframe for FARD"

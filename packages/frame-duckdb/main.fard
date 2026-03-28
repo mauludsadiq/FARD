@@ -1,0 +1,36 @@
+// frame-duckdb@1.6.0 — DuckDB-backed dataframe for FARD
+// Depends on frame-memory, core-serde, core-errors.
+// In-process analytical queries via DuckDB.
+
+import("std/duckdb") as duck
+import("std/list")   as list
+import("std/rec")    as rec
+import("std/str")    as str
+
+fn open(path) {
+  { db: duck.open(path), path: path, t: "frame-duckdb" }
+}
+
+fn open_memory() {
+  { db: duck.open(":memory:"), path: ":memory:", t: "frame-duckdb" }
+}
+
+fn query(frame, sql) {
+  duck.query(frame.db, sql)
+}
+
+fn exec(frame, sql) {
+  duck.exec(frame.db, sql)
+  frame
+}
+
+fn from_table(frame, table) {
+  let rows = duck.query(frame.db, str.concat(["SELECT * FROM ", table]))
+  rec.set(frame, "rows", rows)
+}
+
+fn nrows(frame)      { list.len(frame.rows) }
+fn get_row(frame, i) { list.get(frame.rows, i) }
+fn path(frame)       { frame.path }
+
+export { open, open_memory, query, exec, from_table, nrows, get_row, path }

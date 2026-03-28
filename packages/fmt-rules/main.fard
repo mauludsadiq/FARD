@@ -1,0 +1,49 @@
+// fmt-rules@1.6.0 — Formatting rule definitions for FARD
+// Depends on fmt-core.
+// Standard rules: indent size, trailing newline, line length, blank lines.
+
+import("std/str")  as str
+import("std/list") as list
+
+fn rule(name, check, fix) {
+  { name: name, check: check, fix: fix, t: "fmt-rule" }
+}
+
+fn trailing_newline() {
+  rule(
+    "trailing_newline",
+    fn(src) { str.ends_with(src, "\n") },
+    fn(src) { if str.ends_with(src, "\n") then src else str.concat([src, "\n"]) }
+  )
+}
+
+fn no_trailing_whitespace() {
+  rule(
+    "no_trailing_whitespace",
+    fn(src) {
+      let lines = str.split(src, "\n")
+      list.all(lines, fn(l) { str.trim_right(l) == l })
+    },
+    fn(src) {
+      let lines = str.split(src, "\n")
+      str.join(list.map(lines, fn(l) { str.trim_right(l) }), "\n")
+    }
+  )
+}
+
+fn max_line_length(n) {
+  rule(
+    "max_line_length",
+    fn(src) {
+      let lines = str.split(src, "\n")
+      list.all(lines, fn(l) { str.len(l) <= n })
+    },
+    fn(src) { src }
+  )
+}
+
+fn apply(r, src)         { r.fix(src) }
+fn check(r, src)         { r.check(src) }
+fn apply_all(rules, src) { list.fold(rules, src, fn(acc, r) { r.fix(acc) }) }
+
+export { rule, trailing_newline, no_trailing_whitespace, max_line_length, apply, check, apply_all }

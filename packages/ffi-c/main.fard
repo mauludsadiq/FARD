@@ -1,0 +1,21 @@
+// ffi-c@1.6.0 — C FFI bridge for FARD
+// Depends on ffi-core, ffi-runtime, ffi-serialize.
+// Loads compiled C shared libraries and calls exported symbols.
+
+import("std/ffi")  as ffi
+import("std/rec")  as rec
+import("std/list") as list
+
+fn runtime(lib_path) {
+  { lib: ffi.load(lib_path), path: lib_path, t: "ffi-c" }
+}
+
+fn call(rt, sym, args)  { ffi.call(rt.lib, sym, args) }
+fn has_sym(rt, sym)     { ffi.has_sym(rt.lib, sym) }
+fn path(rt)             { rt.path }
+
+fn symbol(name, args, ret) {
+  { name: name, args: args, ret: ret, t: "c-symbol" }
+}
+
+export { runtime, call, has_sym, path, symbol }

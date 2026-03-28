@@ -1,0 +1,4 @@
+name = "ndarray-wasm"
+version = "1.6.0"
+entry = "main.fard"
+description = "WASM-backed N-dimensional arrays for FARD"

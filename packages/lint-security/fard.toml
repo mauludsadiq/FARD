@@ -1,0 +1,4 @@
+name = "lint-security"
+version = "1.6.0"
+entry = "main.fard"
+description = "Security lint rules for FARD"

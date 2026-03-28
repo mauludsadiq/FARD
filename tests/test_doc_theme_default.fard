@@ -1,0 +1,12 @@
+import("../packages/doc-theme-default/main") as theme
+import("std/str") as str
+
+let t   = theme.theme()
+let out = theme.render("MyLib", "# Hello")
+
+test "theme type"      { t.t == "doc-theme" }
+test "theme name"      { t.name == "default" }
+test "render doctype"  { str.contains(out, "<!DOCTYPE html>") == true }
+test "render title"    { str.contains(out, "MyLib") == true }
+test "render body"     { str.contains(out, "# Hello") == true }
+test "nav"             { str.contains(theme.nav(["add", "mul"]), "add") == true }

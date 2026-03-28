@@ -1,0 +1,7 @@
+import("../packages/core-env/main") as env
+
+test "get_or default"  { env.get_or("FARD_NONEXISTENT_VAR_XYZ", "fallback") == "fallback" }
+test "has false"       { env.has("FARD_NONEXISTENT_VAR_XYZ") == false }
+test "get_bool false"  { env.get_bool("FARD_NONEXISTENT_VAR_XYZ", false) == false }
+test "get_int default" { env.get_int("FARD_NONEXISTENT_VAR_XYZ", 42) == 42 }
+test "require error"   { rec.has(env.require("FARD_NONEXISTENT_VAR_XYZ"), "error") == true }

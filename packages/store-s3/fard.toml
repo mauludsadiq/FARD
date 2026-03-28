@@ -1,0 +1,4 @@
+name = "store-s3"
+version = "1.6.0"
+entry = "main.fard"
+description = "AWS S3-backed store for FARD"

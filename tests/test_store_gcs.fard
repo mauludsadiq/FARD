@@ -1,0 +1,6 @@
+import("../packages/store-gcs/main") as gcs
+
+let store = gcs.open("my-gcs-bucket", { token: "tok" })
+
+test "type"   { store.t == "store-gcs" }
+test "bucket" { gcs.bucket(store) == "my-gcs-bucket" }

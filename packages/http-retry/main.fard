@@ -1,0 +1,38 @@
+// http-retry@1.6.0 — HTTP retry logic for FARD
+// Depends on http-core, async-core, core-time.
+// Exponential backoff retry with configurable attempts and status codes.
+
+import("std/http")      as http
+import("std/async")     as async
+import("std/list")      as list
+import("std/rec")       as rec
+
+fn policy(max_attempts, backoff_ms, retry_on) {
+  { max_attempts: max_attempts, backoff_ms: backoff_ms, retry_on: retry_on, t: "retry-policy" }
+}
+
+fn default_policy() {
+  policy(3, 500, [429, 500, 502, 503, 504])
+}
+
+fn should_retry(pol, resp) {
+  list.any(pol.retry_on, fn(code) { code == resp.status })
+}
+
+fn with_retry(pol, request_fn) {
+  let attempt = fn(n) {
+    let resp = request_fn()
+    if n >= pol.max_attempts then resp
+    else if should_retry(pol, resp) then
+      let delay = pol.backoff_ms * n in
+      async.sleep(delay)
+      attempt(n + 1)
+    else resp
+  }
+  attempt(1)
+}
+
+fn max_attempts(pol) { pol.max_attempts }
+fn backoff_ms(pol)   { pol.backoff_ms }
+
+export { policy, default_policy, should_retry, with_retry, max_attempts, backoff_ms }

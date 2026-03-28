@@ -1,0 +1,9 @@
+import("../packages/ndarray-blas/main") as nd
+
+let a = nd.from_list([1,2,3,4], [2,2])
+let b = nd.from_list([1,0,0,1], [2,2])
+
+test "backend"      { a.backend == "blas" }
+test "shape"        { nd.shape(a) == [2,2] }
+test "matmul shape" { nd.shape(nd.matmul(a, b)) == [2,2] }
+test "dot"          { nd.dot(nd.from_list([1,2], [2]), nd.from_list([3,4], [2])) == 11.0 }

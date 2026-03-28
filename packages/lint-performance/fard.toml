@@ -1,0 +1,4 @@
+name = "lint-performance"
+version = "1.6.0"
+entry = "main.fard"
+description = "Performance lint rules for FARD"

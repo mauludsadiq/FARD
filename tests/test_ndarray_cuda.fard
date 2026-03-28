@@ -1,0 +1,10 @@
+import("../packages/ndarray-cuda/main") as nd
+
+let a = nd.from_list([1,2,3,4], [2,2], 0)
+let c = nd.to_cpu(a)
+
+test "backend cuda"  { a.backend == "cuda" }
+test "device"        { nd.device(a) == 0 }
+test "shape"         { nd.shape(a) == [2,2] }
+test "to_cpu"        { c.backend == "cpu" }
+test "from_cpu"      { nd.from_cpu(c, 0).backend == "cuda" }

@@ -1,0 +1,13 @@
+import("../packages/core-uuid/main") as uuid
+import("std/str") as str
+
+let id = uuid.v4()
+
+test "v4 length"        { str.len(id) == 36 }
+test "v4 has dashes"    { str.contains(id, "-") == true }
+test "validate valid"   { uuid.validate("550e8400-e29b-41d4-a716-446655440000") == true }
+test "validate invalid" { uuid.validate("not-a-uuid") == false }
+test "nil"              { uuid.is_nil(uuid.nil()) == true }
+test "is_nil false"     { uuid.is_nil(id) == false }
+test "parse ok"         { uuid.parse(id).ok == true }
+test "parse fail"       { uuid.parse("bad").ok == false }

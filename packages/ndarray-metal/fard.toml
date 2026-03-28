@@ -1,0 +1,4 @@
+name = "ndarray-metal"
+version = "1.6.0"
+entry = "main.fard"
+description = "Metal-backed N-dimensional arrays for FARD (Apple Silicon)"

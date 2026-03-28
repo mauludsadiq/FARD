@@ -1,0 +1,10 @@
+import("../packages/ffi-sandbox/main") as sb
+
+let s = sb.sandbox(["/usr/lib/libc.so"], ["strlen", "memcpy"])
+
+test "type"              { s.t == "ffi-sandbox" }
+test "allowed lib true"  { sb.is_allowed_lib(s, "/usr/lib/libc.so") == true }
+test "allowed lib false" { sb.is_allowed_lib(s, "/usr/lib/evil.so") == false }
+test "allowed sym true"  { sb.is_allowed_sym(s, "strlen") == true }
+test "allowed sym false" { sb.is_allowed_sym(s, "system") == false }
+test "call denied"       { sb.is_error(sb.call(s, "/usr/lib/evil.so", "system", [])) == true }

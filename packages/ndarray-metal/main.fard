@@ -1,0 +1,32 @@
+// ndarray-metal@1.6.0 — Metal-backed N-dimensional arrays for FARD (Apple Silicon)
+// Depends on ndarray-cpu, ffi-c.
+// GPU-resident arrays on Apple Silicon via Metal Performance Shaders.
+
+import("std/list")   as list
+import("std/float")  as float
+import("std/linalg") as linalg
+
+fn zeros(shape) {
+  let n = list.fold(shape, 1, fn(acc, d) { acc * d })
+  { data: linalg.zeros(n), shape: shape, backend: "metal" }
+}
+
+fn from_list(data, shape) {
+  { data: list.map(data, fn(x) { float.from_int(x) }), shape: shape, backend: "metal" }
+}
+
+fn to_cpu(t)   { { data: t.data, shape: t.shape, backend: "cpu" } }
+fn from_cpu(t) { { data: t.data, shape: t.shape, backend: "metal" } }
+
+fn size(t)  { list.fold(t.shape, 1, fn(acc, d) { acc * d }) }
+fn shape(t) { t.shape }
+
+fn add(a, b) {
+  { data: list.zip_with(a.data, b.data, fn(x,y) { float.add(x,y) }), shape: a.shape, backend: "metal" }
+}
+
+fn sum(t) {
+  list.fold(t.data, float.from_int(0), fn(acc, x) { float.add(acc, x) })
+}
+
+export { zeros, from_list, to_cpu, from_cpu, size, shape, add, sum }

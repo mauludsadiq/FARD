@@ -1,0 +1,10 @@
+import("../packages/ndarray-wasm/main") as nd
+
+let a = nd.from_list([1,2,3,4], [2,2])
+
+test "backend wasm"  { a.backend == "wasm" }
+test "shape"         { nd.shape(a) == [2,2] }
+test "size"          { nd.size(a) == 4 }
+test "sum"           { nd.sum(nd.from_list([1,2,3], [3])) == 6.0 }
+test "to_cpu"        { nd.to_cpu(a).backend == "cpu" }
+test "from_cpu"      { nd.from_cpu(nd.to_cpu(a)).backend == "wasm" }
