@@ -667,7 +667,8 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
             out.push_str(&format!("{}}}", pad));
             out
         }
-        Val::Func(_) | Val::VmFunc(_) => "<fn>".to_string(),
+        Val::MutEnv(_) => "<menv>".to_string(),
+    Val::Func(_) | Val::VmFunc(_) => "<fn>".to_string(),
         Val::Builtin(_) => "<builtin>".to_string(),
         Val::Chan(..) => "<chan>".to_string(),
         Val::Mtx(..) => "<mutex>".to_string(),
@@ -3507,6 +3508,8 @@ enum Val {
     Promise(Arc<Mutex<Option<Result<Val, String>>>>, String, PathBuf),  // slot, spawn_id, trace_path
     /// VM-compiled function — executed by the bytecode VM, not the tree-walker
     VmFunc(usize),  // index into a Vec<CompiledFn> held by the VM
+    /// Mutable shared environment for self-hosting bootstrap
+    MutEnv(Arc<Mutex<HashMap<String, Val>>>),
 }
 
 impl Val {
@@ -3523,7 +3526,7 @@ impl Val {
             Val::Float(_) => "float", Val::Text(_) => "text", Val::Bytes(_) => "bytes",
             Val::List(_) => "list", Val::Record(_) => "record",
             Val::BoundMethod(..) => "bound-method",
-            Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin",
+            Val::Err { .. } => "err", Val::Func(_) => "func", Val::Builtin(_) => "builtin", Val::MutEnv(_) => "menv",
             Val::Chan(..) => "chan",
             Val::Mtx(..) => "mutex",
             Val::Big(..) => "bigint",
@@ -3581,6 +3584,13 @@ enum Builtin {
     PathBase, PathDir, PathExt, PathIsAbs, PathJoin, PathJoinAll, PathNormalize,
     ListMap,
     ListApply,
+    MutEnvNew,
+    MutEnvSet,
+    MutEnvGet,
+    MutEnvHas,
+    MutEnvChild,
+    FardCallEval,
+    ApplyClosure,
     ListFilter,
     ListRange,
     ListRepeat,
@@ -3956,7 +3966,7 @@ impl Val {
                 Some(J::Object(obj))
             }
             Val::Err { code, .. } => Some(J::Str(format!("error:{}", code))),
-            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) | Val::Promise(..) | Val::VmFunc(_) => None,
+            Val::Func(_) | Val::Builtin(_) | Val::BoundMethod(..) | Val::Chan(..) | Val::Mtx(..) | Val::Big(..) | Val::Promise(..) | Val::VmFunc(_) | Val::MutEnv(_) => None,
         }
     }
 }
@@ -4287,7 +4297,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         Val::Unit => "unit", Val::Bool(_) => "bool",
                         Val::Int(_) => "int", Val::Float(_) => "float",
                         Val::Text(_) => "text", Val::Bytes(_) => "bytes",
-                        Val::List(_) => "list", Val::Func(_) | Val::Builtin(_) => "function",
+                        Val::List(_) => "list", Val::Func(_) | Val::Builtin(_) | Val::MutEnv(_) => "function",
                         Val::BoundMethod(..) => "bound-method",
                         Val::Err{..} => "err", Val::Record(_) => "record",
                         Val::Chan(..) => "chan",
@@ -4321,6 +4331,9 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                     Pat::Bind(n) => n.clone(),
                     _ => "_".to_string(),
                 }).collect::<Vec<_>>(),
+                Val::Record(ref m) if matches!(m.get("t"), Some(Val::Text(t)) if t == "closure") => {
+                    match m.get("params") { Some(Val::List(v)) => v.iter().map(|p| if let Val::Text(s) = p { s.clone() } else { "_".to_string() }).collect(), _ => bail!("named closure: no params") }
+                }
                 _ => bail!("named call on non-function"),
             };
             // Build ordered args
@@ -4707,7 +4720,235 @@ fn val_eq(a: &Val, b: &Val) -> bool {
         _ => false,
     }
 }
+
+fn apply_record_closure(m: &BTreeMap<String, Val>, mut cur_args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
+    let params = match m.get("params") { Some(Val::List(v)) => v.clone(), _ => bail!("closure: no params") };
+    let body_val = match m.get("body") { Some(v) => v.clone(), _ => bail!("closure: no body") };
+    let body_t = if let Val::Record(ref bm) = body_val { bm.get("t").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("?".to_string()) } else { "not-record".to_string() };
+    let fn_name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("anonymous".to_string());
+    let fn_name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("anonymous".to_string());
+    let name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None });
+    if params.len() != cur_args.len() { bail!("arity mismatch: expected {} got {}", params.len(), cur_args.len()); }
+    let mut base_env = match m.get("env") {
+        Some(Val::MutEnv(e)) => {
+            let mut ne = Env::new();
+            for (k, v) in e.lock().unwrap().iter() { ne.set(k.clone(), v.clone()); }
+            ne
+        }
+        Some(Val::Record(rm)) => {
+            let mut ne = Env::new();
+            for (k, v) in rm.iter() { ne.set(k.clone(), v.clone()); }
+            ne
+        }
+        _ => Env::new()
+    };
+    if let Some(ref n) = name {
+        let self_val = Val::Record(m.clone());
+        base_env.set(n.clone(), self_val);
+    }
+    let mut call_env = base_env.child();
+    for (p, a) in params.iter().zip(cur_args.into_iter()) {
+        if let Val::Text(pname) = p { call_env.set(pname.clone(), a); }
+    }
+    let expr = fir_val_to_expr(body_val).map_err(|e| anyhow!("fir_val_to_expr failed for fn={} body_t={}: {}", fn_name, body_t, e))?;
+    CALL_DEPTH.with(|d| *d.borrow_mut() += 1);
+    let result = eval(&expr, &mut call_env, tracer, loader).map_err(|e| e.context(format!("inside closure [{}] body_t={}", fn_name, body_t)));
+    CALL_DEPTH.with(|d| *d.borrow_mut() -= 1);
+    result
+}
+
+fn fir_val_to_expr(v: Val) -> Result<Expr> {
+    match v {
+        Val::Record(ref m) => {
+            let t = match m.get("t") {
+                Some(Val::Text(s)) => s.as_str(),
+                _ => bail!("fir_val_to_expr: missing t field"),
+            };
+            match t {
+                "lit_int" => {
+                    let n = match m.get("v") { Some(Val::Int(n)) => *n, _ => bail!("lit_int: no v") };
+                    Ok(Expr::Int(n))
+                }
+                "lit_bool" => {
+                    let b = match m.get("v") { Some(Val::Bool(b)) => *b, _ => bail!("lit_bool: no v") };
+                    Ok(Expr::Bool(b))
+                }
+                "lit_text" => {
+                    let s = match m.get("v") { Some(Val::Text(s)) => s.clone(), _ => bail!("lit_text: no v") };
+                    Ok(Expr::Str(s))
+                }
+                "lit_null" => Ok(Expr::Null),
+                "var" => {
+                    let name = match m.get("name") { Some(Val::Text(s)) => s.clone(), _ => bail!("var: no name") };
+                    Ok(Expr::Var(name))
+                }
+                "get_field" => {
+                    let obj = match m.get("obj") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("get_field: no obj") };
+                    let field = match m.get("field") { Some(Val::Text(s)) => s.clone(), _ => bail!("get_field: no field") };
+                    // Handle "field[N]" — index access encoded as get_field
+                    if let Some(bracket) = field.find('[') {
+                        let actual_field = field[..bracket].to_string();
+                        let idx_str = field[bracket+1..field.len()-1].to_string();
+                        let base = Expr::Get(Box::new(obj), actual_field);
+                        if let Ok(n) = idx_str.parse::<i64>() {
+                            Ok(Expr::Index(Box::new(base), Box::new(Expr::Int(n))))
+                        } else {
+                            Ok(Expr::Index(Box::new(base), Box::new(Expr::Var(idx_str))))
+                        }
+                    } else {
+                        Ok(Expr::Get(Box::new(obj), field))
+                    }
+                }
+                "index" => {
+                    let obj = match m.get("obj") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("index: no obj") };
+                    let idx = match m.get("idx") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("index: no idx") };
+                    Ok(Expr::Index(Box::new(obj), Box::new(idx)))
+                }
+                "call" => {
+                    let fn_expr = match m.get("fn") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("call: no fn") };
+                    let args = match m.get("args") {
+                        Some(Val::List(vs)) => vs.iter().map(|v| fir_val_to_expr(v.clone())).collect::<Result<Vec<_>>>()?,
+                        _ => vec![]
+                    };
+                    Ok(Expr::Call(Box::new(fn_expr), args))
+                }
+                "call_builtin" => {
+                    let name = match m.get("name") { Some(Val::Text(s)) => s.clone(), _ => bail!("call_builtin: no name") };
+                    let args = match m.get("args") {
+                        Some(Val::List(vs)) => vs.iter().map(|v| fir_val_to_expr(v.clone())).collect::<Result<Vec<_>>>()?,
+                        _ => vec![]
+                    };
+                    // Map call_builtin to Bin ops where possible
+                    match name.as_str() {
+                        "int.add" => Ok(Expr::Bin("+".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.sub" => Ok(Expr::Bin("-".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.mul" => Ok(Expr::Bin("*".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.div" => Ok(Expr::Bin("/".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.eq"  => Ok(Expr::Bin("==".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.ne"  => Ok(Expr::Bin("!=".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.lt"  => Ok(Expr::Bin("<".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.le"  => Ok(Expr::Bin("<=".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.gt"  => Ok(Expr::Bin(">".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "int.ge"  => Ok(Expr::Bin(">=".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "bool.not" => Ok(Expr::Unary("!".to_string(), Box::new(args[0].clone()))),
+                        "bool.and" => Ok(Expr::Bin("&&".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "bool.or"  => Ok(Expr::Bin("||".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        _ => {
+                            // Generic: call as module.method(args)
+                            let parts: Vec<&str> = name.splitn(2, '.').collect();
+                            if parts.len() == 2 {
+                                let mod_expr = Expr::Var(parts[0].to_string());
+                                let fn_expr = Expr::Get(Box::new(mod_expr), parts[1].to_string());
+                                Ok(Expr::Call(Box::new(fn_expr), args))
+                            } else {
+                                Ok(Expr::Call(Box::new(Expr::Var(name)), args))
+                            }
+                        }
+                    }
+                }
+                "if_node" => {
+                    let cond = match m.get("cond") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("if_node: no cond") };
+                    let t_branch = match m.get("t_branch") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("if_node: no t_branch") };
+                    let f_branch = match m.get("f_branch") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("if_node: no f_branch") };
+                    Ok(Expr::If(Box::new(cond), Box::new(t_branch), Box::new(f_branch)))
+                }
+                "let" => {
+                    let bindings = match m.get("bindings") { Some(Val::List(vs)) => vs.clone(), _ => bail!("let: no bindings") };
+                    let body = match m.get("body") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("let: no body") };
+                    // Chain let bindings
+                    let mut result = body;
+                    for b in bindings.iter().rev() {
+                        if let Val::Record(bm) = b {
+                            let name = match bm.get("name") { Some(Val::Text(s)) => s.clone(), _ => bail!("let binding: no name") };
+                            let val = match bm.get("value") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("let binding: no value") };
+                            result = Expr::Let(name, Box::new(val), Box::new(result));
+                        }
+                    }
+                    Ok(result)
+                }
+                "match_expr" => {
+                    let expr = match m.get("expr") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("match_expr: no expr") };
+                    let arms = match m.get("arms") { Some(Val::List(vs)) => vs.clone(), _ => bail!("match_expr: no arms") };
+                                    let match_arms: Result<Vec<MatchArm>> = arms.iter().map(|arm| {
+                        if let Val::Record(am) = arm {
+                            let pat = match am.get("pat_val") {
+                                Some(Val::Record(pm)) => {
+                                    let pt = pm.get("t").and_then(|v| if let Val::Text(s) = v { Some(s.as_str()) } else { None }).unwrap_or("_");
+                                                    match pt {
+                                                        "lit_text" => { let s = if let Some(Val::Text(s)) = pm.get("v") { s.clone() } else { "_".to_string() }; Pat::LitStr(s) }
+                                        "lit_int"  => { let n = if let Some(Val::Int(n)) = pm.get("v") { *n } else { 0 }; Pat::LitInt(n) }
+                                        "lit_bool" => { let b = if let Some(Val::Bool(b)) = pm.get("v") { *b } else { false }; Pat::LitBool(b) }
+                                        "get_field" => {
+                                            // "int.add" style pattern — obj is var with name like '"int', field is 'add"'
+                                            let obj_s = match pm.get("obj") {
+                                                Some(Val::Record(om)) => {
+                                                    // Try lit_text first (v field)
+                                                    if let Some(Val::Text(v)) = om.get("v") {
+                                                        v.trim_matches('"').to_string()
+                                                    } else if let Some(Val::Text(n)) = om.get("name") {
+                                                        // var node — name has leading quote
+                                                        n.trim_matches('"').to_string()
+                                                    } else { String::new() }
+                                                }
+                                                _ => String::new()
+                                            };
+                                            let field_s = match pm.get("field") { Some(Val::Text(s)) => s.trim_matches('"').to_string(), _ => String::new() };
+                                            Pat::LitStr(format!("{}.{}", obj_s, field_s))
+                                        }
+                                        "var" => Pat::Wild,
+                                        _ => Pat::Wild
+                                    }
+                                }
+                                _ => Pat::Bind("_".to_string())
+                            };
+                            let body = match am.get("body") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("match arm: no body") };
+                            Ok(MatchArm { pat, guard: None, guard_span: None, body })
+                        } else {
+                            bail!("match arm is not a record")
+                        }
+                    }).collect();
+                    Ok(Expr::Match(Box::new(expr), match_arms?))
+                }
+                "node_fn" | "def_fn" => {
+                    let params_val = match m.get("params") { Some(Val::List(v)) => v.clone(), _ => vec![] };
+                    let body = match m.get("body") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("fn: no body") };
+                    let params: Vec<Pat> = params_val.iter().map(|p| {
+                        if let Val::Text(s) = p { Pat::Bind(s.clone()) } else { Pat::Bind("_".to_string()) }
+                    }).collect();
+                    Ok(Expr::Fn(params, Box::new(body)))
+                }
+                "lit_list" => {
+                    let items = match m.get("items") { Some(Val::List(vs)) => vs.clone(), _ => vec![] };
+                    let exprs: Result<Vec<Expr>> = items.iter().map(|v| fir_val_to_expr(v.clone())).collect();
+                    Ok(Expr::List(exprs?))
+                }
+                "lit_record" => {
+                    let fields = match m.get("fields") { Some(Val::List(vs)) => vs.clone(), _ => vec![] };
+                    let pairs: Result<Vec<(String, Expr)>> = fields.iter().map(|f| {
+                        if let Val::Record(fm) = f {
+                            let k = match fm.get("key") { Some(Val::Text(s)) => s.clone(), _ => bail!("field: no key") };
+                            let v = match fm.get("value") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("field: no value") };
+                            Ok((k, v))
+                        } else { bail!("field is not record") }
+                    }).collect();
+                    Ok(Expr::Rec(pairs?))
+                }
+                "top_let" => {
+                    let val = match m.get("value") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("top_let: no value") };
+                    Ok(val)
+                }
+                _ => bail!("fir_val_to_expr: unknown FIR node type: {}", t),
+            }
+        }
+        _ => bail!("fir_val_to_expr: expected record, got {:?}", v),
+    }
+}
+
 fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
+    if args.len() == 4 && matches!(args[2], Val::Unit) {
+        eprintln!("4-arg call with Unit arg2: fn_type={}", match &f { Val::Func(_) => "Func", Val::VmFunc(_) => "VmFunc", Val::Builtin(_) => "Builtin", Val::Record(_) => "Record", _ => "other" });
+    }
+
     // Trampoline loop for tail-call optimisation.
     // Instead of recursing into Rust stack frames for every FARD call,
     // we detect when the body of a Func evaluates to another Func call
@@ -4775,7 +5016,10 @@ fn call(f: Val, args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) 
                 cur_args = full_args;
                 // loop continues
             }
-            _ => bail!("call on non-function"),
+            Val::Record(ref m) if matches!(m.get("t"), Some(Val::Text(t)) if t == "closure") => {
+                return apply_record_closure(m, cur_args, tracer, loader);
+            }
+            other => bail!("call on non-function: type={}", match &other { Val::Unit => "unit", Val::Bool(_) => "bool", Val::Int(_) => "int", Val::Text(_) => "text", Val::List(_) => "list", Val::Record(_) => "record", Val::Func(_) => "func", Val::Builtin(_) => "builtin", _ => "other" }),
         }
     }
 }
@@ -4803,6 +5047,9 @@ fn eval_tco(expr: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut Module
                     let mut full_args = vec![*receiver];
                     full_args.extend(av);
                     Ok(TcoResult::Done(call(*func, full_args, tracer, loader)?))
+                }
+                Val::Record(ref m) if matches!(m.get("t"), Some(Val::Text(t)) if t == "closure") => {
+                    Ok(TcoResult::Done(apply_record_closure(m, av, tracer, loader)?))
                 }
                 _ => bail!("call on non-function"),
             }
@@ -5302,7 +5549,10 @@ fn vm_dispatch_call(
             full.extend(args);
             vm_dispatch_call(&vec![], *func, full, tracer, loader)
         }
-        _ => bail!("vm: call on non-function"),
+        Val::Record(ref m) if matches!(m.get("t"), Some(Val::Text(t)) if t == "closure") => {
+            apply_record_closure(m, args, tracer, loader)
+        }
+        other => bail!("vm: call on non-function: type={} val={:?}", match &other { Val::Unit => "unit", Val::Bool(_) => "bool", Val::Int(_) => "int", Val::Text(_) => "text", Val::List(_) => "list", Val::Record(m) => { let t = m.get("t").map(|v| format!("{:?}",v)).unwrap_or("?".to_string()); return Err(anyhow!("vm: call on non-function: record{{t={}}}", t)); }, Val::Func(_) => "func", Val::Builtin(_) => "builtin", _ => "other" }, ""),
     }
 }
 
@@ -6485,29 +6735,33 @@ fn call_builtin(
             if args.len() != 2 {
                 bail!("ERROR_BADARG rec.has expects 2 args");
             }
-            let m = match &args[0] {
-                Val::Record(mm) => mm,
-                _ => bail!("ERROR_BADARG rec.has arg0 must be record"),
-            };
             let k = match &args[1] {
-                Val::Text(s) => s,
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG rec.has arg1 must be string"),
             };
-            Ok(Val::Bool(m.contains_key(k)))
+            match &args[0] {
+                Val::Record(mm) => Ok(Val::Bool(mm.contains_key(&k))),
+                Val::MutEnv(m) => Ok(Val::Bool(m.lock().unwrap().contains_key(&k))),
+                _ => bail!("ERROR_BADARG rec.has arg0 must be record"),
+            }
         }
         Builtin::RecGet => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG rec.get expects 2 args");
             }
-            let m = match &args[0] {
-                Val::Record(mm) => mm,
-                _ => bail!("ERROR_BADARG rec.get arg0 must be record"),
-            };
             let k = match &args[1] {
-                Val::Text(s) => s,
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG rec.get arg1 must be string"),
             };
-            Ok(m.get(k).cloned().unwrap_or(Val::Unit))
+            match &args[0] {
+                Val::Record(mm) => Ok(mm.get(&k).cloned().unwrap_or(Val::Unit)),
+                Val::MutEnv(m) => Ok(m.lock().unwrap().get(&k).cloned().unwrap_or(Val::Unit)),
+                other => {
+                    let k2 = k.clone();
+                    // Print the full args for diagnosis
+                            bail!("ERROR_BADARG rec.get arg0 must be record, got: {:?}, key was: {}", other, k2)
+                }
+            }
         }
         Builtin::RecGetOr => {
             if args.len() != 3 {
@@ -6546,18 +6800,23 @@ fn call_builtin(
             if args.len() != 3 {
                 bail!("ERROR_BADARG rec.set expects 3 args");
             }
-            let m = match &args[0] {
-                Val::Record(mm) => mm,
-                _ => bail!("ERROR_BADARG rec.set arg0 must be record"),
-            };
             let k = match &args[1] {
-                Val::Text(s) => s,
+                Val::Text(s) => s.clone(),
                 _ => bail!("ERROR_BADARG rec.set arg1 must be string"),
             };
             let v = args[2].clone();
-            let mut out = m.clone();
-            out.insert(k.clone(), v);
-            Ok(Val::Record(out))
+            match &args[0] {
+                Val::Record(mm) => {
+                    let mut out = mm.clone();
+                    out.insert(k, v);
+                    Ok(Val::Record(out))
+                }
+                Val::MutEnv(m) => {
+                    m.lock().unwrap().insert(k, v);
+                    Ok(args[0].clone())
+                }
+                _ => bail!("ERROR_BADARG rec.set arg0 must be record"),
+            }
         }
         Builtin::RecRemove => {
             if args.len() != 2 {
@@ -8182,7 +8441,98 @@ fn call_builtin(
             let parts: Vec<Val> = s.lines().map(|x| Val::Text(x.to_string())).collect();
             Ok(Val::List(parts))
         }
-        Builtin::ListApply => {
+        Builtin::FardCallEval => {
+            if args.len() != 3 { bail!("menv.call_eval expects 3 args"); }
+            let fir_body = args[0].clone();
+            let expr = fir_val_to_expr(fir_body)?;
+            let mut native_env = match &args[1] {
+                Val::MutEnv(m) => {
+                    let mut e = Env::new();
+                    for (k, v) in m.lock().unwrap().iter() { e.set(k.clone(), v.clone()); }
+                    e
+                }
+                Val::Record(m) => {
+                    let mut e = Env::new();
+                    for (k, v) in m.iter() { e.set(k.clone(), v.clone()); }
+                    e
+                }
+                _ => Env::new()
+            };
+            eval(&expr, &mut native_env, tracer, loader)
+        }
+        Builtin::ApplyClosure => {
+            if args.len() != 2 { bail!("menv.apply_closure expects (closure_record, args_list)"); }
+            let m = match &args[0] { Val::Record(m) => m.clone(), _ => bail!("apply_closure arg0 must be record") };
+            let call_args = match &args[1] { Val::List(v) => v.clone(), _ => bail!("apply_closure arg1 must be list") };
+            let params = match m.get("params") { Some(Val::List(v)) => v.clone(), _ => bail!("apply_closure: no params") };
+            if params.len() != call_args.len() { bail!("arity mismatch: expected {} got {}", params.len(), call_args.len()); }
+            let mut base_env = match m.get("env") {
+                Some(Val::MutEnv(e)) => {
+                    let mut ne = Env::new();
+                    for (k, v) in e.lock().unwrap().iter() { ne.set(k.clone(), v.clone()); }
+                    ne
+                }
+                _ => Env::new()
+            };
+            if let Some(Val::Text(name)) = m.get("name") { base_env.set(name.clone(), args[0].clone()); }
+            let mut call_env = base_env.child();
+            for (p, a) in params.iter().zip(call_args.iter()) {
+                if let Val::Text(pname) = p { call_env.set(pname.clone(), a.clone()); }
+            }
+            let body_val = match m.get("body") { Some(v) => v.clone(), _ => bail!("apply_closure: no body") };
+            if let Some(eval_fn) = call_env.get("eval") {
+                let mut menv_map = HashMap::new();
+                for k in call_env.keys() { if let Some(v) = call_env.get(&k) { menv_map.insert(k, v); } }
+                call(eval_fn, vec![body_val, Val::MutEnv(Arc::new(Mutex::new(menv_map)))], tracer, loader)
+            } else {
+                bail!("apply_closure: eval not found in env")
+            }
+        }
+        Builtin::MutEnvNew => {
+            Ok(Val::MutEnv(Arc::new(Mutex::new(HashMap::new()))))
+        }
+        Builtin::MutEnvChild => {
+            if args.len() != 1 { bail!("menv.child expects 1 arg"); }
+            match &args[0] {
+                Val::MutEnv(parent) => {
+                    let mut child = parent.lock().unwrap().clone();
+                    Ok(Val::MutEnv(Arc::new(Mutex::new(child))))
+                }
+                _ => bail!("menv.child arg0 must be menv")
+            }
+        }
+        Builtin::MutEnvSet => {
+            if args.len() != 3 { bail!("menv.set expects 3 args"); }
+            match &args[0] {
+                Val::MutEnv(m) => {
+                    let k = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("menv.set key must be str") };
+                    m.lock().unwrap().insert(k, args[2].clone());
+                    Ok(Val::Unit)
+                }
+                _ => bail!("menv.set arg0 must be menv")
+            }
+        }
+        Builtin::MutEnvGet => {
+            if args.len() != 2 { bail!("menv.get expects 2 args"); }
+            match &args[0] {
+                Val::MutEnv(m) => {
+                    let k = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("menv.get key must be str") };
+                    Ok(m.lock().unwrap().get(&k).cloned().unwrap_or(Val::Unit))
+                }
+                _ => bail!("menv.get arg0 must be menv")
+            }
+        }
+        Builtin::MutEnvHas => {
+            if args.len() != 2 { bail!("menv.has expects 2 args"); }
+            match &args[0] {
+                Val::MutEnv(m) => {
+                    let k = match &args[1] { Val::Text(s) => s.clone(), _ => bail!("menv.has key must be str") };
+                    Ok(Val::Bool(m.lock().unwrap().contains_key(&k)))
+                }
+                _ => bail!("menv.has arg0 must be menv")
+            }
+        }
+                Builtin::ListApply => {
             if args.len() != 2 { bail!("ERROR_BADARG list.apply expects 2 args"); }
             let f = args[0].clone();
             let xs = match &args[1] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.apply arg1 must be list") };
@@ -9744,6 +10094,8 @@ fn call_builtin(
             [Val::Func(_)]   => Ok(Val::Text("func".to_string())),
             [Val::Builtin(_)]=> Ok(Val::Text("func".to_string())),
             [Val::BoundMethod(_,_)] => Ok(Val::Text("func".to_string())),
+            [Val::MutEnv(_)] => Ok(Val::Text("menv".to_string())),
+            [Val::VmFunc(_)] => Ok(Val::Text("func".to_string())),
             _ => bail!("ERROR_BADARG type_of expects 1 arg"),
         }
         Builtin::CastText => match args.as_slice() {
@@ -10565,18 +10917,26 @@ impl ModuleLoader {
                             // Build free_vars: only slots actually referenced as Var in the body
                             let n_params_local = raw_params.len();
                             let mut free_vars: Vec<(usize, Val)> = Vec::new();
+                            let mut has_missing_free_var = false;
                             for (i, sname) in slot_names.iter().enumerate() {
                                 if i >= n_params_local && sname != &name {
                                     // Only include if the body actually uses this var
                                     if expr_contains_var(&body, sname) {
-                                        if let Some(v) = env.get(sname) {
-                                            if !matches!(v, Val::Unit) {
+                                        match env.get(sname) {
+                                            Some(v) if !matches!(v, Val::Unit) => {
                                                 free_vars.push((i, v));
+                                            }
+                                            _ => {
+                                                has_missing_free_var = true;
+                                                break;
                                             }
                                         }
                                     }
                                 }
                             }
+                            if has_missing_free_var {
+                                None
+                            } else {
                             fns.push(VmCompiledFn {
                                 code: compiler.code,
                                 n_slots,
@@ -10604,6 +10964,7 @@ impl ModuleLoader {
                                 });
                                 Some(Val::VmFunc(global_idx))
                             })
+                            } // end else !has_missing_free_var
                         } else {
                             None
                         }
@@ -11512,6 +11873,17 @@ Ok(m)
                 m.insert("mat_mul_vec_grad".to_string(), Val::Builtin(Builtin::LinalgMatMulVecGrad));
                 m.insert("vec_scalar_add".to_string(), Val::Builtin(Builtin::LinalgVecScalarAdd));
                 m.insert("mat_row_sum".to_string(), Val::Builtin(Builtin::LinalgMatRowSum));
+                Ok(m)
+            }
+            "std/menv" | "menv" => {
+                let mut m = BTreeMap::new();
+                m.insert("new".to_string(), Val::Builtin(Builtin::MutEnvNew));
+                m.insert("set".to_string(), Val::Builtin(Builtin::MutEnvSet));
+                m.insert("get".to_string(), Val::Builtin(Builtin::MutEnvGet));
+                m.insert("has".to_string(), Val::Builtin(Builtin::MutEnvHas));
+                m.insert("child".to_string(), Val::Builtin(Builtin::MutEnvChild));
+                m.insert("call_eval".to_string(), Val::Builtin(Builtin::FardCallEval));
+                m.insert("apply_closure".to_string(), Val::Builtin(Builtin::ApplyClosure));
                 Ok(m)
             }
             _ => bail!("unknown std module: {name}"),
