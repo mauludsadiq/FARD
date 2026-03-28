@@ -1,0 +1,7 @@
+import("../packages/test-snapshot/main") as snap
+
+let v = { x: 1, y: 2 }
+
+test "serialize stable" { snap.serialize(v) == snap.serialize({ y: 2, x: 1 }) }
+test "digest stable"    { snap.digest(v) == snap.digest({ y: 2, x: 1 }) }
+test "digest differs"   { snap.digest(v) != snap.digest({ x: 1, y: 3 }) }

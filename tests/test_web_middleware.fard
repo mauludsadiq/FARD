@@ -1,0 +1,10 @@
+import("../packages/web-middleware/main") as mw
+
+let handler = fn(ctx) { { status: 200, headers: {}, body: "ok" } }
+let req     = { method: "GET", url: "/", headers: { "X-Token": "abc" }, body: null }
+let ctx     = { request: req, state: {}, response: null }
+
+test "logger passthru"        { mw.logger(handler)(ctx).status == 200 }
+test "require_header present" { mw.require_header(handler, "X-Token")(ctx).status == 200 }
+test "require_header missing" { mw.require_header(handler, "X-Missing")(ctx).status == 400 }
+test "pipe identity"          { mw.pipe(handler, [])(ctx).status == 200 }

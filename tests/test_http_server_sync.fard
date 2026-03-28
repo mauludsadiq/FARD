@@ -1,0 +1,11 @@
+import("../packages/http-server-sync/main") as srv
+
+let s = srv.server("127.0.0.1", 8080, fn(req) { srv.ok("hello") })
+
+test "server host"    { s.host == "127.0.0.1" }
+test "server port"    { s.port == 8080 }
+test "server type"    { s.t == "server-sync" }
+test "ok status"      { srv.ok("hi").status == 200 }
+test "not_found"      { srv.not_found().status == 404 }
+test "bad_request"    { srv.bad_request("bad").status == 400 }
+test "server_error"   { srv.server_error("err").status == 500 }

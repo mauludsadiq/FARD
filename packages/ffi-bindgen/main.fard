@@ -1,0 +1,27 @@
+// ffi-bindgen@1.6.0 — FFI binding generation primitives for FARD
+// Depends on ffi-core, core-serde.
+// Generates typed wrappers from FFI descriptors.
+
+import("std/rec")  as rec
+import("std/list") as list
+import("std/str")  as str
+
+fn binding(name, args, ret) {
+  { name: name, args: args, ret: ret, t: "binding" }
+}
+
+fn module(name, bindings) {
+  { name: name, bindings: bindings, t: "bindgen-module" }
+}
+
+fn binding_count(mod) { list.len(mod.bindings) }
+
+fn has_binding(mod, name) {
+  list.any(mod.bindings, fn(b) { b.name == name })
+}
+
+fn get_binding(mod, name) {
+  list.find(mod.bindings, fn(b) { b.name == name })
+}
+
+export { binding, module, binding_count, has_binding, get_binding }

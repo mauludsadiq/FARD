@@ -1,0 +1,9 @@
+import("../packages/ffi-serialize/main") as ser
+
+let v = { x: 1, y: 2 }
+
+test "roundtrip"       { ser.from_ffi(ser.to_ffi(v)).x == 1 }
+test "bytes roundtrip" { ser.from_bytes(ser.to_bytes(v)).y == 2 }
+test "wrap_result"     { ser.is_ok(ser.wrap_result(42)) == true }
+test "wrap_error"      { ser.is_ok(ser.wrap_error("bad")) == false }
+test "unwrap"          { ser.unwrap(ser.wrap_result(99)) == 99 }

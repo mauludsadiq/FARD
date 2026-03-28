@@ -1,0 +1,4 @@
+name = "web-static"
+version = "1.6.0"
+entry = "main.fard"
+description = "Static file serving for FARD web applications"

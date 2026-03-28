@@ -1,0 +1,13 @@
+import("../packages/ffi-bindgen/main") as bg
+import("std/list") as list
+
+let b1 = bg.binding("add", ["int", "int"], "int")
+let b2 = bg.binding("mul", ["int", "int"], "int")
+let m  = bg.module("math", [b1, b2])
+
+test "binding name"     { b1.name == "add" }
+test "binding ret"      { b1.ret == "int" }
+test "module name"      { m.name == "math" }
+test "binding_count"    { bg.binding_count(m) == 2 }
+test "has_binding true" { bg.has_binding(m, "add") == true }
+test "has_binding false"{ bg.has_binding(m, "div") == false }

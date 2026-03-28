@@ -1,0 +1,4 @@
+name = "cli-table"
+version = "1.6.0"
+entry = "main.fard"
+description = "Terminal table rendering for FARD"

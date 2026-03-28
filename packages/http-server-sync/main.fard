@@ -1,0 +1,29 @@
+// http-server-sync@1.6.0 — Synchronous HTTP server for FARD
+// Depends on http-core, core-config, core-errors.
+// Single-threaded blocking server. Use http-server-async for concurrent workloads.
+
+import("std/http") as http
+import("std/rec")  as rec
+
+fn server(host, port, handler) {
+  { host: host, port: port, handler: handler, t: "server-sync" }
+}
+
+fn listen(srv) {
+  http.serve_sync(srv.host, srv.port, srv.handler)
+}
+
+fn default_config() {
+  { host: "127.0.0.1", port: 8080 }
+}
+
+fn respond(status, headers, body) {
+  { status: status, headers: headers, body: body }
+}
+
+fn ok(body)           { respond(200, { "Content-Type": "text/plain" }, body) }
+fn not_found()        { respond(404, {}, "Not Found") }
+fn bad_request(msg)   { respond(400, {}, msg) }
+fn server_error(msg)  { respond(500, {}, msg) }
+
+export { server, listen, default_config, respond, ok, not_found, bad_request, server_error }

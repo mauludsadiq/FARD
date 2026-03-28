@@ -1,0 +1,5 @@
+import("../packages/test-property/main") as prop
+
+test "int_gen in range"  { prop.check(fn(x) { x >= 0 && x <= 9 }, prop.int_gen(0, 9), 50) == true }
+test "bool_gen is bool"  { prop.check(fn(x) { x == true || x == false }, prop.bool_gen(), 20) == true }
+test "list_gen len"      { prop.check(fn(xs) { list.len(xs) == 3 }, prop.list_gen(prop.int_gen(0,9), 3), 10) == true }

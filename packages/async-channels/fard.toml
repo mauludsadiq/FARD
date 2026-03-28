@@ -1,0 +1,4 @@
+name = "async-channels"
+version = "1.6.0"
+entry = "main.fard"
+description = "Async channel primitives for FARD"

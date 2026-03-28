@@ -1,0 +1,44 @@
+// web-client@1.6.0 — High-level HTTP web client for FARD
+// Depends on http-client-async, core-serde, core-config.
+// Configured client with base URL, default headers, and JSON helpers.
+
+import("std/http")  as http
+import("std/json")  as json
+import("std/rec")   as rec
+import("std/str")   as str
+
+fn client(base_url, headers) {
+  { base_url: base_url, headers: headers, t: "web-client" }
+}
+
+fn default_client() {
+  client("", { "Content-Type": "application/json", "Accept": "application/json" })
+}
+
+fn url(c, path) { str.concat([c.base_url, path]) }
+
+fn get(c, path) {
+  http.get(url(c, path), c.headers)
+}
+
+fn post(c, path, data) {
+  http.post(url(c, path), c.headers, json.encode(data))
+}
+
+fn put(c, path, data) {
+  http.put(url(c, path), c.headers, json.encode(data))
+}
+
+fn delete(c, path) {
+  http.delete(url(c, path), c.headers)
+}
+
+fn with_header(c, name, val) {
+  { base_url: c.base_url, headers: rec.set(c.headers, name, val), t: "web-client" }
+}
+
+fn with_base(c, base_url) {
+  { base_url: base_url, headers: c.headers, t: "web-client" }
+}
+
+export { client, default_client, url, get, post, put, delete, with_header, with_base }

@@ -1,0 +1,4 @@
+name = "web-middleware"
+version = "1.6.0"
+entry = "main.fard"
+description = "HTTP middleware composition for FARD"

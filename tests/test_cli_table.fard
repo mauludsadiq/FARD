@@ -1,0 +1,11 @@
+import("../packages/cli-table/main") as tbl
+import("std/str") as str
+
+let rows = [{ name: "alice", age: "30" }, { name: "bob", age: "25" }]
+let out  = tbl.render(rows, ["name", "age"])
+
+test "pad"          { tbl.pad("hi", 5) == "hi   " }
+test "col_width"    { tbl.col_width(rows, "name") == 5 }
+test "render has +" { str.contains(out, "+") == true }
+test "render has |" { str.contains(out, "|") == true }
+test "render alice" { str.contains(out, "alice") == true }

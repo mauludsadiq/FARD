@@ -1,0 +1,4 @@
+name = "http-client-async"
+version = "1.6.0"
+entry = "main.fard"
+description = "Asynchronous HTTP client for FARD"

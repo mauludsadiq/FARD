@@ -1,0 +1,7 @@
+import("../packages/async-channels/main") as ch
+
+let c = ch.channel()
+
+test "send and recv"  { ch.send(c, 42) ch.recv(c) == 42 }
+test "is_closed"      { ch.is_closed(c) == false }
+test "close"          { ch.close(c) ch.is_closed(c) == true }

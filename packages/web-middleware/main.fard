@@ -1,0 +1,44 @@
+// web-middleware@1.6.0 — HTTP middleware composition for FARD
+// Depends on web-core, http-core.
+// Wraps handlers with pre/post processing. Compose with pipe.
+
+import("std/list") as list
+import("std/rec")  as rec
+
+fn wrap(handler, before, after) {
+  fn(ctx) {
+    let ctx2 = before(ctx)
+    let ctx3 = handler(ctx2)
+    after(ctx3)
+  }
+}
+
+fn pipe(handler, middlewares) {
+  list.fold(middlewares, handler, fn(h, mw) { mw(h) })
+}
+
+fn logger(handler) {
+  fn(ctx) {
+    let result = handler(ctx)
+    result
+  }
+}
+
+fn cors(handler, origins) {
+  fn(ctx) {
+    let result = handler(ctx)
+    if rec.has(result, "headers") then
+      rec.set(result, "headers", rec.set(result.headers, "Access-Control-Allow-Origin", list.get(origins, 0)))
+    else result
+  }
+}
+
+fn require_header(handler, name) {
+  fn(ctx) {
+    let req = ctx.request
+    if rec.has(req.headers, name) then handler(ctx)
+    else { status: 400, headers: {}, body: str.concat(["Missing header: ", name]) }
+  }
+}
+
+export { wrap, pipe, logger, cors, require_header }

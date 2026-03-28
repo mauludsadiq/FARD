@@ -1,0 +1,4 @@
+name = "test-property"
+version = "1.6.0"
+entry = "main.fard"
+description = "Property-based testing for FARD"

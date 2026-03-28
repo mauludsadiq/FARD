@@ -1,0 +1,16 @@
+import("../packages/test-assert/main") as assert
+
+test "eq"        { assert.eq(1, 1) == true }
+test "neq"       { assert.neq(1, 2) == true }
+test "gt"        { assert.gt(3, 2) == true }
+test "lt"        { assert.lt(1, 2) == true }
+test "gte"       { assert.gte(2, 2) == true }
+test "lte"       { assert.lte(1, 2) == true }
+test "is_true"   { assert.is_true(true) == true }
+test "is_false"  { assert.is_false(false) == true }
+test "is_null"   { assert.is_null(null) == true }
+test "not_null"  { assert.not_null(42) == true }
+test "is_empty"  { assert.is_empty([]) == true }
+test "not_empty" { assert.not_empty([1]) == true }
+test "has_key"   { assert.has_key({ x: 1 }, "x") == true }
+test "contains"  { assert.contains([1,2,3], 2) == true }

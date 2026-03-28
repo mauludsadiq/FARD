@@ -1,0 +1,4 @@
+name = "ffi-runtime"
+version = "1.6.0"
+entry = "main.fard"
+description = "FFI runtime lifecycle management for FARD"

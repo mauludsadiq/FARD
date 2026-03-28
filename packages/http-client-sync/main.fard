@@ -1,0 +1,41 @@
+// http-client-sync@1.6.0 — Synchronous HTTP client for FARD
+// Depends on http-core, core-serde, core-errors.
+// Blocking request/response cycle. Use http-client-async for non-blocking.
+
+import("std/http")  as http
+import("std/rec")   as rec
+import("std/json")  as json
+
+fn get(url, headers) {
+  http.get(url, headers)
+}
+
+fn post(url, headers, body) {
+  http.post(url, headers, body)
+}
+
+fn put(url, headers, body) {
+  http.put(url, headers, body)
+}
+
+fn delete(url, headers) {
+  http.delete(url, headers)
+}
+
+fn get_json(url) {
+  let resp = http.get(url, { "Accept": "application/json" })
+  if rec.has(resp, "body") then json.decode(resp.body)
+  else { error: "no body" }
+}
+
+fn post_json(url, data) {
+  let body = json.encode(data)
+  http.post(url, { "Content-Type": "application/json" }, body)
+}
+
+fn is_ok(resp)    { resp.status >= 200 && resp.status < 300 }
+fn status(resp)   { resp.status }
+fn body(resp)     { resp.body }
+fn headers(resp)  { resp.headers }
+
+export { get, post, put, delete, get_json, post_json, is_ok, status, body, headers }

@@ -1,0 +1,3 @@
+import("../packages/http-client-async/main") as client
+
+test "await resolved" { client.await(client.get("https://example.com", {})) != null }

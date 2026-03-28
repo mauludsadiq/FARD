@@ -1,0 +1,4 @@
+name = "cli-progress"
+version = "1.6.0"
+entry = "main.fard"
+description = "Terminal progress bar rendering for FARD"

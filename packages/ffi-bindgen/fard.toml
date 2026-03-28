@@ -1,0 +1,4 @@
+name = "ffi-bindgen"
+version = "1.6.0"
+entry = "main.fard"
+description = "FFI binding generation primitives for FARD"

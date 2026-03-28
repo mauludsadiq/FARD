@@ -1,0 +1,4 @@
+name = "web-router"
+version = "1.6.0"
+entry = "main.fard"
+description = "HTTP request router for FARD web applications"

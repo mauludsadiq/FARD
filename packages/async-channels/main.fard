@@ -1,0 +1,19 @@
+// async-channels@1.6.0 — Async channel primitives for FARD
+// Depends on async-core, core-errors.
+// Provides bounded and unbounded channels for task communication.
+
+import("std/chan")  as chan
+import("std/async") as async
+
+fn channel()          { chan.new() }
+fn bounded(n)         { chan.bounded(n) }
+fn send(ch, val)      { chan.send(ch, val) }
+fn recv(ch)           { chan.recv(ch) }
+fn try_recv(ch)       { chan.try_recv(ch) }
+fn close(ch)          { chan.close(ch) }
+fn is_closed(ch)      { chan.is_closed(ch) }
+
+fn send_async(ch, val) { async.spawn(fn() { chan.send(ch, val) }) }
+fn recv_async(ch)      { async.spawn(fn() { chan.recv(ch) }) }
+
+export { channel, bounded, send, recv, try_recv, close, is_closed, send_async, recv_async }

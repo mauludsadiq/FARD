@@ -1,0 +1,28 @@
+// test-assert@1.6.0 — Assertion helpers for FARD tests
+// Depends on test-core, core-errors.
+// Named assertion functions that produce clear failure messages.
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn eq(a, b)       { a == b }
+fn neq(a, b)      { a != b }
+fn gt(a, b)       { a > b }
+fn lt(a, b)       { a < b }
+fn gte(a, b)      { a >= b }
+fn lte(a, b)      { a <= b }
+fn is_true(v)     { v == true }
+fn is_false(v)    { v == false }
+fn is_null(v)     { v == null }
+fn not_null(v)    { v != null }
+fn is_empty(xs)   { list.len(xs) == 0 }
+fn not_empty(xs)  { list.len(xs) > 0 }
+fn has_key(r, k)  { rec.has(r, k) }
+fn contains(xs, v){ list.any(xs, fn(x) { x == v }) }
+
+export {
+  eq, neq, gt, lt, gte, lte,
+  is_true, is_false, is_null, not_null,
+  is_empty, not_empty, has_key, contains
+}

@@ -1,0 +1,28 @@
+// cli-progress@1.6.0 — Terminal progress bar rendering for FARD
+// Depends on cli-core.
+// Renders progress bars and spinners for long-running CLI operations.
+
+import("std/str")  as str
+import("std/list") as list
+import("std/int")  as ints
+
+fn bar(current, total, width) {
+  let pct     = if total == 0 then 0 else current * width / total
+  let filled  = str.repeat("#", pct)
+  let empty   = str.repeat("-", width - pct)
+  let percent = ints.to_string(if total == 0 then 0 else current * 100 / total)
+  str.concat(["[", filled, empty, "] ", percent, "%"])
+}
+
+fn spinner_frames() { ["|", "/", "-", "\\"] }
+
+fn spinner(tick) {
+  let frames = spinner_frames()
+  list.get(frames, tick - (tick / list.len(frames)) * list.len(frames))
+}
+
+fn label(bar_str, msg) {
+  str.concat([bar_str, " ", msg])
+}
+
+export { bar, spinner, spinner_frames, label }

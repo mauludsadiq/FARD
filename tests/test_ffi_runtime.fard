@@ -1,0 +1,7 @@
+import("../packages/ffi-runtime/main") as rt
+
+let r = rt.runtime("myrt", "2.0", "/usr/lib/myrt.so")
+
+test "name"    { rt.name(r) == "myrt" }
+test "version" { rt.version(r) == "2.0" }
+test "type"    { r.t == "ffi-runtime" }

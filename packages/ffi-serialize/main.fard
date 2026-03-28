@@ -1,0 +1,19 @@
+// ffi-serialize@1.6.0 — FFI boundary serialization for FARD
+// Depends on ffi-core, core-serde, core-bytes.
+// Handles marshalling FARD values across the FFI boundary.
+
+import("std/json")  as json
+import("std/bytes") as bytes
+import("std/rec")   as rec
+
+fn to_ffi(v)      { json.encode(v) }
+fn from_ffi(s)    { json.decode(s) }
+fn to_bytes(v)    { bytes.from_string(json.encode(v)) }
+fn from_bytes(b)  { json.decode(bytes.to_string(b)) }
+
+fn wrap_result(v)   { { ok: true, value: v } }
+fn wrap_error(msg)  { { ok: false, error: msg } }
+fn is_ok(r)         { rec.has(r, "ok") && r.ok == true }
+fn unwrap(r)        { r.value }
+
+export { to_ffi, from_ffi, to_bytes, from_bytes, wrap_result, wrap_error, is_ok, unwrap }

@@ -1,0 +1,32 @@
+// web-router@1.6.0 — HTTP request router for FARD web applications
+// Depends on web-core, http-core.
+// Pattern-based request routing with method and path matching.
+
+import("std/list") as list
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn router()  { { routes: [] } }
+
+fn add(r, method, pattern, handler) {
+  { routes: list.concat([r.routes, [{ method: method, pattern: pattern, handler: handler }]]) }
+}
+
+fn get(r, pattern, handler)    { add(r, "GET", pattern, handler) }
+fn post(r, pattern, handler)   { add(r, "POST", pattern, handler) }
+fn put(r, pattern, handler)    { add(r, "PUT", pattern, handler) }
+fn delete(r, pattern, handler) { add(r, "DELETE", pattern, handler) }
+
+fn matches(route, method, path) {
+  route.method == method && route.pattern == path
+}
+
+fn dispatch(r, method, path, ctx) {
+  let matched = list.find(r.routes, fn(route) { matches(route, method, path) })
+  if matched != null then matched.handler(ctx)
+  else { error: "no route matched", method: method, path: path }
+}
+
+fn route_count(r) { list.len(r.routes) }
+
+export { router, add, get, post, put, delete, dispatch, route_count }

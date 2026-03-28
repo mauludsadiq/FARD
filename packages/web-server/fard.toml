@@ -1,0 +1,4 @@
+name = "web-server"
+version = "1.6.0"
+entry = "main.fard"
+description = "High-level web server composition for FARD"

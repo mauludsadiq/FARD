@@ -1,0 +1,16 @@
+import("../packages/store-memory/main") as store
+
+let s  = store.open()
+let s2 = store.set(s, "x", 42)
+let s3 = store.set(s2, "y", 99)
+
+test "get ok"       { store.get(s2, "x").ok == true }
+test "get value"    { store.get(s2, "x").value == 42 }
+test "get missing"  { store.get(s2, "z").ok == false }
+test "get_or hit"   { store.get_or(s2, "x", 0) == 42 }
+test "get_or miss"  { store.get_or(s2, "z", 0) == 0 }
+test "has true"     { store.has(s2, "x") == true }
+test "has false"    { store.has(s2, "z") == false }
+test "count"        { store.count(s3) == 2 }
+test "delete"       { store.has(store.delete(s2, "x"), "x") == false }
+test "clear"        { store.count(store.clear(s3)) == 0 }

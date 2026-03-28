@@ -1,0 +1,12 @@
+import("../packages/web-client/main") as wc
+import("std/rec") as rec
+
+let c  = wc.client("https://api.example.com", {})
+let c2 = wc.with_header(c, "X-Token", "secret")
+let c3 = wc.with_base(c, "https://other.com")
+
+test "client type"    { c.t == "web-client" }
+test "url"            { wc.url(c, "/users") == "https://api.example.com/users" }
+test "with_header"    { rec.has(c2.headers, "X-Token") == true }
+test "with_base"      { c3.base_url == "https://other.com" }
+test "default_client" { wc.default_client().t == "web-client" }

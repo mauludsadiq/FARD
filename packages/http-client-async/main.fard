@@ -1,0 +1,44 @@
+// http-client-async@1.6.0 — Asynchronous HTTP client for FARD
+// Depends on http-core, async-core, core-serde, core-errors.
+// Returns tasks. Compose with async.all, async.race, async.await.
+
+import("std/http")  as http
+import("std/async") as async
+import("std/json")  as json
+import("std/rec")   as rec
+
+fn get(url, headers) {
+  async.spawn(fn() { http.get(url, headers) })
+}
+
+fn post(url, headers, body) {
+  async.spawn(fn() { http.post(url, headers, body) })
+}
+
+fn put(url, headers, body) {
+  async.spawn(fn() { http.put(url, headers, body) })
+}
+
+fn delete(url, headers) {
+  async.spawn(fn() { http.delete(url, headers) })
+}
+
+fn get_json(url) {
+  async.spawn(fn() {
+    let resp = http.get(url, { "Accept": "application/json" })
+    if rec.has(resp, "body") then json.decode(resp.body)
+    else { error: "no body" }
+  })
+}
+
+fn post_json(url, data) {
+  async.spawn(fn() {
+    http.post(url, { "Content-Type": "application/json" }, json.encode(data))
+  })
+}
+
+fn all(tasks)       { async.all(tasks) }
+fn race(tasks)      { async.race(tasks) }
+fn await(task)      { async.await(task) }
+
+export { get, post, put, delete, get_json, post_json, all, race, await }

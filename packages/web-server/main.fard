@@ -1,0 +1,28 @@
+// web-server@1.6.0 — High-level web server composition for FARD
+// Depends on web-core, web-router, web-middleware, http-server-async.
+// Composes router + middleware + server into a single launchable unit.
+
+import("std/http")  as http
+import("std/async") as async
+import("std/rec")   as rec
+
+fn app(router, middlewares, config) {
+  { router: router, middlewares: middlewares, config: config, t: "web-app" }
+}
+
+fn default_config() {
+  { host: "127.0.0.1", port: 8080 }
+}
+
+fn listen(a) {
+  async.spawn(fn() {
+    http.serve_async(a.config.host, a.config.port, fn(req) {
+      a.router(req)
+    })
+  })
+}
+
+fn host(a) { a.config.host }
+fn port(a) { a.config.port }
+
+export { app, default_config, listen, host, port }

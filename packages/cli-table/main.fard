@@ -1,0 +1,45 @@
+// cli-table@1.6.0 — Terminal table rendering for FARD
+// Depends on cli-core, core-errors.
+// Renders records as aligned ASCII tables for terminal output.
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn col_width(rows, key) {
+  list.fold(rows, str.len(key), fn(acc, r) {
+    let v = str.from(rec.get(r, key))
+    if str.len(v) > acc then str.len(v) else acc
+  })
+}
+
+fn pad(s, width) {
+  str.concat([s, str.repeat(" ", width - str.len(s))])
+}
+
+fn render_row(row, keys, widths) {
+  let cells = list.map(list.range(0, list.len(keys)), fn(i) {
+    let k = list.get(keys, i)
+    let w = list.get(widths, i)
+    pad(str.from(rec.get(row, k)), w)
+  })
+  str.concat(["| ", str.join(cells, " | "), " |"])
+}
+
+fn render_sep(widths) {
+  let parts = list.map(widths, fn(w) { str.repeat("-", w + 2) })
+  str.concat(["+", str.join(parts, "+"), "+"])
+}
+
+fn render(rows, keys) {
+  let widths = list.map(keys, fn(k) { col_width(rows, k) })
+  let header = render_row(
+    list.fold(keys, {}, fn(acc, k) { rec.set(acc, k, k) }),
+    keys, widths
+  )
+  let sep = render_sep(widths)
+  let data_rows = list.map(rows, fn(r) { render_row(r, keys, widths) })
+  str.join(list.concat([[sep, header, sep], data_rows, [sep]]), "\n")
+}
+
+export { render, render_row, render_sep, col_width, pad }

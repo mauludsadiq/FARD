@@ -1,0 +1,38 @@
+// web-static@1.6.0 — Static file serving for FARD web applications
+// Depends on web-core, fs-core.
+// Serves files from a directory with MIME type detection.
+
+import("std/io")  as io
+import("std/str") as str
+import("std/rec") as rec
+
+fn mime(ext) {
+  if ext == "html" then "text/html"
+  else if ext == "css"  then "text/css"
+  else if ext == "js"   then "application/javascript"
+  else if ext == "json" then "application/json"
+  else if ext == "png"  then "image/png"
+  else if ext == "jpg"  then "image/jpeg"
+  else if ext == "svg"  then "image/svg+xml"
+  else "application/octet-stream"
+}
+
+fn extension(path) {
+  let parts = str.split(path, ".")
+  if list.len(parts) > 1 then list.last(parts) else ""
+}
+
+fn serve_file(root, path) {
+  let full = str.concat([root, "/", path])
+  let r    = io.read_file(full)
+  if rec.has(r, "ok") then
+    { status: 200, headers: { "Content-Type": mime(extension(path)) }, body: r.ok }
+  else
+    { status: 404, headers: {}, body: "Not Found" }
+}
+
+fn handler(root) {
+  fn(ctx) { serve_file(root, ctx.request.url) }
+}
+
+export { mime, extension, serve_file, handler }

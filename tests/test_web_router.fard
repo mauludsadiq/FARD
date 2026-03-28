@@ -1,0 +1,10 @@
+import("../packages/web-router/main") as router
+
+let r = router.router()
+let r2 = router.get(r, "/hello", fn(ctx) { { status: 200, body: "hello" } })
+let r3 = router.post(r2, "/echo", fn(ctx) { { status: 201, body: "created" } })
+
+test "route_count"    { router.route_count(r3) == 2 }
+test "dispatch get"   { router.dispatch(r3, "GET", "/hello", {}).status == 200 }
+test "dispatch post"  { router.dispatch(r3, "POST", "/echo", {}).status == 201 }
+test "dispatch miss"  { rec.has(router.dispatch(r3, "GET", "/missing", {}), "error") == true }

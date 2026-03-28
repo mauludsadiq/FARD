@@ -1,0 +1,9 @@
+import("../packages/web-static/main") as ws
+
+test "mime html"   { ws.mime("html") == "text/html" }
+test "mime css"    { ws.mime("css") == "text/css" }
+test "mime js"     { ws.mime("js") == "application/javascript" }
+test "mime png"    { ws.mime("png") == "image/png" }
+test "mime other"  { ws.mime("xyz") == "application/octet-stream" }
+test "extension"   { ws.extension("index.html") == "html" }
+test "ext none"    { ws.extension("Makefile") == "" }

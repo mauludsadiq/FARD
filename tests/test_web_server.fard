@@ -1,0 +1,10 @@
+import("../packages/web-server/main") as ws
+
+let cfg = ws.default_config()
+let a   = ws.app(fn(req) { { status: 200 } }, [], cfg)
+
+test "host"       { ws.host(a) == "127.0.0.1" }
+test "port"       { ws.port(a) == 8080 }
+test "app type"   { a.t == "web-app" }
+test "default host" { cfg.host == "127.0.0.1" }
+test "default port" { cfg.port == 8080 }

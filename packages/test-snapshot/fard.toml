@@ -1,0 +1,4 @@
+name = "test-snapshot"
+version = "1.6.0"
+entry = "main.fard"
+description = "Snapshot testing for FARD"

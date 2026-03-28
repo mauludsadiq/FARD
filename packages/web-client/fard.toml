@@ -1,0 +1,4 @@
+name = "web-client"
+version = "1.6.0"
+entry = "main.fard"
+description = "High-level HTTP web client for FARD"

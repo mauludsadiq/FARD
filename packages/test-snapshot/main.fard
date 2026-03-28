@@ -1,0 +1,42 @@
+// test-snapshot@1.6.0 — Snapshot testing for FARD
+// Depends on test-core, core-serde, core-hash.
+// Serializes values to canonical JSON and compares against stored snapshots.
+
+import("std/json") as json
+import("std/hash") as hash
+import("std/bytes") as bytes
+import("std/io")   as io
+import("std/rec")  as rec
+
+fn snapshot_path(name) {
+  str.concat(["tests/snapshots/", name, ".snap"])
+}
+
+fn serialize(v) { json.canonicalize(json.encode(v)) }
+
+fn digest(v) {
+  bytes.to_hex(hash.sha256(bytes.from_string(serialize(v))))
+}
+
+fn write(name, v) {
+  io.write_file(snapshot_path(name), serialize(v))
+}
+
+fn read(name) {
+  let r = io.read_file(snapshot_path(name))
+  if rec.has(r, "ok") then r.ok
+  else null
+}
+
+fn match(name, v) {
+  let stored = read(name)
+  if stored == null then { new: true, matched: false }
+  else { new: false, matched: stored == serialize(v) }
+}
+
+fn assert_match(name, v) {
+  let r = match(name, v)
+  r.matched == true || r.new == true
+}
+
+export { serialize, digest, write, read, match, assert_match }

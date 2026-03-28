@@ -1,0 +1,8 @@
+import("../packages/cli-progress/main") as prog
+import("std/str") as str
+
+test "bar 0%"       { prog.bar(0, 10, 10) == "[----------] 0%" }
+test "bar 100%"     { prog.bar(10, 10, 10) == "[##########] 100%" }
+test "bar 50%"      { prog.bar(5, 10, 10) == "[#####-----] 50%" }
+test "spinner tick" { str.len(prog.spinner(0)) == 1 }
+test "label"        { str.contains(prog.label("[##] 50%", "loading..."), "loading") == true }

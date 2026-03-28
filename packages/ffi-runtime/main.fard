@@ -1,0 +1,21 @@
+// ffi-runtime@1.6.0 — FFI runtime lifecycle management for FARD
+// Depends on ffi-core, core-errors.
+// Manages loading, unloading, and versioning of foreign runtimes.
+
+import("std/ffi") as ffi
+import("std/rec") as rec
+
+fn runtime(name, version, path) {
+  { name: name, version: version, path: path, t: "ffi-runtime" }
+}
+
+fn load(rt)     { ffi.load(rt.path) }
+fn unload(rt)   { ffi.unload(rt.path) }
+fn is_loaded(rt){ ffi.is_loaded(rt.path) }
+
+fn call(rt, sym, args) { ffi.call(ffi.load(rt.path), sym, args) }
+
+fn version(rt)  { rt.version }
+fn name(rt)     { rt.name }
+
+export { runtime, load, unload, is_loaded, call, version, name }

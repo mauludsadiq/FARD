@@ -1,0 +1,23 @@
+// test-property@1.6.0 — Property-based testing for FARD
+// Depends on test-core, core-random.
+// Generates random inputs and checks that properties hold across all of them.
+
+import("std/random") as rng
+import("std/list")   as list
+
+fn for_all(gen, prop, n) {
+  let samples = list.map(list.range(0, n), fn(_) { gen() })
+  list.all(samples, prop)
+}
+
+fn int_gen(lo, hi)    { fn() { rng.int(lo, hi) } }
+fn float_gen()        { fn() { rng.float() } }
+fn bool_gen()         { fn() { rng.bool() } }
+fn list_gen(gen, n)   { fn() { list.map(list.range(0, n), fn(_) { gen() }) } }
+fn choice_gen(xs)     { fn() { list.get(xs, rng.int(0, list.len(xs) - 1)) } }
+
+fn check(prop, gen, n) {
+  for_all(gen, prop, n)
+}
+
+export { for_all, int_gen, float_gen, bool_gen, list_gen, choice_gen, check }

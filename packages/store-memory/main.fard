@@ -1,0 +1,34 @@
+// store-memory@1.6.0 — In-memory key-value store for FARD
+// Depends on core-errors.
+// Pure in-memory store with no persistence. Mirrors store-fs API shape.
+
+import("std/rec")  as rec
+import("std/list") as list
+
+fn open()  { { data: {} } }
+
+fn get(store, key) {
+  if rec.has(store.data, key) then { ok: true, value: rec.get(store.data, key) }
+  else { ok: false, value: null }
+}
+
+fn get_or(store, key, default) {
+  if rec.has(store.data, key) then rec.get(store.data, key)
+  else default
+}
+
+fn set(store, key, value) {
+  { data: rec.set(store.data, key, value) }
+}
+
+fn delete(store, key) {
+  { data: rec.remove(store.data, key) }
+}
+
+fn has(store, key)  { rec.has(store.data, key) }
+fn keys(store)      { rec.keys(store.data) }
+fn count(store)     { list.len(rec.keys(store.data)) }
+fn clear(store)     { { data: {} } }
+fn all(store)       { store.data }
+
+export { open, get, get_or, set, delete, has, keys, count, clear, all }
