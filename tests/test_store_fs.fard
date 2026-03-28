@@ -1,0 +1,7 @@
+import("../packages/store-fs/main") as store
+test "store basic set/get" {
+  let s = store.open_default() in
+  let s2 = store.set(s, "x", 42) in
+  let r = store.get(s2, "x") in
+  r.ok == true
+}

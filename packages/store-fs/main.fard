@@ -1,0 +1,87 @@
+// store-fs.6.0 — Filesystem-backed structured store for FARD
+// JSON-backed persistence with explicit store semantics
+// Deterministic load/save and witnessed writes
+import("std/io")   as io
+import("std/json") as json
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/list") as list
+
+fn default_path() { ".fard_store_fs.json" }
+
+fn load(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then json.decode(result.ok)
+  else {}
+}
+
+fn save(path, data) {
+  io.write_file(path, json.encode(data))
+}
+
+fn open(path) {
+  { path: path, data: load(path) }
+}
+
+fn open_default() {
+  open(default_path())
+}
+
+fn get(store, key) {
+  if rec.has(store.data, key) then
+    { ok: true, value: rec.get(store.data, key) }
+  else
+    { ok: false, value: null }
+}
+
+fn get_or(store, key, default) {
+  if rec.has(store.data, key) then rec.get(store.data, key)
+  else default
+}
+
+fn set(store, key, value) {
+  let new_data = rec.set(store.data, key, value)
+  let saved    = save(store.path, new_data)
+  { path: store.path, data: new_data }
+}
+
+fn delete(store, key) {
+  let new_data = rec.remove(store.data, key)
+  let saved    = save(store.path, new_data)
+  { path: store.path, data: new_data }
+}
+
+fn has(store, key) {
+  rec.has(store.data, key)
+}
+
+fn keys(store) {
+  rec.keys(store.data)
+}
+
+fn count(store) {
+  list.len(rec.keys(store.data))
+}
+
+fn clear(store) {
+  let saved = save(store.path, {})
+  { path: store.path, data: {} }
+}
+
+fn all(store) {
+  store.data
+}
+
+{
+  open:         open,
+  open_default: open_default,
+  get:          get,
+  get_or:       get_or,
+  set:          set,
+  delete:       delete,
+  has:          has,
+  keys:         keys,
+  count:        count,
+  clear:        clear,
+  all:          all
+}
