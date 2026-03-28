@@ -1,0 +1,11 @@
+import("../packages/fard-coverage/main") as cov
+
+test "coverage basic" {
+  let items = [
+    cov.cover("a", true),
+    cov.cover("b", false),
+    cov.cover("c", true)
+  ]
+  let r = cov.coverage_report(items)
+  r.covered == 2
+}
