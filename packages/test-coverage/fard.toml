@@ -1,0 +1,4 @@
+name = "test-coverage"
+version = "1.6.0"
+entry = "main.fard"
+description = "Test coverage tracking for FARD"

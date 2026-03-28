@@ -1,0 +1,31 @@
+// rust-tokio@1.6.0 — Rust tokio async runtime adapter for FARD
+// Depends on ffi-rust, async-core.
+// Spawns async Rust tasks from FARD via dylib with JSON IO.
+
+import("std/ffi")  as ffi
+import("std/json") as json
+import("std/rec")  as rec
+
+fn runtime(lib_path) {
+  { lib: ffi.load(lib_path), path: lib_path, t: "rust-tokio" }
+}
+
+fn spawn(rt, task_name, args) {
+  let encoded = json.encode(args)
+  let raw     = ffi.call(rt.lib, task_name, [encoded])
+  json.decode(raw)
+}
+
+fn block_on(rt, task_name, args) {
+  let encoded = json.encode(args)
+  let raw     = ffi.call(rt.lib, str.concat(["block_", task_name]), [encoded])
+  json.decode(raw)
+}
+
+fn task(name, args) {
+  { name: name, args: args, t: "tokio-task" }
+}
+
+fn path(rt) { rt.path }
+
+export { runtime, spawn, block_on, task, path }

@@ -1,0 +1,4 @@
+name = "node-express"
+version = "1.6.0"
+entry = "main.fard"
+description = "Express.js adapter for FARD via Node FFI"

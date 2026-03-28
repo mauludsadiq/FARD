@@ -1,0 +1,10 @@
+import("../packages/node-express/main") as express
+import("std/str") as str
+
+let rt = express.runtime()
+let a  = express.app([express.route("GET", "/", "res.json({ok:true})")])
+
+test "runtime type"  { rt.t == "node-express" }
+test "app type"      { a.t == "express-app" }
+test "route method"  { list.get(a.routes, 0).method == "GET" }
+test "script"        { str.contains(express.script(a, 3000), "express") == true }

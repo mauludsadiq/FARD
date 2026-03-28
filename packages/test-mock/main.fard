@@ -1,0 +1,34 @@
+// test-mock@1.6.0 — Mock and spy primitives for FARD tests
+// Depends on test-core.
+// Creates mocks that record calls and return configured values.
+
+import("std/list") as list
+import("std/rec")  as rec
+
+fn mock(return_value) {
+  { calls: [], return_value: return_value, t: "mock" }
+}
+
+fn call(m, args) {
+  let updated = rec.set(m, "calls", list.concat([m.calls, [args]]))
+  { mock: updated, result: m.return_value }
+}
+
+fn call_count(m) { list.len(m.calls) }
+fn was_called(m) { list.len(m.calls) > 0 }
+fn last_call(m)  { if list.len(m.calls) > 0 then list.last(m.calls) else null }
+fn reset(m)      { rec.set(m, "calls", []) }
+
+fn spy(f) {
+  { calls: [], f: f, t: "spy" }
+}
+
+fn spy_call(s, args) {
+  let result  = s.f(args)
+  let updated = rec.set(s, "calls", list.concat([s.calls, [args]]))
+  { spy: updated, result: result }
+}
+
+fn spy_count(s) { list.len(s.calls) }
+
+export { mock, call, call_count, was_called, last_call, reset, spy, spy_call, spy_count }

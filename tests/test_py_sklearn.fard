@@ -1,0 +1,7 @@
+import("../packages/py-sklearn/main") as sk
+
+let rt = sk.runtime()
+
+test "runtime type" { rt.t == "py-sklearn" }
+test "runtime bin"  { rt.bin == "python3" }
+test "accuracy"     { sk.accuracy(rt, [1,0,1], [1,0,1]) == 1.0 }

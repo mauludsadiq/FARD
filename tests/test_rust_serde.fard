@@ -1,0 +1,14 @@
+import("../packages/rust-serde/main") as serde
+import("std/list") as list
+
+let rt  = serde.runtime("/usr/lib/libfard_serde.so")
+let s   = serde.schema([serde.field("x", "int"), serde.field("y", "int")])
+let v   = { x: 1, y: 2 }
+let bad = { x: 1 }
+
+test "runtime type"    { rt.t == "rust-serde" }
+test "roundtrip"       { serde.roundtrip(v).x == 1 }
+test "canonical"       { serde.canonical({b:2,a:1}) == serde.canonical({a:1,b:2}) }
+test "schema type"     { s.t == "serde-schema" }
+test "validate ok"     { serde.validate(s, v) == true }
+test "validate fail"   { serde.validate(s, bad) == false }

@@ -1,0 +1,39 @@
+// py-matplotlib@1.6.0 — Matplotlib adapter for FARD via Python FFI
+// Depends on ffi-python, ndarray-cpu.
+// Renders plots to files via Python subprocess.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/str")     as str
+
+fn runtime() { { bin: "python3", t: "py-matplotlib" } }
+
+fn line_plot(rt, x, y, path) {
+  let script = str.concat([
+    "import matplotlib\nmatplotlib.use('Agg')\n",
+    "import matplotlib.pyplot as plt, json\n",
+    "plt.plot(", json.encode(x), ",", json.encode(y), ")\n",
+    "plt.savefig('", path, "')\n",
+    "print('ok')"
+  ])
+  let r = proc.capture(rt.bin, ["-c", script])
+  r.exit_code == 0
+}
+
+fn bar_plot(rt, labels, values, path) {
+  let script = str.concat([
+    "import matplotlib\nmatplotlib.use('Agg')\n",
+    "import matplotlib.pyplot as plt, json\n",
+    "plt.bar(", json.encode(labels), ",", json.encode(values), ")\n",
+    "plt.savefig('", path, "')\n",
+    "print('ok')"
+  ])
+  let r = proc.capture(rt.bin, ["-c", script])
+  r.exit_code == 0
+}
+
+fn figure(title, xlabel, ylabel) {
+  { title: title, xlabel: xlabel, ylabel: ylabel, t: "mpl-figure" }
+}
+
+export { runtime, line_plot, bar_plot, figure }

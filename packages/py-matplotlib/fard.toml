@@ -1,0 +1,4 @@
+name = "py-matplotlib"
+version = "1.6.0"
+entry = "main.fard"
+description = "Matplotlib adapter for FARD via Python FFI"

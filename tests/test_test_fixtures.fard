@@ -1,0 +1,13 @@
+import("../packages/test-fixtures/main") as fix
+
+let f1  = fix.fixture("user", { name: "alice", age: 30 })
+let f2  = fix.fixture("product", { id: 1, price: 9.99 })
+let reg = fix.registry([f1, f2])
+
+test "fixture type"   { f1.t == "fixture" }
+test "fixture name"   { f1.name == "user" }
+test "get found"      { fix.get(reg, "user").name == "alice" }
+test "get missing"    { fix.get(reg, "missing") == null }
+test "has true"       { fix.has(reg, "product") == true }
+test "has false"      { fix.has(reg, "order") == false }
+test "add"            { fix.has(fix.add(reg, fix.fixture("order", {})), "order") == true }

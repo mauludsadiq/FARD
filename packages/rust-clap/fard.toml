@@ -1,0 +1,4 @@
+name = "rust-clap"
+version = "1.6.0"
+entry = "main.fard"
+description = "Rust clap CLI adapter for FARD"

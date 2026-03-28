@@ -1,0 +1,11 @@
+import("../packages/http-stream/main") as hs
+import("std/str") as str
+import("std/list") as list
+
+let s = hs.stream()
+
+test "stream type"    { s.t == "http-stream" }
+test "sse_event"      { str.contains(hs.sse_event("msg", "hello"), "event: msg") == true }
+test "sse_data"       { str.contains(hs.sse_data("hello"), "data: hello") == true }
+test "chunked"        { list.len(hs.chunked(["a", "b", "c"])) == 3 }
+test "is_closed"      { hs.is_closed(s) == false }

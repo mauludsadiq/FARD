@@ -1,0 +1,12 @@
+import("../packages/http-cache/main") as cache
+
+let c   = cache.cache(60)
+let req = { method: "GET", url: "/api/data", headers: {}, body: null }
+let resp = { status: 200, headers: {}, body: "data" }
+let c2  = cache.put(c, req, resp)
+
+test "cache type"    { c.t == "http-cache" }
+test "cache_key"     { cache.cache_key(req) == "GET:/api/data" }
+test "put and get"   { cache.get(c2, req).status == 200 }
+test "miss"          { cache.get(c, req) == null }
+test "invalidate"    { cache.get(cache.invalidate(c2, req), req) == null }

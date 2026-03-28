@@ -1,0 +1,13 @@
+import("../packages/test-coverage/main") as cov
+
+let tr  = cov.tracker()
+let tr2 = cov.register(tr, "fn_add")
+let tr3 = cov.register(tr2, "fn_mul")
+let tr4 = cov.mark(tr3, "fn_add")
+
+test "tracker type"    { tr.t == "coverage-tracker" }
+test "total_count"     { cov.total_count(tr3) == 2 }
+test "covered_count"   { cov.covered_count(tr4) == 1 }
+test "percent"         { cov.percent(tr4) == 50 }
+test "uncovered"       { list.len(cov.uncovered(tr4)) == 1 }
+test "report"          { cov.report(tr4).total == 2 }

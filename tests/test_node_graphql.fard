@@ -1,0 +1,9 @@
+import("../packages/node-graphql/main") as gql
+
+let rt = gql.runtime()
+let s  = gql.schema("type Query { hello: String }")
+let q  = gql.query("{ hello }")
+
+test "runtime type" { rt.t == "node-graphql" }
+test "schema type"  { s.t == "gql-schema" }
+test "query type"   { q.t == "gql-query" }

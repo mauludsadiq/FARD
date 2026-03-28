@@ -1,0 +1,4 @@
+name = "test-benchmark"
+version = "1.6.0"
+entry = "main.fard"
+description = "Benchmarking primitives for FARD"

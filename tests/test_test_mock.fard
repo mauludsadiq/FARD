@@ -1,0 +1,13 @@
+import("../packages/test-mock/main") as mock
+
+let m  = mock.mock(42)
+let r1 = mock.call(m, { x: 1 })
+let r2 = mock.call(r1.mock, { x: 2 })
+
+test "mock type"      { m.t == "mock" }
+test "return value"   { r1.result == 42 }
+test "call_count"     { mock.call_count(r2.mock) == 2 }
+test "was_called"     { mock.was_called(r1.mock) == true }
+test "not called"     { mock.was_called(m) == false }
+test "last_call"      { mock.last_call(r2.mock).x == 2 }
+test "reset"          { mock.call_count(mock.reset(r2.mock)) == 0 }

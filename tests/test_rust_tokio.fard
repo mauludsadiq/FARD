@@ -1,0 +1,9 @@
+import("../packages/rust-tokio/main") as tokio
+
+let descriptor = { path: "/usr/lib/libfard_tokio.so", t: "rust-tokio" }
+let t = tokio.task("fetch", { url: "https://example.com" })
+
+test "type"        { descriptor.t == "rust-tokio" }
+test "task type"   { t.t == "tokio-task" }
+test "task name"   { t.name == "fetch" }
+test "task args"   { t.args.url == "https://example.com" }

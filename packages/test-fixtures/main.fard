@@ -1,0 +1,42 @@
+// test-fixtures@1.6.0 — Test fixture management for FARD
+// Depends on test-core, fs-core, core-serde.
+// Loads, registers, and tears down test fixtures.
+
+import("std/io")   as io
+import("std/json") as json
+import("std/rec")  as rec
+import("std/list") as list
+
+fn fixture(name, data) {
+  { name: name, data: data, t: "fixture" }
+}
+
+fn from_json(name, s) {
+  fixture(name, json.decode(s))
+}
+
+fn from_file(name, path) {
+  let r = io.read_file(path)
+  if rec.has(r, "ok") then fixture(name, json.decode(r.ok))
+  else { error: str.concat(["fixture not found: ", path]) }
+}
+
+fn registry(fixtures) {
+  { fixtures: fixtures, t: "fixture-registry" }
+}
+
+fn get(reg, name) {
+  let matched = list.find(reg.fixtures, fn(f) { f.name == name })
+  if matched != null then matched.data
+  else null
+}
+
+fn has(reg, name) {
+  list.any(reg.fixtures, fn(f) { f.name == name })
+}
+
+fn add(reg, f) {
+  rec.set(reg, "fixtures", list.concat([reg.fixtures, [f]]))
+}
+
+export { fixture, from_json, from_file, registry, get, has, add }

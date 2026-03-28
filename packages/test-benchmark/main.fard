@@ -1,0 +1,33 @@
+// test-benchmark@1.6.0 — Benchmarking primitives for FARD
+// Depends on test-core, core-time.
+// Measures execution time of functions over N iterations.
+
+import("std/datetime") as dt
+import("std/list")     as list
+import("std/rec")      as rec
+
+fn run(name, f, iterations) {
+  let start   = dt.now()
+  let results = list.map(list.range(0, iterations), fn(_) { f() })
+  let end_    = dt.now()
+  let elapsed = end_ - start
+  {
+    name:       name,
+    iterations: iterations,
+    elapsed_ms: elapsed,
+    per_iter_ms: if iterations == 0 then 0 else elapsed / iterations,
+    t: "bench-result"
+  }
+}
+
+fn compare(a, b) {
+  let faster = if a.per_iter_ms < b.per_iter_ms then a.name else b.name
+  { a: a, b: b, faster: faster, t: "bench-comparison" }
+}
+
+fn throughput(result) {
+  if result.elapsed_ms == 0 then 0
+  else result.iterations * 1000 / result.elapsed_ms
+}
+
+export { run, compare, throughput }

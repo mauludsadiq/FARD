@@ -1,0 +1,15 @@
+import("../packages/rust-clap/main") as clap
+import("std/list") as list
+
+let a1  = clap.arg("output", "o", "output file", false)
+let cmd = clap.command("build", "Build the project", [a1])
+let app = clap.app("mytool", "1.0", "My FARD tool", [cmd])
+
+test "arg type"      { a1.t == "clap-arg" }
+test "arg name"      { a1.name == "output" }
+test "cmd type"      { cmd.t == "clap-command" }
+test "arg_count"     { clap.arg_count(cmd) == 1 }
+test "cmd_count"     { clap.cmd_count(app) == 1 }
+test "has_arg true"  { clap.has_arg(cmd, "output") == true }
+test "has_arg false" { clap.has_arg(cmd, "input") == false }
+test "app type"      { app.t == "clap-app" }

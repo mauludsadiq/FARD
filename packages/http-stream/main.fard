@@ -1,0 +1,38 @@
+// http-stream@1.6.0 — HTTP streaming primitives for FARD
+// Depends on http-core, async-core, async-channels.
+// Chunked transfer, SSE, and streaming request body handling.
+
+import("std/async") as async
+import("std/chan")  as chan
+import("std/str")   as str
+import("std/list")  as list
+
+fn stream() {
+  { ch: chan.new(), t: "http-stream" }
+}
+
+fn write(s, chunk)  { chan.send(s.ch, chunk) }
+fn read(s)          { chan.recv(s.ch) }
+fn close(s)         { chan.close(s.ch) }
+fn is_closed(s)     { chan.is_closed(s.ch) }
+
+fn sse_event(event, data) {
+  str.concat(["event: ", event, "\ndata: ", data, "\n\n"])
+}
+
+fn sse_data(data) {
+  str.concat(["data: ", data, "\n\n"])
+}
+
+fn chunked(chunks) {
+  list.map(chunks, fn(c) {
+    let hex_len = str.from(str.len(c))
+    str.concat([hex_len, "\r\n", c, "\r\n"])
+  })
+}
+
+fn collect(s, n) {
+  list.map(list.range(0, n), fn(_) { chan.recv(s.ch) })
+}
+
+export { stream, write, read, close, is_closed, sse_event, sse_data, chunked, collect }

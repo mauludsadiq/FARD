@@ -1,0 +1,38 @@
+// test-coverage@1.6.0 — Test coverage tracking for FARD
+// Depends on test-core, process-exec.
+// Tracks which functions and branches were exercised during a test run.
+
+import("std/list") as list
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn tracker() {
+  { covered: [], total: [], t: "coverage-tracker" }
+}
+
+fn register(tr, name) {
+  rec.set(tr, "total", list.concat([tr.total, [name]]))
+}
+
+fn mark(tr, name) {
+  if list.any(tr.covered, fn(n) { n == name }) then tr
+  else rec.set(tr, "covered", list.concat([tr.covered, [name]]))
+}
+
+fn covered_count(tr)  { list.len(tr.covered) }
+fn total_count(tr)    { list.len(tr.total) }
+
+fn percent(tr) {
+  if list.len(tr.total) == 0 then 100
+  else list.len(tr.covered) * 100 / list.len(tr.total)
+}
+
+fn uncovered(tr) {
+  list.filter(tr.total, fn(n) { !list.any(tr.covered, fn(c) { c == n }) })
+}
+
+fn report(tr) {
+  { covered: covered_count(tr), total: total_count(tr), percent: percent(tr), uncovered: uncovered(tr) }
+}
+
+export { tracker, register, mark, covered_count, total_count, percent, uncovered, report }

@@ -1,0 +1,9 @@
+import("../packages/py-matplotlib/main") as mpl
+
+let rt = mpl.runtime()
+let f  = mpl.figure("My Plot", "x", "y")
+
+test "runtime type"  { rt.t == "py-matplotlib" }
+test "runtime bin"   { rt.bin == "python3" }
+test "figure type"   { f.t == "mpl-figure" }
+test "figure title"  { f.title == "My Plot" }

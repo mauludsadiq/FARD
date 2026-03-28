@@ -1,0 +1,32 @@
+// test-replay@1.6.0 — Deterministic test replay for FARD
+// Depends on test-core, core-serde, core-hash.
+// Records function call sequences and replays them deterministically.
+
+import("std/json")     as json
+import("std/list")     as list
+import("std/rec")      as rec
+import("std/datetime") as dt
+
+fn recorder() {
+  { events: [], t: "replay-recorder" }
+}
+
+fn record(r, name, args, result) {
+  let event = { name: name, args: args, result: result, ts: dt.now() }
+  rec.set(r, "events", list.concat([r.events, [event]]))
+}
+
+fn replay(r, name, handlers) {
+  let matched = list.filter(r.events, fn(e) { e.name == name })
+  list.map(matched, fn(e) {
+    if rec.has(handlers, name) then rec.get(handlers, name)(e.args)
+    else e.result
+  })
+}
+
+fn serialize(r)   { json.encode(r) }
+fn deserialize(s) { json.decode(s) }
+fn event_count(r) { list.len(r.events) }
+fn events(r)      { r.events }
+
+export { recorder, record, replay, serialize, deserialize, event_count, events }

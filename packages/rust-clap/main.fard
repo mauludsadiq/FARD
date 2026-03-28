@@ -1,0 +1,31 @@
+// rust-clap@1.6.0 — Rust clap CLI adapter for FARD
+// Depends on ffi-rust, cli-core.
+// Generates clap-compatible CLI argument descriptors from FARD specs.
+
+import("std/rec")  as rec
+import("std/list") as list
+import("std/str")  as str
+
+fn arg(name, short, help, required) {
+  { name: name, short: short, help: help, required: required, t: "clap-arg" }
+}
+
+fn command(name, about, args) {
+  { name: name, about: about, args: args, t: "clap-command" }
+}
+
+fn subcommand(name, about, args) {
+  { name: name, about: about, args: args, t: "clap-subcommand" }
+}
+
+fn app(name, version, about, commands) {
+  { name: name, version: version, about: about, commands: commands, t: "clap-app" }
+}
+
+fn arg_count(cmd)  { list.len(cmd.args) }
+fn cmd_count(a)    { list.len(a.commands) }
+fn has_arg(cmd, name) {
+  list.any(cmd.args, fn(a) { a.name == name })
+}
+
+export { arg, command, subcommand, app, arg_count, cmd_count, has_arg }

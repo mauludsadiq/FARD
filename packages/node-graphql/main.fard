@@ -1,0 +1,26 @@
+// node-graphql@1.6.0 — GraphQL.js adapter for FARD via Node FFI
+// Depends on ffi-node, web-graphql.
+// Executes GraphQL queries against a schema via Node subprocess.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/str")     as str
+
+fn runtime() { { bin: "node", t: "node-graphql" } }
+
+fn execute(rt, schema_sdl, query, variables) {
+  let script = str.concat([
+    "const { buildSchema, graphql } = require('graphql');\n",
+    "const schema = buildSchema(`", schema_sdl, "`);\n",
+    "graphql({ schema, source: `", query, "`, variableValues: ",
+    json.encode(variables), " }).then(r => console.log(JSON.stringify(r)));"
+  ])
+  let r = proc.capture(rt.bin, ["-e", script])
+  if r.exit_code == 0 then json.decode(r.stdout)
+  else { error: r.stderr }
+}
+
+fn schema(sdl) { { sdl: sdl, t: "gql-schema" } }
+fn query(q)    { { query: q, t: "gql-query" } }
+
+export { runtime, execute, schema, query }

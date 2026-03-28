@@ -1,0 +1,9 @@
+import("../packages/py-numpy/main") as np
+
+let rt = np.runtime()
+
+test "runtime type" { rt.t == "py-numpy" }
+test "runtime bin"  { rt.bin == "python3" }
+test "zeros"        { list.len(np.zeros(rt, [3])) == 3 }
+test "ones"         { list.get(np.ones(rt, [2]), 0) == 1.0 }
+test "mean"         { np.mean(rt, [1.0, 2.0, 3.0]) == 2.0 }

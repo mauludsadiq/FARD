@@ -1,0 +1,4 @@
+name = "rust-tokio"
+version = "1.6.0"
+entry = "main.fard"
+description = "Rust tokio async runtime adapter for FARD"

@@ -1,0 +1,4 @@
+name = "py-sklearn"
+version = "1.6.0"
+entry = "main.fard"
+description = "scikit-learn adapter for FARD via Python FFI"

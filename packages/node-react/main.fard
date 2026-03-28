@@ -1,0 +1,28 @@
+// node-react@1.6.0 — React SSR adapter for FARD via Node FFI
+// Depends on ffi-node, web-core.
+// Server-side renders React components to HTML strings via Node subprocess.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/str")     as str
+
+fn runtime() { { bin: "node", t: "node-react" } }
+
+fn render(rt, component, props) {
+  let script = str.concat([
+    "const React = require('react');\n",
+    "const { renderToString } = require('react-dom/server');\n",
+    "const Component = require('./", component, "');\n",
+    "const props = JSON.parse('", json.encode(props), "');\n",
+    "console.log(renderToString(React.createElement(Component, props)));"
+  ])
+  let r = proc.capture(rt.bin, ["-e", script])
+  if r.exit_code == 0 then r.stdout
+  else { error: r.stderr }
+}
+
+fn component(name, props_schema) {
+  { name: name, props_schema: props_schema, t: "react-component" }
+}
+
+export { runtime, render, component }

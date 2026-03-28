@@ -1,0 +1,45 @@
+// py-pandas@1.6.0 — Pandas adapter for FARD via Python FFI
+// Depends on ffi-python, frame-memory.
+// Bridges FARD frames to Pandas DataFrames via JSON stdio.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/list")    as list
+import("std/str")     as str
+
+fn runtime() { { bin: "python3", t: "py-pandas" } }
+
+fn eval(rt, script) {
+  let r = proc.capture(rt.bin, ["-c", script])
+  if r.exit_code == 0 then json.decode(r.stdout)
+  else { error: r.stderr }
+}
+
+fn from_records(rt, records) {
+  let script = str.concat([
+    "import pandas as pd, json\n",
+    "df = pd.DataFrame(", json.encode(records), ")\n",
+    "print(json.dumps(df.to_dict(orient='records')))"
+  ])
+  eval(rt, script)
+}
+
+fn describe(rt, records) {
+  let script = str.concat([
+    "import pandas as pd, json\n",
+    "df = pd.DataFrame(", json.encode(records), ")\n",
+    "print(df.describe().to_json())"
+  ])
+  eval(rt, script)
+}
+
+fn groupby_mean(rt, records, col) {
+  let script = str.concat([
+    "import pandas as pd, json\n",
+    "df = pd.DataFrame(", json.encode(records), ")\n",
+    "print(df.groupby('", col, "').mean().to_json())"
+  ])
+  eval(rt, script)
+}
+
+export { runtime, eval, from_records, describe, groupby_mean }

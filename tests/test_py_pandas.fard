@@ -1,0 +1,8 @@
+import("../packages/py-pandas/main") as pd
+
+let rt   = pd.runtime()
+let rows = [{ name: "alice", score: 90 }, { name: "bob", score: 80 }]
+
+test "runtime type"   { rt.t == "py-pandas" }
+test "runtime bin"    { rt.bin == "python3" }
+test "from_records"   { list.len(pd.from_records(rt, rows)) == 2 }

@@ -1,0 +1,31 @@
+// rust-serde@1.6.0 — Rust serde adapter for FARD via FFI
+// Depends on ffi-rust, core-serde.
+// Serializes and deserializes FARD values using Rust serde_json via dylib.
+
+import("std/json") as json
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn runtime(lib_path) {
+  { path: lib_path, t: "rust-serde" }
+}
+
+fn to_json(v)    { json.encode(v) }
+fn from_json(s)  { json.decode(s) }
+fn canonical(v)  { json.canonicalize(json.encode(v)) }
+
+fn roundtrip(v)  { json.decode(json.encode(v)) }
+
+fn schema(fields) {
+  { fields: fields, t: "serde-schema" }
+}
+
+fn field(name, type_) {
+  { name: name, type_: type_ }
+}
+
+fn validate(schema_, v) {
+  list.all(schema_.fields, fn(f) { rec.has(v, f.name) })
+}
+
+export { runtime, to_json, from_json, canonical, roundtrip, schema, field, validate }

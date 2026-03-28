@@ -1,0 +1,38 @@
+// node-express@1.6.0 — Express.js adapter for FARD via Node FFI
+// Depends on ffi-node, web-core, http-core.
+// Runs an Express app in a Node subprocess, routing FARD handlers.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/str")     as str
+import("std/list")    as list
+
+fn runtime() { { bin: "node", t: "node-express" } }
+
+fn app(routes) {
+  { routes: routes, t: "express-app" }
+}
+
+fn route(method, path_, handler_body) {
+  { method: method, path_: path_, handler_body: handler_body }
+}
+
+fn script(a, port) {
+  let route_strs = list.map(a.routes, fn(r) {
+    str.concat([
+      "app.", str.lower(r.method), "('", r.path_, "', (req, res) => { ", r.handler_body, " });\n"
+    ])
+  })
+  str.concat([
+    "const express = require('express');\n",
+    "const app = express();\n",
+    str.join(route_strs, ""),
+    "app.listen(", str.from(port), ");\n"
+  ])
+}
+
+fn start(rt, a, port) {
+  proc.capture(rt.bin, ["-e", script(a, port)])
+}
+
+export { runtime, app, route, script, start }

@@ -1,0 +1,4 @@
+name = "node-react"
+version = "1.6.0"
+entry = "main.fard"
+description = "React SSR adapter for FARD via Node FFI"

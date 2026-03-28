@@ -1,0 +1,4 @@
+name = "test-fixtures"
+version = "1.6.0"
+entry = "main.fard"
+description = "Test fixture management for FARD"

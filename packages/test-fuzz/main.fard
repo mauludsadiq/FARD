@@ -1,0 +1,36 @@
+// test-fuzz@1.6.0 — Fuzz testing primitives for FARD
+// Depends on test-core, core-random.
+// Generates random malformed inputs and checks for crashes and invariants.
+
+import("std/random") as rng
+import("std/list")   as list
+import("std/str")    as str
+import("std/bytes")  as bytes
+
+fn random_string(max_len) {
+  let n = rng.int(0, max_len)
+  bytes.to_string(rng.bytes(n))
+}
+
+fn random_int()   { rng.int(-1000000, 1000000) }
+fn random_float() { rng.float() }
+fn random_bool()  { rng.bool() }
+
+fn random_list(gen, max_len) {
+  let n = rng.int(0, max_len)
+  list.map(list.range(0, n), fn(_) { gen() })
+}
+
+fn fuzz(f, gen, iterations) {
+  list.fold(list.range(0, iterations), { crashes: 0, passed: 0 }, fn(acc, _) {
+    let input  = gen()
+    let result = f(input)
+    if result == null then rec.set(acc, "crashes", acc.crashes + 1)
+    else rec.set(acc, "passed", acc.passed + 1)
+  })
+}
+
+fn corpus(items) { { items: items, t: "fuzz-corpus" } }
+fn add_case(c, item) { rec.set(c, "items", list.concat([c.items, [item]])) }
+
+export { random_string, random_int, random_float, random_bool, random_list, fuzz, corpus, add_case }

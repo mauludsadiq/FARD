@@ -1,0 +1,4 @@
+name = "py-numpy"
+version = "1.6.0"
+entry = "main.fard"
+description = "NumPy adapter for FARD via Python FFI"

@@ -1,0 +1,39 @@
+// py-sklearn@1.6.0 — scikit-learn adapter for FARD via Python FFI
+// Depends on ffi-python, ndarray-cpu.
+// Trains and evaluates sklearn models via JSON stdio.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/str")     as str
+
+fn runtime() { { bin: "python3", t: "py-sklearn" } }
+
+fn eval(rt, script) {
+  let r = proc.capture(rt.bin, ["-c", script])
+  if r.exit_code == 0 then json.decode(r.stdout)
+  else { error: r.stderr }
+}
+
+fn linear_regression(rt, x_train, y_train, x_test) {
+  let script = str.concat([
+    "from sklearn.linear_model import LinearRegression\n",
+    "import json, numpy as np\n",
+    "X = np.array(", json.encode(x_train), ")\n",
+    "y = np.array(", json.encode(y_train), ")\n",
+    "model = LinearRegression().fit(X, y)\n",
+    "preds = model.predict(np.array(", json.encode(x_test), "))\n",
+    "print(json.dumps(preds.tolist()))"
+  ])
+  eval(rt, script)
+}
+
+fn accuracy(rt, y_true, y_pred) {
+  let script = str.concat([
+    "from sklearn.metrics import accuracy_score\n",
+    "import json\n",
+    "print(json.dumps(accuracy_score(", json.encode(y_true), ",", json.encode(y_pred), ")))"
+  ])
+  eval(rt, script)
+}
+
+export { runtime, eval, linear_regression, accuracy }

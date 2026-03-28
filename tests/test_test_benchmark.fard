@@ -1,0 +1,9 @@
+import("../packages/test-benchmark/main") as bench
+
+let r = bench.run("add", fn() { 1 + 1 }, 100)
+
+test "bench type"    { r.t == "bench-result" }
+test "iterations"    { r.iterations == 100 }
+test "elapsed"       { r.elapsed_ms >= 0 }
+test "per_iter"      { r.per_iter_ms >= 0 }
+test "throughput"    { bench.throughput(r) >= 0 }

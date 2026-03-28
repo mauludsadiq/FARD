@@ -1,0 +1,44 @@
+// py-numpy@1.6.0 — NumPy adapter for FARD via Python FFI
+// Depends on ffi-python, ndarray-cpu.
+// Bridges FARD ndarrays to NumPy arrays via JSON stdio.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/list")    as list
+import("std/str")     as str
+
+fn runtime() { { bin: "python3", t: "py-numpy" } }
+
+fn eval(rt, expr) {
+  let script = str.concat([
+    "import numpy as np, json\n",
+    "print(json.dumps(", expr, "))"
+  ])
+  let r = proc.capture(rt.bin, ["-c", script])
+  if r.exit_code == 0 then json.decode(r.stdout)
+  else { error: r.stderr }
+}
+
+fn zeros(rt, shape) {
+  eval(rt, str.concat(["np.zeros(", json.encode(shape), ").tolist()"]))
+}
+
+fn ones(rt, shape) {
+  eval(rt, str.concat(["np.ones(", json.encode(shape), ").tolist()"]))
+}
+
+fn matmul(rt, a, b) {
+  eval(rt, str.concat([
+    "np.matmul(np.array(", json.encode(a), "), np.array(", json.encode(b), ")).tolist()"
+  ]))
+}
+
+fn mean(rt, data) {
+  eval(rt, str.concat(["float(np.mean(", json.encode(data), "))"]))
+}
+
+fn std_(rt, data) {
+  eval(rt, str.concat(["float(np.std(", json.encode(data), "))"]))
+}
+
+export { runtime, eval, zeros, ones, matmul, mean, std_ }

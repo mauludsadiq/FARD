@@ -1,0 +1,13 @@
+import("../packages/test-replay/main") as replay
+import("std/list") as list
+
+let r  = replay.recorder()
+let r2 = replay.record(r, "add", { a: 1, b: 2 }, 3)
+let r3 = replay.record(r2, "add", { a: 4, b: 5 }, 9)
+
+test "recorder type"  { r.t == "replay-recorder" }
+test "event_count"    { replay.event_count(r3) == 2 }
+test "events"         { list.len(replay.events(r3)) == 2 }
+test "replay"         { list.len(replay.replay(r3, "add", {})) == 2 }
+test "serialize"      { str.len(replay.serialize(r3)) > 0 }
+test "deserialize"    { replay.event_count(replay.deserialize(replay.serialize(r3))) == 2 }

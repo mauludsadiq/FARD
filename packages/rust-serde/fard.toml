@@ -1,0 +1,4 @@
+name = "rust-serde"
+version = "1.6.0"
+entry = "main.fard"
+description = "Rust serde adapter for FARD via FFI"

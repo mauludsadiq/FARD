@@ -1,0 +1,4 @@
+name = "test-replay"
+version = "1.6.0"
+entry = "main.fard"
+description = "Deterministic test replay for FARD"

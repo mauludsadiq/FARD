@@ -1,0 +1,4 @@
+name = "test-mock"
+version = "1.6.0"
+entry = "main.fard"
+description = "Mock and spy primitives for FARD tests"

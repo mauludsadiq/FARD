@@ -1,0 +1,8 @@
+import("../packages/node-react/main") as react
+
+let rt = react.runtime()
+let c  = react.component("Button", { label: "string" })
+
+test "runtime type"    { rt.t == "node-react" }
+test "component type"  { c.t == "react-component" }
+test "component name"  { c.name == "Button" }
