@@ -1,0 +1,102 @@
+// store-ns@1.6.0 — Namespaced filesystem-backed store for FARD
+// JSON-backed persistence with explicit namespace separation
+// Deterministic load/save and witnessed writes
+import("std/io")   as io
+import("std/json") as json
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/list") as list
+
+fn default_path() { ".fard_store_ns.json" }
+
+fn load(path) {
+  let result = io.read_file(path)
+  if rec.has(result, "ok") then json.decode(result.ok)
+  else {}
+}
+
+fn save(path, data) {
+  io.write_file(path, json.encode(data))
+}
+
+fn open(path) {
+  { path: path, data: load(path) }
+}
+
+fn open_default() {
+  open(default_path())
+}
+
+fn ensure_ns(store, ns) {
+  if rec.has(store.data, ns) then rec.get(store.data, ns)
+  else {}
+}
+
+fn get(store, ns, key) {
+  let bucket = ensure_ns(store, ns)
+  if rec.has(bucket, key) then
+    { ok: true, value: rec.get(bucket, key) }
+  else
+    { ok: false, value: null }
+}
+
+fn get_or(store, ns, key, default) {
+  let bucket = ensure_ns(store, ns)
+  if rec.has(bucket, key) then rec.get(bucket, key)
+  else default
+}
+
+fn set(store, ns, key, value) {
+  let bucket     = ensure_ns(store, ns)
+  let new_bucket = rec.set(bucket, key, value)
+  let new_data   = rec.set(store.data, ns, new_bucket)
+  let saved      = save(store.path, new_data)
+  { path: store.path, data: new_data }
+}
+
+fn delete(store, ns, key) {
+  let bucket     = ensure_ns(store, ns)
+  let new_bucket = rec.remove(bucket, key)
+  let new_data   = rec.set(store.data, ns, new_bucket)
+  let saved      = save(store.path, new_data)
+  { path: store.path, data: new_data }
+}
+
+fn has(store, ns, key) {
+  let bucket = ensure_ns(store, ns)
+  rec.has(bucket, key)
+}
+
+fn keys(store, ns) {
+  let bucket = ensure_ns(store, ns)
+  rec.keys(bucket)
+}
+
+fn count(store, ns) {
+  let bucket = ensure_ns(store, ns)
+  list.len(rec.keys(bucket))
+}
+
+fn clear(store, ns) {
+  let new_data = rec.set(store.data, ns, {})
+  let saved    = save(store.path, new_data)
+  { path: store.path, data: new_data }
+}
+
+fn all(store, ns) {
+  ensure_ns(store, ns)
+}
+
+{
+  open:         open,
+  open_default: open_default,
+  get:          get,
+  get_or:       get_or,
+  set:          set,
+  delete:       delete,
+  has:          has,
+  keys:         keys,
+  count:        count,
+  clear:        clear,
+  all:          all
+}

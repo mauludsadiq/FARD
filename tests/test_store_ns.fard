@@ -1,0 +1,30 @@
+import("../packages/store-ns/main") as store
+test "store-ns basic set/get" {
+  let s = store.open_default() in
+  let s2 = store.set(s, "users", "x", 42) in
+  let r = store.get(s2, "users", "x") in
+  r.ok == true
+}
+test "store-ns get missing key" {
+  let s = store.open_default() in
+  let r = store.get(s, "users", "missing") in
+  r.ok == false
+}
+test "store-ns namespace isolation" {
+  let s = store.open_default() in
+  let s2 = store.set(s, "ns_a", "k", 1) in
+  let r = store.get(s2, "ns_b", "k") in
+  r.ok == false
+}
+test "store-ns delete" {
+  let s = store.open_default() in
+  let s2 = store.set(s, "users", "y", 99) in
+  let s3 = store.delete(s2, "users", "y") in
+  let r = store.get(s3, "users", "y") in
+  r.ok == false
+}
+test "store-ns has" {
+  let s = store.open_default() in
+  let s2 = store.set(s, "cfg", "debug", true) in
+  store.has(s2, "cfg", "debug") == true
+}
