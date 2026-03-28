@@ -1,0 +1,14 @@
+import("../packages/ndarray-cpu/main") as nd
+
+let z = nd.zeros([2,3])
+let o = nd.ones([2,3])
+let a = nd.from_list([1,2,3,4], [2,2])
+
+test "zeros size"  { nd.size(z) == 6 }
+test "ones size"   { nd.size(o) == 6 }
+test "shape"       { nd.shape(a) == [2,2] }
+test "ndim"        { nd.ndim(a) == 2 }
+test "backend"     { a.backend == "cpu" }
+test "add size"    { nd.size(nd.add(z,o)) == 6 }
+test "sum ones"    { nd.sum(nd.ones([4])) == 4.0 }
+test "reshape"     { nd.shape(nd.reshape(a, [1,4])) == [1,4] }

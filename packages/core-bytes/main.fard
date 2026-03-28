@@ -1,0 +1,29 @@
+// core-bytes@1.6.0 — Canonical byte buffer type and operations for FARD
+// Wraps std/bytes with a typed envelope and boundary utilities.
+// Foundation for encoding, hashing, IO, and FFI surfaces.
+
+import("std/bytes") as bytes
+import("std/str")   as str
+import("std/list")  as list
+
+fn from_string(s)    { bytes.from_string(s) }
+fn to_string(b)      { bytes.to_string(b) }
+fn from_list(xs)     { bytes.from_list(xs) }
+fn to_list(b)        { bytes.to_list(b) }
+fn len(b)            { bytes.len(b) }
+fn empty()           { bytes.from_list([]) }
+fn is_empty(b)       { bytes.len(b) == 0 }
+fn concat(bs)        { bytes.concat(bs) }
+fn slice(b, lo, hi)  { bytes.slice(b, lo, hi) }
+fn get(b, i)         { bytes.get(b, i) }
+fn eq(a, b)          { bytes.eq(a, b) }
+fn to_hex(b)         { bytes.to_hex(b) }
+fn from_hex(s)       { bytes.from_hex(s) }
+fn to_base64(b)      { bytes.to_base64(b) }
+fn from_base64(s)    { bytes.from_base64(s) }
+
+export {
+  from_string, to_string, from_list, to_list,
+  len, empty, is_empty, concat, slice, get, eq,
+  to_hex, from_hex, to_base64, from_base64
+}

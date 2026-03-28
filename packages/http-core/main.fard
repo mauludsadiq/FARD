@@ -1,0 +1,41 @@
+// http-core@1.6.0 — HTTP types, status codes, and request/response primitives for FARD
+// Depends on core-serde, core-errors.
+// Canonical request/response envelope used by all http-* and web-* packages.
+
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/list") as list
+
+fn request(method, url, headers, body) {
+  { method: method, url: url, headers: headers, body: body }
+}
+
+fn response(status, headers, body) {
+  { status: status, headers: headers, body: body }
+}
+
+fn is_ok(resp)       { resp.status >= 200 && resp.status < 300 }
+fn is_error(resp)    { resp.status >= 400 }
+fn is_redirect(resp) { resp.status >= 300 && resp.status < 400 }
+
+fn status_text(code) {
+  if code == 200 then "OK"
+  else if code == 201 then "Created"
+  else if code == 204 then "No Content"
+  else if code == 400 then "Bad Request"
+  else if code == 401 then "Unauthorized"
+  else if code == 403 then "Forbidden"
+  else if code == 404 then "Not Found"
+  else if code == 500 then "Internal Server Error"
+  else "Unknown"
+}
+
+fn get_header(req, name) {
+  if rec.has(req.headers, name) then rec.get(req.headers, name) else null
+}
+
+fn set_header(req, name, val) {
+  rec.set(req, "headers", rec.set(req.headers, name, val))
+}
+
+export { request, response, is_ok, is_error, is_redirect, status_text, get_header, set_header }

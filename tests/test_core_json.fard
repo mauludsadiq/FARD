@@ -1,0 +1,11 @@
+import("../packages/core-json/main") as j
+
+test "encode int"     { j.encode(42) == "42" }
+test "encode string"  { j.encode("hi") == "\"hi\"" }
+test "encode bool"    { j.encode(true) == "true" }
+test "encode list"    { j.encode([1,2,3]) == "[1,2,3]" }
+test "decode int"     { j.decode("42") == 42 }
+test "decode string"  { j.decode("\"hi\"") == "hi" }
+test "roundtrip"      { j.roundtrip([1,"two",true]) == [1,"two",true] }
+test "canonicalize"   { j.canonicalize(j.encode({b:2,a:1})) == j.canonicalize(j.encode({a:1,b:2})) }
+test "encode_bytes"   { j.decode_bytes(j.encode_bytes(99)) == 99 }

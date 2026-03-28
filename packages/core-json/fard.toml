@@ -1,0 +1,4 @@
+name = "core-json"
+version = "1.6.0"
+entry = "main.fard"
+description = "JSON encode/decode with canonical form support for FARD"

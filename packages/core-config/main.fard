@@ -1,0 +1,23 @@
+// core-config@1.6.0 — Layered configuration loading and access for FARD
+// Depends on core-json, core-env, core-errors.
+// Merges env, file, and default layers with typed access helpers.
+
+import("std/json") as json
+import("std/rec")  as rec
+import("std/io")   as io
+
+fn empty()               { {} }
+fn from_json(s)          { json.decode(s) }
+fn from_file(path) {
+  let r = io.read_file(path)
+  if rec.has(r, "ok") then json.decode(r.ok)
+  else {}
+}
+fn merge(base, over)     { rec.merge(base, over) }
+fn get(cfg, key)         { rec.get(cfg, key) }
+fn get_or(cfg, key, def) { if rec.has(cfg, key) then rec.get(cfg, key) else def }
+fn has(cfg, key)         { rec.has(cfg, key) }
+fn set(cfg, key, val)    { rec.set(cfg, key, val) }
+fn keys(cfg)             { rec.keys(cfg) }
+
+export { empty, from_json, from_file, merge, get, get_or, has, set, keys }

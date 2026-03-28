@@ -1,0 +1,4 @@
+name = "core-serde"
+version = "1.6.0"
+entry = "main.fard"
+description = "Schema-aware serialization and deserialization hub for FARD"

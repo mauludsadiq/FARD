@@ -1,0 +1,18 @@
+// ffi-core@1.6.0 — Foreign function interface foundation for FARD
+// Depends on core-bytes, core-errors.
+// Provides call, load, and type-boundary primitives for all ffi-* packages.
+
+import("std/ffi")  as ffi
+import("std/rec")  as rec
+import("std/list") as list
+
+fn load(path)           { ffi.load(path) }
+fn call(lib, sym, args) { ffi.call(lib, sym, args) }
+fn has_sym(lib, sym)    { ffi.has_sym(lib, sym) }
+fn wrap(lib, sym)       { fn(args) { ffi.call(lib, sym, args) } }
+
+fn descriptor(name, version, symbols) {
+  { name: name, version: version, symbols: symbols }
+}
+
+export { load, call, has_sym, wrap, descriptor }

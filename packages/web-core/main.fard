@@ -1,0 +1,41 @@
+// web-core@1.6.0 — Web application context and handler primitives for FARD
+// Depends on http-core, core-serde, core-config, async-core.
+// The consolidation layer over http/async substrate. All web-* packages build on this.
+
+import("std/rec")  as rec
+import("std/json") as json
+
+fn context(request, state) {
+  { request: request, state: state, response: null }
+}
+
+fn respond(ctx, status, headers, body) {
+  rec.set(ctx, "response", { status: status, headers: headers, body: body })
+}
+
+fn json_response(ctx, status, data) {
+  respond(ctx, status, { "Content-Type": "application/json" }, json.encode(data))
+}
+
+fn text_response(ctx, status, text) {
+  respond(ctx, status, { "Content-Type": "text/plain" }, text)
+}
+
+fn ok(ctx, data)          { json_response(ctx, 200, data) }
+fn created(ctx, data)     { json_response(ctx, 201, data) }
+fn not_found(ctx, msg)    { text_response(ctx, 404, msg) }
+fn bad_request(ctx, msg)  { text_response(ctx, 400, msg) }
+fn server_error(ctx, msg) { text_response(ctx, 500, msg) }
+
+fn get_state(ctx, key)    { rec.get(ctx.state, key) }
+fn set_state(ctx, key, v) { rec.set(ctx, "state", rec.set(ctx.state, key, v)) }
+
+fn method(ctx) { ctx.request.method }
+fn path(ctx)   { ctx.request.url }
+fn body(ctx)   { ctx.request.body }
+
+export {
+  context, respond, json_response, text_response,
+  ok, created, not_found, bad_request, server_error,
+  get_state, set_state, method, path, body
+}

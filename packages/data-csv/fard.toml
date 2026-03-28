@@ -1,0 +1,4 @@
+name = "data-csv"
+version = "1.6.0"
+entry = "main.fard"
+description = "CSV parsing and serialization for FARD"

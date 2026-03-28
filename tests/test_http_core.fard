@@ -1,0 +1,17 @@
+import("../packages/http-core/main") as http
+
+let req   = http.request("GET", "https://example.com", {}, null)
+let ok    = http.response(200, {}, "body")
+let err   = http.response(404, {}, "not found")
+let redir = http.response(301, {}, null)
+
+test "is_ok 200"       { http.is_ok(ok) == true }
+test "is_ok 404"       { http.is_ok(err) == false }
+test "is_error 404"    { http.is_error(err) == true }
+test "is_error 200"    { http.is_error(ok) == false }
+test "is_redirect 301" { http.is_redirect(redir) == true }
+test "status_text 200" { http.status_text(200) == "OK" }
+test "status_text 404" { http.status_text(404) == "Not Found" }
+test "get_header null" { http.get_header(req, "Authorization") == null }
+test "set_header"      { http.get_header(http.set_header(req, "X-Foo", "bar"), "X-Foo") == "bar" }
+test "request method"  { req.method == "GET" }

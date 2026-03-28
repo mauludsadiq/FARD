@@ -1,0 +1,12 @@
+import("../packages/cli-core/main") as cli
+import("std/list") as list
+
+let parsed = cli.parse_args(["run", "--verbose", "--output=out.txt", "-x"])
+
+test "command"      { cli.command(parsed) == "run" }
+test "flag bool"    { cli.flag(parsed, "verbose") == true }
+test "flag value"   { cli.flag(parsed, "output") == "out.txt" }
+test "flag short"   { cli.flag(parsed, "x") == true }
+test "flag missing" { cli.flag(parsed, "missing") == null }
+test "flag_or"      { cli.flag_or(parsed, "missing", "default") == "default" }
+test "positional"   { list.get(cli.positional(parsed), 0) == "run" }

@@ -1,0 +1,20 @@
+import("../packages/lint-core/main") as lint
+import("std/list") as list
+import("std/str")  as str
+
+let e = lint.error("E001", "undefined variable", 12)
+let w = lint.warning("W001", "unused import", 3)
+
+test "error level"      { e.level == "error" }
+test "warning level"    { w.level == "warning" }
+test "is_error"         { lint.is_error(e) == true }
+test "is_warning"       { lint.is_warning(w) == true }
+test "error code"       { e.code == "E001" }
+test "error line"       { e.line == 12 }
+test "has_errors true"  { lint.has_errors([e, w]) == true }
+test "has_errors false" { lint.has_errors([w]) == false }
+test "error_count"      { lint.error_count([e, e, w]) == 2 }
+test "run_rules" {
+  let rule = fn(src) { if str.contains(src, "TODO") then [lint.warning("W002","todo found",0)] else [] }
+  list.len(lint.run_rules([rule], "// TODO fix")) == 1
+}

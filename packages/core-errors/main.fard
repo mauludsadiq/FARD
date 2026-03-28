@@ -1,0 +1,36 @@
+// core-errors@1.6.0 — Canonical error algebra for FARD
+// Defines the error envelope, tagging, and propagation primitives.
+// All packages that produce failures should build on this.
+
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/list") as list
+
+fn make(code, message) {
+  { t: "error", code: code, message: message }
+}
+
+fn wrap(code, message, cause) {
+  { t: "error", code: code, message: message, cause: cause }
+}
+
+fn is_error(v) {
+  rec.has(v, "t") && rec.get(v, "t") == "error"
+}
+
+fn code(e)    { rec.get(e, "code") }
+fn message(e) { rec.get(e, "message") }
+fn has_cause(e) { rec.has(e, "cause") }
+fn cause(e)     { rec.get(e, "cause") }
+
+fn to_string(e) {
+  let base = str.concat([e.code, ": ", e.message])
+  if has_cause(e) then str.concat([base, " (caused by: ", to_string(e.cause), ")"])
+  else base
+}
+
+fn match_code(e, c) {
+  rec.has(e, "code") && rec.get(e, "code") == c
+}
+
+export { make, wrap, is_error, code, message, has_cause, cause, to_string, match_code }

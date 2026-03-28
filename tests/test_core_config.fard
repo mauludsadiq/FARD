@@ -1,0 +1,15 @@
+import("../packages/core-config/main") as cfg
+
+let base   = cfg.from_json("{\"host\":\"localhost\",\"port\":8080}")
+let over   = cfg.from_json("{\"port\":9090,\"debug\":true}")
+let merged = cfg.merge(base, over)
+
+test "get host"          { cfg.get(base, "host") == "localhost" }
+test "get port"          { cfg.get(base, "port") == 8080 }
+test "has true"          { cfg.has(base, "host") == true }
+test "has false"         { cfg.has(base, "missing") == false }
+test "get_or missing"    { cfg.get_or(base, "missing", 42) == 42 }
+test "merge override"    { cfg.get(merged, "port") == 9090 }
+test "merge additive"    { cfg.get(merged, "debug") == true }
+test "merge keeps base"  { cfg.get(merged, "host") == "localhost" }
+test "set"               { cfg.get(cfg.set(base, "x", 1), "x") == 1 }

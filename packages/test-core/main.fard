@@ -1,0 +1,33 @@
+// test-core@1.6.0 — Test runner primitives and result envelope for FARD
+// Depends on core-errors.
+// All test-* packages build on this. Provides pass/fail/skip envelopes.
+
+import("std/list") as list
+import("std/rec")  as rec
+
+fn pass(name)         { { t: "pass", name: name } }
+fn fail(name, reason) { { t: "fail", name: name, reason: reason } }
+fn skip(name, reason) { { t: "skip", name: name, reason: reason } }
+
+fn is_pass(r) { r.t == "pass" }
+fn is_fail(r) { r.t == "fail" }
+fn is_skip(r) { r.t == "skip" }
+
+fn run(name, f) {
+  let result = f()
+  if result == true then pass(name)
+  else fail(name, "assertion returned false")
+}
+
+fn run_all(cases) {
+  list.map(cases, fn(c) { run(c.name, c.f) })
+}
+
+fn count_pass(results) { list.len(list.filter(results, is_pass)) }
+fn count_fail(results) { list.len(list.filter(results, is_fail)) }
+
+fn summary(results) {
+  { pass: count_pass(results), fail: count_fail(results), total: list.len(results) }
+}
+
+export { pass, fail, skip, is_pass, is_fail, is_skip, run, run_all, count_pass, count_fail, summary }

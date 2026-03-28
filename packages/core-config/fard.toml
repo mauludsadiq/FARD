@@ -1,0 +1,4 @@
+name = "core-config"
+version = "1.6.0"
+entry = "main.fard"
+description = "Layered configuration loading and access for FARD"

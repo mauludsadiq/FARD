@@ -1,0 +1,4 @@
+name = "cli-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "CLI argument parsing and command dispatch for FARD"

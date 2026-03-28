@@ -1,0 +1,14 @@
+import("../packages/frame-memory/main") as df
+import("std/list") as list
+
+let rows  = [{ name: "alice", age: 30 }, { name: "bob", age: 25 }]
+let frame = df.from_records(rows)
+
+test "nrows"       { df.nrows(frame) == 2 }
+test "ncols"       { df.ncols(frame) == 2 }
+test "has_column"  { df.has_column(frame, "name") == true }
+test "missing col" { df.has_column(frame, "email") == false }
+test "get_column"  { list.get(df.get_column(frame, "age"), 0) == 30 }
+test "get_row"     { df.get_row(frame, 1).name == "bob" }
+test "add_column"  { df.has_column(df.add_column(frame, "score", [9,8]), "score") == true }
+test "empty nrows" { df.nrows(df.empty()) == 0 }

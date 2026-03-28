@@ -1,0 +1,4 @@
+name = "core-hash"
+version = "1.6.0"
+entry = "main.fard"
+description = "Cryptographic and structural hash primitives for FARD"

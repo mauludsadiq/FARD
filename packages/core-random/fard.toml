@@ -1,0 +1,4 @@
+name = "core-random"
+version = "1.6.0"
+entry = "main.fard"
+description = "Seeded and unseeded random value generation for FARD"

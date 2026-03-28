@@ -1,0 +1,13 @@
+import("../packages/core-hash/main") as h
+import("std/bytes") as bytes
+import("std/str") as str
+
+let b = bytes.from_string("hello")
+
+test "sha256_hex length"    { str.len(h.sha256_hex(b)) == 64 }
+test "blake3_hex length"    { str.len(h.blake3_hex(b)) == 64 }
+test "sha256 deterministic" { h.sha256_hex(b) == h.sha256_hex(bytes.from_string("hello")) }
+test "blake3 deterministic" { h.blake3_hex(b) == h.blake3_hex(bytes.from_string("hello")) }
+test "sha256 differs input" { h.sha256_hex(b) != h.sha256_hex(bytes.from_string("world")) }
+test "structural same"      { h.structural(42) == h.structural(42) }
+test "structural diff"      { h.structural(1) != h.structural(2) }

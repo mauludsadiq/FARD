@@ -1,0 +1,4 @@
+name = "http-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "HTTP types, status codes, and request/response primitives for FARD"

@@ -1,0 +1,15 @@
+import("../packages/test-core/main") as tc
+
+let p = tc.pass("ok")
+let f = tc.fail("bad", "wrong value")
+let s = tc.skip("skip", "not ready")
+
+test "pass t"    { p.t == "pass" }
+test "fail t"    { f.t == "fail" }
+test "skip t"    { s.t == "skip" }
+test "is_pass"   { tc.is_pass(p) == true }
+test "is_fail"   { tc.is_fail(f) == true }
+test "is_skip"   { tc.is_skip(s) == true }
+test "run pass"  { tc.is_pass(tc.run("x", fn() { 1 == 1 })) == true }
+test "run fail"  { tc.is_fail(tc.run("x", fn() { 1 == 2 })) == true }
+test "summary"   { tc.summary([p, f, s]).pass == 1 }

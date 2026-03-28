@@ -1,0 +1,4 @@
+name = "ndarray-cpu"
+version = "1.6.0"
+entry = "main.fard"
+description = "CPU-backed N-dimensional array operations for FARD"

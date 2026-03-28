@@ -1,0 +1,16 @@
+// core-random@1.6.0 — Seeded and unseeded random value generation for FARD
+// Provides int, float, bool, choice, and shuffle primitives.
+// Used by uuid, property tests, fuzzing, and stochastic APIs.
+
+import("std/random") as rng
+import("std/list")   as list
+
+fn int(lo, hi)  { rng.int(lo, hi) }
+fn float()      { rng.float() }
+fn bool()       { rng.bool() }
+fn bytes(n)     { rng.bytes(n) }
+fn choice(xs)   { list.get(xs, rng.int(0, list.len(xs) - 1)) }
+fn shuffle(xs)  { rng.shuffle(xs) }
+fn seed(n)      { rng.seed(n) }
+
+export { int, float, bool, bytes, choice, shuffle, seed }

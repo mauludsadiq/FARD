@@ -1,0 +1,4 @@
+name = "lint-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "Lint rule engine and diagnostic primitives for FARD"

@@ -1,0 +1,7 @@
+import("../packages/fs-core/main") as fs
+
+test "join"           { fs.join(["a","b","c"]) == "a/b/c" }
+test "basename"       { fs.basename("/foo/bar/baz.txt") == "baz.txt" }
+test "dirname"        { fs.dirname("/foo/bar/baz.txt") == "/foo/bar" }
+test "extension"      { fs.extension("file.fard") == "fard" }
+test "extension none" { fs.extension("Makefile") == "" }

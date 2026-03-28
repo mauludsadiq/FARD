@@ -1,0 +1,29 @@
+// fs-core@1.6.0 — Filesystem access primitives for FARD
+// Depends on core-bytes, core-errors.
+// Provides read, write, stat, list, and path operations.
+
+import("std/io")   as io
+import("std/str")  as str
+import("std/list") as list
+
+fn read(path)        { io.read_file(path) }
+fn write(path, data) { io.write_file(path, data) }
+fn exists(path)      { io.exists(path) }
+fn delete(path)      { io.delete(path) }
+fn list_dir(path)    { io.list_dir(path) }
+fn mkdir(path)       { io.mkdir(path) }
+fn stat(path)        { io.stat(path) }
+
+fn join(parts)    { str.join(parts, "/") }
+fn basename(path) { list.last(str.split(path, "/")) }
+fn dirname(path) {
+  let parts = str.split(path, "/")
+  str.join(list.take(parts, list.len(parts) - 1), "/")
+}
+fn extension(path) {
+  let base = basename(path)
+  let parts = str.split(base, ".")
+  if list.len(parts) > 1 then list.last(parts) else ""
+}
+
+export { read, write, exists, delete, list_dir, mkdir, stat, join, basename, dirname, extension }

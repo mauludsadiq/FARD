@@ -1,0 +1,14 @@
+import("../packages/web-core/main") as web
+
+let req = { method: "GET", url: "/hello", headers: {}, body: null }
+let ctx = web.context(req, { user: "alice" })
+
+test "method"       { web.method(ctx) == "GET" }
+test "path"         { web.path(ctx) == "/hello" }
+test "get_state"    { web.get_state(ctx, "user") == "alice" }
+test "set_state"    { web.get_state(web.set_state(ctx, "count", 1), "count") == 1 }
+test "ok status"    { web.ok(ctx, {}).response.status == 200 }
+test "created"      { web.created(ctx, {}).response.status == 201 }
+test "not_found"    { web.not_found(ctx, "nope").response.status == 404 }
+test "bad_request"  { web.bad_request(ctx, "bad").response.status == 400 }
+test "server_error" { web.server_error(ctx, "err").response.status == 500 }

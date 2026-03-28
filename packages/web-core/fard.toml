@@ -1,0 +1,4 @@
+name = "web-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "Web application context and handler primitives for FARD"

@@ -1,0 +1,6 @@
+import("../packages/async-core/main") as a
+
+test "resolved"      { a.await(a.resolved(42)) == 42 }
+test "spawn await"   { a.await(a.spawn(fn() { 1 + 1 })) == 2 }
+test "all"           { a.await(a.all([a.resolved(1), a.resolved(2)])) == [1, 2] }
+test "sleep returns" { a.sleep(0) == null }

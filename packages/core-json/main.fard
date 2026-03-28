@@ -1,0 +1,17 @@
+// core-json@1.6.0 — JSON encode/decode with canonical form support for FARD
+// Depends on core-bytes and core-errors for boundary handling.
+// Canonical form sorts keys for deterministic serialization.
+
+import("std/json")  as json
+import("std/bytes") as bytes
+import("std/rec")   as rec
+
+fn encode(v)        { json.encode(v) }
+fn decode(s)        { json.decode(s) }
+fn canonicalize(s)  { json.canonicalize(s) }
+fn encode_bytes(v)  { bytes.from_string(json.encode(v)) }
+fn decode_bytes(b)  { json.decode(bytes.to_string(b)) }
+fn roundtrip(v)     { json.decode(json.encode(v)) }
+fn pretty(v)        { json.pretty(v) }
+
+export { encode, decode, canonicalize, encode_bytes, decode_bytes, roundtrip, pretty }

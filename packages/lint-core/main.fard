@@ -1,0 +1,26 @@
+// lint-core@1.6.0 — Lint rule engine and diagnostic primitives for FARD
+// Depends on core-errors.
+// Provides diagnostic envelope, rule registration, and runner primitives.
+
+import("std/list") as list
+import("std/str")  as str
+
+fn diagnostic(level, code, message, line) {
+  { level: level, code: code, message: message, line: line }
+}
+
+fn error(code, message, line)   { diagnostic("error", code, message, line) }
+fn warning(code, message, line) { diagnostic("warning", code, message, line) }
+fn info(code, message, line)    { diagnostic("info", code, message, line) }
+
+fn is_error(d)   { d.level == "error" }
+fn is_warning(d) { d.level == "warning" }
+
+fn run_rules(rules, source) {
+  list.flat_map(rules, fn(r) { r(source) })
+}
+
+fn has_errors(diags)  { list.len(list.filter(diags, is_error)) > 0 }
+fn error_count(diags) { list.len(list.filter(diags, is_error)) }
+
+export { diagnostic, error, warning, info, is_error, is_warning, run_rules, has_errors, error_count }

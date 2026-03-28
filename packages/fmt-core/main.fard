@@ -1,0 +1,21 @@
+// fmt-core@1.6.0 — Source code formatting primitives for FARD
+// Depends on core-errors.
+// Provides indent, line wrapping, and token normalization utilities.
+
+import("std/str")  as str
+import("std/list") as list
+
+fn indent(text, n) {
+  let pad = str.repeat(" ", n)
+  str.join(list.map(str.split(text, "\n"), fn(l) { str.concat([pad, l]) }), "\n")
+}
+
+fn trim_lines(text) {
+  str.join(list.map(str.split(text, "\n"), fn(l) { str.trim(l) }), "\n")
+}
+
+fn normalize_newlines(text) { str.replace(text, "\r\n", "\n") }
+
+fn blank_lines(n) { str.repeat("\n", n) }
+
+export { indent, trim_lines, normalize_newlines, blank_lines }

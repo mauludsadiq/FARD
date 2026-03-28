@@ -1,0 +1,36 @@
+// cli-core@1.6.0 — CLI argument parsing and command dispatch for FARD
+// Depends on core-config, core-errors.
+// Provides arg parsing, flag extraction, and command tree dispatch.
+
+import("std/list") as list
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn parse_args(argv) {
+  list.fold(argv, { flags: {}, args: [] }, fn(acc, a) {
+    if str.starts_with(a, "--") then
+      let kv = str.split(str.slice(a, 2, str.len(a)), "=") in
+      if list.len(kv) == 2 then
+        { flags: rec.set(acc.flags, list.get(kv, 0), list.get(kv, 1)), args: acc.args }
+      else
+        { flags: rec.set(acc.flags, list.get(kv, 0), true), args: acc.args }
+    else if str.starts_with(a, "-") then
+      { flags: rec.set(acc.flags, str.slice(a, 1, str.len(a)), true), args: acc.args }
+    else
+      { flags: acc.flags, args: list.concat([acc.args, [a]]) }
+  })
+}
+
+fn flag(parsed, name)         { if rec.has(parsed.flags, name) then rec.get(parsed.flags, name) else null }
+fn flag_or(parsed, name, def) { if rec.has(parsed.flags, name) then rec.get(parsed.flags, name) else def }
+fn positional(parsed)         { parsed.args }
+fn command(parsed)            { if list.len(parsed.args) > 0 then list.get(parsed.args, 0) else null }
+
+fn dispatch(parsed, handlers) {
+  let cmd = command(parsed)
+  if cmd != null && rec.has(handlers, cmd) then rec.get(handlers, cmd)(parsed)
+  else if rec.has(handlers, "_default") then rec.get(handlers, "_default")(parsed)
+  else { error: "unknown command", command: cmd }
+}
+
+export { parse_args, flag, flag_or, positional, command, dispatch }

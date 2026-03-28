@@ -1,0 +1,14 @@
+import("../packages/core-bytes/main") as cb
+
+let b = cb.from_string("hello")
+
+test "len"            { cb.len(b) == 5 }
+test "to_string"      { cb.to_string(b) == "hello" }
+test "is_empty true"  { cb.is_empty(cb.empty()) == true }
+test "is_empty false" { cb.is_empty(b) == false }
+test "eq same"        { cb.eq(b, cb.from_string("hello")) == true }
+test "eq diff"        { cb.eq(b, cb.from_string("world")) == false }
+test "roundtrip hex"  { cb.eq(cb.from_hex(cb.to_hex(b)), b) == true }
+test "roundtrip b64"  { cb.eq(cb.from_base64(cb.to_base64(b)), b) == true }
+test "concat"         { cb.len(cb.concat([b, b])) == 10 }
+test "slice"          { cb.to_string(cb.slice(b, 0, 3)) == "hel" }

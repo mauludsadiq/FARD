@@ -1,0 +1,4 @@
+name = "core-bytes"
+version = "1.6.0"
+entry = "main.fard"
+description = "Canonical byte buffer type and operations for FARD"

@@ -1,0 +1,23 @@
+// core-serde@1.6.0 — Schema-aware serialization and deserialization hub for FARD
+// Depends on core-bytes, core-json, core-errors, core-hash.
+// The central serialization multiplier — all format packages build on this.
+
+import("std/json")  as json
+import("std/bytes") as bytes
+import("std/rec")   as rec
+import("std/list")  as list
+
+fn to_json(v)     { json.encode(v) }
+fn from_json(s)   { json.decode(s) }
+fn to_bytes(v)    { bytes.from_string(json.encode(v)) }
+fn from_bytes(b)  { json.decode(bytes.to_string(b)) }
+fn canonical(v)   { json.canonicalize(json.encode(v)) }
+
+fn with_schema(v, schema) { rec.set(v, "$schema", schema) }
+fn schema_of(v)           { if rec.has(v, "$schema") then rec.get(v, "$schema") else null }
+
+fn validate_keys(v, required) {
+  list.all(required, fn(k) { rec.has(v, k) })
+}
+
+export { to_json, from_json, to_bytes, from_bytes, canonical, with_schema, schema_of, validate_keys }

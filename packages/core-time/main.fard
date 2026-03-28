@@ -1,0 +1,21 @@
+// core-time@1.6.0 — Time primitives and duration algebra for FARD
+// Unix epoch integers as canonical time representation.
+// Provides now, format, parse, diff, add, and field extraction.
+
+import("std/datetime") as dt
+import("std/str")      as str
+
+fn now()            { dt.now() }
+fn format(ts, fmt)  { dt.format(ts, fmt) }
+fn parse(s, fmt)    { dt.parse(s, fmt) }
+fn field(ts, f)     { dt.field(ts, f) }
+fn add(ts, unit, n) { dt.add(ts, unit, n) }
+fn diff(a, b)       { dt.diff(a, b) }
+fn seconds(n)       { n }
+fn minutes(n)       { n * 60 }
+fn hours(n)         { n * 3600 }
+fn days(n)          { n * 86400 }
+fn iso8601(ts)      { dt.format(ts, "%Y-%m-%dT%H:%M:%SZ") }
+fn date(ts)         { dt.format(ts, "%Y-%m-%d") }
+
+export { now, format, parse, field, add, diff, seconds, minutes, hours, days, iso8601, date }

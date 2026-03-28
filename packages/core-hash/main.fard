@@ -1,0 +1,19 @@
+// core-hash@1.6.0 — Cryptographic and structural hash primitives for FARD
+// Provides sha256, sha512, blake3, and structural hashing of FARD values.
+// Used by receipts, snapshots, content addressing, and identity checks.
+
+import("std/hash")  as hash
+import("std/bytes") as bytes
+import("std/str")   as str
+
+fn sha256(b)      { hash.sha256(b) }
+fn sha256_str(s)  { hash.sha256(bytes.from_string(s)) }
+fn sha512(b)      { hash.sha512(b) }
+fn blake3(b)      { hash.blake3(b) }
+fn blake3_str(s)  { hash.blake3(bytes.from_string(s)) }
+fn hex(digest)    { bytes.to_hex(digest) }
+fn sha256_hex(b)  { hex(sha256(b)) }
+fn blake3_hex(b)  { hex(blake3(b)) }
+fn structural(v)  { hash.structural(v) }
+
+export { sha256, sha256_str, sha512, blake3, blake3_str, hex, sha256_hex, blake3_hex, structural }

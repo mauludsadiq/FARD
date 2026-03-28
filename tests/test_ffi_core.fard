@@ -1,0 +1,8 @@
+import("../packages/ffi-core/main") as ffi
+import("std/list") as list
+
+let d = ffi.descriptor("mylib", "1.0", ["add", "mul"])
+
+test "descriptor name"    { d.name == "mylib" }
+test "descriptor version" { d.version == "1.0" }
+test "descriptor symbols" { list.len(d.symbols) == 2 }

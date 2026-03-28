@@ -1,0 +1,16 @@
+import("../packages/core-errors/main") as errors
+
+let e1 = errors.make("NOT_FOUND", "resource missing")
+let e2 = errors.make("INVALID", "bad input")
+let e3 = errors.wrap("IO_ERROR", "read failed", e1)
+
+test "is_error true"      { errors.is_error(e1) == true }
+test "is_error false"     { errors.is_error(42) == false }
+test "code"               { errors.code(e1) == "NOT_FOUND" }
+test "message"            { errors.message(e1) == "resource missing" }
+test "match_code true"    { errors.match_code(e1, "NOT_FOUND") == true }
+test "match_code false"   { errors.match_code(e1, "INVALID") == false }
+test "has_cause false"    { errors.has_cause(e1) == false }
+test "has_cause true"     { errors.has_cause(e3) == true }
+test "cause"              { errors.code(errors.cause(e3)) == "NOT_FOUND" }
+test "to_string"          { errors.to_string(e2) == "INVALID: bad input" }

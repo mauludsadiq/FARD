@@ -1,0 +1,11 @@
+import("../packages/core-serde/main") as serde
+
+let v = { x: 1, y: 2 }
+
+test "to_json"            { serde.from_json(serde.to_json(v)).x == 1 }
+test "to_bytes"           { serde.from_bytes(serde.to_bytes(v)).y == 2 }
+test "canonical stable"   { serde.canonical({b:2,a:1}) == serde.canonical({a:1,b:2}) }
+test "with_schema"        { serde.schema_of(serde.with_schema(v, "myschema")) == "myschema" }
+test "schema_of null"     { serde.schema_of(v) == null }
+test "validate_keys ok"   { serde.validate_keys(v, ["x","y"]) == true }
+test "validate_keys fail" { serde.validate_keys(v, ["x","z"]) == false }

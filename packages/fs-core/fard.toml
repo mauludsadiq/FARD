@@ -1,0 +1,4 @@
+name = "fs-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "Filesystem access primitives for FARD"

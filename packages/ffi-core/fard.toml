@@ -1,0 +1,4 @@
+name = "ffi-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "Foreign function interface foundation for FARD"

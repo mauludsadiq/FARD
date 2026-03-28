@@ -1,0 +1,4 @@
+name = "async-core"
+version = "1.6.0"
+entry = "main.fard"
+description = "Async task primitives and runtime interface for FARD"
