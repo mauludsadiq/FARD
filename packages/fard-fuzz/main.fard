@@ -1,0 +1,140 @@
+// fard-fuzz@1.6.0 — Fuzz testing for FARD
+// Randomized input generation and crash detection
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/json") as json
+import("std/type") as type
+
+fn pass(label) {
+  { ok: true, label: label, error: null }
+}
+
+fn fuzz(label, gen, prop, n) {
+  let results = list.map(list.range(0, n), fn(i) {
+    let v = gen(i)
+    if prop(v) then pass(label) else fail(label, str.concat("fuzz failure: ", json.encode(v)))
+  })
+  suite(label, results)
+}
+
+fn fail(label, msg) {
+  { ok: false, label: label, error: msg }
+}
+
+fn assert_eq(label, actual, expected) {
+  if actual == expected then pass(label)
+  else fail(label, str.concat(
+    str.concat("expected ", json.encode(expected)),
+    str.concat(" but got ", json.encode(actual))
+  ))
+}
+
+fn assert_ne(label, actual, expected) {
+  if actual != expected then pass(label)
+  else fail(label, str.concat("expected values to differ but both were ", json.encode(actual)))
+}
+
+fn assert_true(label, value) {
+  if value == true then pass(label)
+  else fail(label, str.concat("expected true but got ", json.encode(value)))
+}
+
+fn assert_false(label, value) {
+  if value == false then pass(label)
+  else fail(label, str.concat("expected false but got ", json.encode(value)))
+}
+
+fn assert_null(label, value) {
+  if value == null then pass(label)
+  else fail(label, str.concat("expected null but got ", json.encode(value)))
+}
+
+fn assert_not_null(label, value) {
+  if value != null then pass(label)
+  else fail(label, "expected non-null value")
+}
+
+fn assert_ok(label, result) {
+  if rec.has(result, "ok") && rec.get(result, "ok") == true then pass(label)
+  else fail(label, str.concat("expected ok result but got ", json.encode(result)))
+}
+
+fn assert_err(label, result) {
+  if rec.has(result, "ok") && rec.get(result, "ok") == false then pass(label)
+  else fail(label, str.concat("expected err result but got ", json.encode(result)))
+}
+
+fn assert_contains(label, haystack, needle) {
+  let t = type.of(haystack)
+  if t == "text" then
+    if str.contains(haystack, needle) then pass(label)
+    else fail(label, str.concat(str.concat("expected ", json.encode(haystack)), str.concat(" to contain ", json.encode(needle))))
+  else if t == "list" then
+    if list.any(haystack, fn(x) { x == needle }) then pass(label)
+    else fail(label, str.concat("list does not contain ", json.encode(needle)))
+  else fail(label, "assert_contains requires text or list")
+}
+
+fn assert_len(label, collection, expected_len) {
+  let t = type.of(collection)
+  let actual_len = if t == "list" then list.len(collection)
+                   else if t == "text" then str.len(collection)
+                   else -1
+  if actual_len == expected_len then pass(label)
+  else fail(label, str.concat(
+    str.concat("expected length ", str.from_int(expected_len)),
+    str.concat(" but got ", str.from_int(actual_len))
+  ))
+}
+
+fn assert_type(label, value, expected_type) {
+  let t = type.of(value)
+  if t == expected_type then pass(label)
+  else fail(label, str.concat(str.concat("expected type ", expected_type), str.concat(" but got ", t)))
+}
+
+fn suite(name, results) {
+  let passed = list.filter(results, fn(r) { r.ok })
+  let failed = list.filter(results, fn(r) { r.ok == false })
+  let pass_count = list.len(passed)
+  let fail_count = list.len(failed)
+  let total = list.len(results)
+  {
+    name:    name,
+    ok:      fail_count == 0,
+    passed:  pass_count,
+    failed:  fail_count,
+    total:   total,
+    results: results,
+    summary: str.concat(str.concat(str.from_int(pass_count), "/"), str.concat(str.from_int(total), str.concat(" passed in ", name)))
+  }
+}
+
+fn report(suite_result) {
+  let lines = list.map(suite_result.results, fn(r) {
+    let icon = if r.ok then "v" else "x"
+    if r.ok then str.concat(str.concat(icon, " "), r.label)
+    else str.concat(str.concat(str.concat(icon, " "), r.label), str.concat(": ", r.error))
+  })
+  str.join(lines, "\n")
+}
+
+{
+  pass:             pass,
+  fail:             fail,
+  assert_eq:        assert_eq,
+  assert_ne:        assert_ne,
+  assert_true:      assert_true,
+  assert_false:     assert_false,
+  assert_null:      assert_null,
+  assert_not_null:  assert_not_null,
+  assert_ok:        assert_ok,
+  assert_err:       assert_err,
+  assert_contains:  assert_contains,
+  assert_len:       assert_len,
+  assert_type:      assert_type,
+  suite:            suite,
+  report:           report,
+    fuzz:             fuzz
+}

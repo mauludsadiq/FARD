@@ -1,0 +1,10 @@
+import("../packages/fard-fuzz/main") as fuzz
+
+fn gen_int(i) { i }
+
+fn prop_ok(x) { x >= 0 }
+
+test "fuzz basic" {
+  let r = fuzz.fuzz("fuzz", gen_int, prop_ok, 5)
+  r.ok == true
+}
