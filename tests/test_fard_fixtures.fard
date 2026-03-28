@@ -1,0 +1,10 @@
+import("../packages/fard-fixtures/main") as fx
+
+fn setup() { {v: 1} }
+fn teardown(s) { null }
+
+test "fixture basic" {
+  let f = fx.fixture("f", setup, teardown)
+  let r = fx.use_fixture(f, fn(s) { s.v == 1 })
+  r == true
+}
