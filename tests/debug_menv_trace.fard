@@ -1,0 +1,49 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+import("std/menv") as menv
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+let user_env = menv.new()
+let apfn_with_eval = menv.get(e, "apply_fn_with_eval")
+
+test "step1 apfn type" { type.of(apfn_with_eval) == "record" }
+test "step2 apfn t" { apfn_with_eval.t == "closure" }
+test "step3 apfn params[0]" { apfn_with_eval.params[0] == "eval_fn" }
+
+let lit42 = { t: "lit_int", v: 42 }
+let args_list = [lit42, user_env]
+
+test "step4 self_eval params[0]" { self_eval.params[0] == "expr" }
+
+let child = menv.child(e)
+menv.set(child, "expr", lit42)
+menv.set(child, "env", user_env)
+
+test "step5 arm0 body eval" { ev.eval(self_eval.body.arms[0].body, child) == 42 }
+
+let apply_fn_cl = menv.get(e, "apply_fn")
+test "step6 apply_fn t" { apply_fn_cl.t == "closure" }
+test "step7 apply_fn body t" { apply_fn_cl.body.t == "call" }
+let apply_fn_body_fn = rec.get(apply_fn_cl.body, "fn")
+test "step8 apply_fn body fn t" { apply_fn_body_fn.t == "var" }
+test "step9 apply_fn body fn name" { apply_fn_body_fn.name == "apply_fn_with_eval" }
+
+let child2 = menv.child(e)
+menv.set(child2, "apply_fn", apply_fn_cl)
+menv.set(child2, "fn_val", self_eval)
+menv.set(child2, "args", [lit42, user_env])
+
+test "step10 eval apply_fn body" { ev.eval(apply_fn_cl.body, child2) == 42 }

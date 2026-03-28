@@ -1,0 +1,27 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc)) else acc
+})
+
+let env2 = list.fold(defs, env1, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, env1)) else acc
+})
+
+let self_eval = ev.env_get(env2, "eval")
+let apply_fn_cl = ev.env_get(env2, "apply_fn")
+test "apply_fn has eval" { rec.has(apply_fn_cl.env, "eval") }
+test "eval is closure" { apply_fn_cl.env.eval.t == "closure" }
+
+let self_eval_args = ev.env_get(env2, "eval_args")
+let one_result = ev.apply_fn(self_eval_args, [self_eval, [{ t: "lit_int", v: 5 }], ev.env_empty()])
+test "one arg ok" { one_result[0] == 5 }

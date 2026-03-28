@@ -1,0 +1,34 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/io") as io
+import("std/menv") as menv
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+
+let ecb = menv.get(e, "eval_call_builtin")
+let body = ecb.body
+test "body t" { body.t == "match_expr" }
+let default_arm = body.arms[3]
+test "default arm body t" { default_arm.body.t == "call" }
+let call_body = default_arm.body
+let fn_node = rec.get(call_body, "fn")
+test "fn name" { fn_node.name == "apply_builtin" }
+let args = call_body.args
+test "args len" { list.len(args) == 2 }
+test "arg1 t" { args[1].t == "call" }
+let eval_args_call = args[1]
+let eval_args_fn = rec.get(eval_args_call, "fn")
+test "eval_args fn name" { eval_args_fn.name == "eval_args" }
+let eval_args_args = eval_args_call.args
+test "eval_args args len" { list.len(eval_args_args) == 3 }
+test "eval_args arg1 t" { eval_args_args[1].t == "get_field" }
+test "eval_args arg1 field" { eval_args_args[1].field == "args" }

@@ -1,0 +1,36 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc)) else acc
+})
+let self_ecb = ev.env_get(env1, "eval_call_builtin")
+
+test "ecb params[0]" { self_ecb.params[0] == "eval_fn" }
+test "ecb body is match" { self_ecb.body.t == "match_expr" }
+let arm3 = self_ecb.body.arms[3]
+test "arm3 body is call" { arm3.body.t == "call" }
+let fn_field = rec.get(arm3.body, "fn")
+test "fn_field name" { fn_field.name == "apply_builtin" }
+let args_field = arm3.body.args
+test "args len" { list.len(args_field) == 2 }
+test "args[0] t" { args_field[0].t == "get_field" }
+test "args[0] field" { args_field[0].field == "name" }
+
+let self_eval = ev.env_get(env1, "eval")
+let cb_node = { t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 3 }, { t: "lit_int", v: 4 }] }
+
+let eval_env_after_apply = ev.env_set(self_ecb.env, "eval_call_builtin", self_ecb)
+let eval_env2 = ev.env_set(ev.env_set(eval_env_after_apply, "eval_fn", self_eval), "node", cb_node)
+let eval_env3 = ev.env_set(eval_env2, "env", ev.env_empty())
+
+test "arm3 body fn in env" { rec.has(eval_env3, "apply_builtin") }
+let result = ev.eval(arm3.body, eval_env3)
+test "arm3 body result" { result == 7 }

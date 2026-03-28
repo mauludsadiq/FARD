@@ -1,0 +1,37 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+import("std/menv") as menv
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e))
+  else null
+})
+
+let self_eval = menv.get(e, "eval")
+let self_eval_args = menv.get(e, "eval_args")
+let user_env = menv.new()
+
+let r1 = ev.apply_fn(self_eval, [{ t: "lit_int", v: 42 }, user_env])
+test "lit_int" { r1 == 42 }
+
+let r2 = ev.apply_fn(self_eval, [{ t: "lit_bool", v: true }, user_env])
+test "lit_bool" { r2 == true }
+
+let one_result = ev.apply_fn(self_eval_args, [self_eval, [{ t: "lit_int", v: 5 }], user_env])
+test "eval_args one" { one_result[0] == 5 }
+
+let add_node = { t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 3 }, { t: "lit_int", v: 4 }] }
+let r4 = ev.apply_fn(self_eval, [add_node, user_env])
+test "call_builtin add" { r4 == 7 }

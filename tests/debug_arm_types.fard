@@ -15,11 +15,9 @@ let dummy = list.fold(defs, null, fn(acc, d) {
 })
 
 let self_eval = menv.get(e, "eval")
-let body = self_eval.body
-let arms = body.arms
-test "num arms" { list.len(arms) > 5 }
-test "arm0 pat_val t" { arms[0].pat_val.t == "lit_text" }
-test "arm0 pat_val v" { arms[0].pat_val.v == "lit_int" }
-let arm5 = arms[5]
-test "arm5 pat_val t" { arm5.pat_val.t == "lit_text" }
-test "arm5 pat_val v" { arm5.pat_val.v == "call_builtin" }
+let arms = self_eval.body.arms
+let i = list.range(0, list.len(arms))
+let pairs = list.map(i, fn(n) { { n: n, t: arms[n].pat_val.t, v: rec.get(arms[n].pat_val, "v") } })
+test "pairs" { list.len(pairs) }
+test "arm17 t" { arms[17].pat_val.t }
+test "arm18 t" { arms[18].pat_val.t }

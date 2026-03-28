@@ -1,0 +1,9 @@
+import("../packages/fard_parse/parse") as parse
+import("std/record") as rec
+
+let src = "fn f(node) { node.args[0] }"
+let defs = parse.parse_program(src)
+let body = defs[0].body
+test "body t" { body.t }
+test "body obj t" { rec.get(body, "obj").t }
+test "body idx t" { rec.get(body, "idx").t }

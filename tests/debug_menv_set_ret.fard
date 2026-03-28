@@ -1,0 +1,7 @@
+import("std/menv") as menv
+import("std/type") as type
+
+let e = menv.new()
+let r = menv.set(e, "x", 42)
+test "returns null" { r == null }
+test "or menv" { type.of(r) == "menv" }

@@ -1,9 +1,10 @@
 import("../packages/core-random/main") as rng
 import("std/list") as list
+import("std/bytes") as bytes
 
 test "int in range"     { let v = rng.int(0, 9) in v >= 0 && v <= 9 }
 test "float in range"   { let v = rng.float() in v >= 0.0 && v < 1.0 }
 test "bool is bool"     { let v = rng.bool() in v == true || v == false }
-test "bytes len"        { list.len(rng.bytes(8)) == 8 }
+test "bytes len"        { bytes.len(rng.bytes(8)) == 8 }
 test "choice from list" { let v = rng.choice([1,2,3]) in v == 1 || v == 2 || v == 3 }
 test "shuffle same len" { list.len(rng.shuffle([1,2,3,4])) == 4 }

@@ -1,0 +1,10 @@
+import("../packages/fard_eval/eval") as ev
+import("std/record") as rec
+import("std/menv") as menv
+
+test "ev has menv" { rec.has(ev, "eval") }
+let native_eval = ev.eval
+let native_env_rec = native_eval.env
+test "menv in native env" { rec.has(native_env_rec, "menv") }
+let native_menv = native_env_rec.menv
+test "native menv has call_eval" { rec.has(native_menv, "call_eval") }

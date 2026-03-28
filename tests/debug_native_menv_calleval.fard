@@ -1,0 +1,7 @@
+import("../packages/fard_eval/eval") as ev
+import("std/menv") as menv
+import("std/record") as rec
+
+let native_menv_module = menv
+test "native menv has call_eval" { rec.has(native_menv_module, "call_eval") }
+test "native menv has child" { rec.has(native_menv_module, "child") }

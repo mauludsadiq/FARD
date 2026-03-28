@@ -1,0 +1,7 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+
+let src = "fn f(x) { match x { \"a\" => 1, \"b\" => 2, _ => 3 } }"
+let defs = parse.parse_program(src)
+let arms = defs[0].body.arms
+test "num arms" { list.len(arms) == 3 }

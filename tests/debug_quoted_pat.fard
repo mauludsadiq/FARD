@@ -2,8 +2,8 @@ import("../packages/fard_parse/parse") as parse
 import("std/list") as list
 import("std/record") as rec
 
-let src = "fn f(x) { match x { \"a\" => 1, _ => 2 } }"
+let src = "fn f(x) { match x { \"bool.not\" => 1, _ => 2 } }"
 let defs = parse.parse_program(src)
 let arms = defs[0].body.arms
-test "arm1 pat t" { arms[1].pat_val.t == "var" }
-test "arm1 pat name" { arms[1].pat_val.name == "_" }
+test "arm0 pat_val t" { arms[0].pat_val.t }
+test "arm0 pat_val v" { rec.get(arms[0].pat_val, "v") }

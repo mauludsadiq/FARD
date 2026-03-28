@@ -1,0 +1,3 @@
+import("../packages/fard_eval/eval") as ev
+import("std/type") as type
+test "env_get type" { type.of(ev.env_get) == "func" }

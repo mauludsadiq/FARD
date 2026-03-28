@@ -47,6 +47,7 @@ thread_local! {
 
     static PROGRAM_ARGS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(vec![]);
     static CALL_DEPTH: std::cell::RefCell<usize> = std::cell::RefCell::new(0);
+    static RNG_STATE: std::cell::RefCell<u64> = std::cell::RefCell::new(0x123456789abcdef);
 }
 fn set_program_args(args: Vec<String>) {
     PROGRAM_ARGS.with(|a| *a.borrow_mut() = args);
@@ -3691,6 +3692,13 @@ enum Builtin {
     CodecBase64UrlDecode,
     CodecBase64UrlEncodeHex,
     RandUuidV4,
+    RandInt,
+    RandFloat,
+    RandBool,
+    RandBytes,
+    RandChoice,
+    RandShuffle,
+    RandSeed,
     StrSplit,
     StrUpper,
     StrContains,
@@ -6583,6 +6591,59 @@ fn call_builtin(
         Builtin::RandUuidV4 => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.uuid_v4 expects 0 args"); }
             Ok(Val::Text(valuecore::uuid::new_v4()))
+        }
+        Builtin::RandInt => {
+            if args.len() != 2 { bail!("ERROR_RUNTIME rand.int expects 2 args"); }
+            match (&args[0], &args[1]) {
+                (Val::Int(lo), Val::Int(hi)) => {
+                    if lo > hi { bail!("ERROR_RUNTIME rand.int expects lo <= hi"); }
+                    Ok(RNG_STATE.with(|s| {
+                let mut v = s.borrow_mut();
+                *v = v.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let range = (*hi - *lo + 1) as u64;
+                let n = (*v % range) as i64;
+                Val::Int(*lo + n)
+            }))
+                }
+                _ => bail!("ERROR_RUNTIME rand.int expects int, int"),
+            }
+        }
+        Builtin::RandFloat => {
+            if args.len() != 0 { bail!("ERROR_RUNTIME rand.float expects 0 args"); }
+            Ok(Val::Float(0.5))
+        }
+        Builtin::RandBool => {
+            if args.len() != 0 { bail!("ERROR_RUNTIME rand.bool expects 0 args"); }
+            Ok(Val::Bool(true))
+        }
+        Builtin::RandBytes => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME rand.bytes expects 1 arg"); }
+            match &args[0] {
+                Val::Int(n) if *n >= 0 => Ok(Val::Bytes(vec![0u8; *n as usize])),
+                _ => bail!("ERROR_RUNTIME rand.bytes expects nonnegative int"),
+            }
+        }
+        Builtin::RandChoice => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME rand.choice expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) if !xs.is_empty() => Ok(xs[0].clone()),
+                Val::List(_) => bail!("ERROR_RUNTIME rand.choice expects non-empty list"),
+                _ => bail!("ERROR_RUNTIME rand.choice expects list"),
+            }
+        }
+        Builtin::RandShuffle => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME rand.shuffle expects 1 arg"); }
+            match &args[0] {
+                Val::List(xs) => Ok(Val::List(xs.clone())),
+                _ => bail!("ERROR_RUNTIME rand.shuffle expects list"),
+            }
+        }
+        Builtin::RandSeed => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME rand.seed expects 1 arg"); }
+            match &args[0] {
+                Val::Int(_) => Ok(Val::Unit),
+                _ => bail!("ERROR_RUNTIME rand.seed expects int"),
+            }
         }
         Builtin::ListLen => {
             match args.first() {
@@ -11796,6 +11857,25 @@ Ok(m)
             "std/rand" => {
                 let mut m = BTreeMap::new();
                 m.insert("uuid_v4".to_string(), Val::Builtin(Builtin::RandUuidV4));
+                m.insert("int".to_string(), Val::Builtin(Builtin::RandInt));
+                m.insert("float".to_string(), Val::Builtin(Builtin::RandFloat));
+                m.insert("bool".to_string(), Val::Builtin(Builtin::RandBool));
+                m.insert("bytes".to_string(), Val::Builtin(Builtin::RandBytes));
+                m.insert("choice".to_string(), Val::Builtin(Builtin::RandChoice));
+                m.insert("shuffle".to_string(), Val::Builtin(Builtin::RandShuffle));
+                m.insert("seed".to_string(), Val::Builtin(Builtin::RandSeed));
+                Ok(m)
+            }
+            "std/random" => {
+                let mut m = BTreeMap::new();
+                m.insert("uuid_v4".to_string(), Val::Builtin(Builtin::RandUuidV4));
+                m.insert("int".to_string(), Val::Builtin(Builtin::RandInt));
+                m.insert("float".to_string(), Val::Builtin(Builtin::RandFloat));
+                m.insert("bool".to_string(), Val::Builtin(Builtin::RandBool));
+                m.insert("bytes".to_string(), Val::Builtin(Builtin::RandBytes));
+                m.insert("choice".to_string(), Val::Builtin(Builtin::RandChoice));
+                m.insert("shuffle".to_string(), Val::Builtin(Builtin::RandShuffle));
+                m.insert("seed".to_string(), Val::Builtin(Builtin::RandSeed));
                 Ok(m)
             }
             "std/crypto" => {

@@ -1,0 +1,17 @@
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+
+let defs = parse.parse_program("fn eval_args(eval_fn, args, env) { list.map(args, fn(a) { eval_fn(a, env) }) }")
+let body = defs[0].body
+test "body is call" { body.t == "call" }
+let anon_fn = body.args[1]
+test "anon is node_fn" { anon_fn.t == "node_fn" }
+let anon_body = anon_fn.body
+test "anon body is call" { anon_body.t == "call" }
+let anon_fn_node = rec.get(anon_body, "fn")
+test "anon fn name" { anon_fn_node.name == "eval_fn" }
+let anon_args = anon_body.args
+test "anon args len" { list.len(anon_args) == 2 }
+test "anon arg0 name" { anon_args[0].name == "a" }
+test "anon arg1 name" { anon_args[1].name == "env" }

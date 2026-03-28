@@ -1,0 +1,11 @@
+import("std/menv") as menv
+import("std/record") as rec
+
+let e = menv.new()
+menv.set(e, "x", 42)
+test "get x" { menv.get(e, "x") == 42 }
+test "has x" { menv.has(e, "x") == true }
+test "rec.get works" { rec.get(e, "x") == 42 }
+menv.set(e, "y", 99)
+test "get y" { menv.get(e, "y") == 99 }
+test "still has x" { rec.get(e, "x") == 42 }

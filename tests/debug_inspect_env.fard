@@ -1,0 +1,41 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+
+print("=== Parsed definitions ===")
+list.iter(defs, fn(d) { print("  " ++ d.name ++ " (" ++ d.t ++ ")") })
+
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+
+print("\n=== After env0, checking ev fields ===")
+print("ev.env_empty type: " ++ typeof(ev.env_empty))
+print("ev.env_set type: " ++ typeof(ev.env_set))
+print("ev.env_get type: " ++ typeof(ev.env_get))
+print("ev.eval type: " ++ typeof(ev.eval))
+
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then 
+    let evaluated = ev.eval(d, acc)
+    print("Evaluated: " ++ d.name ++ " -> " ++ typeof(evaluated))
+    ev.env_set(acc, d.name, evaluated) 
+  else acc
+})
+
+print("\n=== After evaluation, checking env1 ===")
+let keys = rec.keys(env1)
+list.iter(keys, fn(k) { 
+  let val = rec.get(env1, k)
+  print("  " ++ k ++ ": " ++ typeof(val))
+})
+
+print("\n=== Checking if apply_fn exists in env1 ===")
+let apply_fn_in_env1 = rec.get(env1, "apply_fn")
+print("apply_fn in env1: " ++ typeof(apply_fn_in_env1))
+
+print("\n=== Checking ev.apply_fn directly ===")
+print("ev.apply_fn: " ++ typeof(ev.apply_fn))

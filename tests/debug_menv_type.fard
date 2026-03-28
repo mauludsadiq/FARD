@@ -1,0 +1,5 @@
+import("std/menv") as menv
+import("std/type") as type
+
+let e = menv.new()
+test "type of menv" { type.of(e) == "menv" }

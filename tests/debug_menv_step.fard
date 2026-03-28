@@ -2,24 +2,26 @@ import("../packages/fard_eval/eval") as ev
 import("../packages/fard_parse/parse") as parse
 import("std/list") as list
 import("std/record") as rec
+import("std/type") as type
 import("std/io") as io
 import("std/menv") as menv
 
 let src = io.read_file("packages/fard_eval/eval.fard").ok
+test "step1 src loaded" { src != null }
 let defs = parse.parse_program(src)
+test "step2 defs parsed" { list.len(defs) > 0 }
 let e = menv.new()
 menv.set(e, "list", list)
 menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
 let dummy = list.fold(defs, null, fn(acc, d) {
   if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
 })
-
+test "step3 defs loaded" { menv.has(e, "eval") }
 let self_eval = menv.get(e, "eval")
-let body = self_eval.body
-let arms = body.arms
-test "num arms" { list.len(arms) > 5 }
-test "arm0 pat_val t" { arms[0].pat_val.t == "lit_text" }
-test "arm0 pat_val v" { arms[0].pat_val.v == "lit_int" }
-let arm5 = arms[5]
-test "arm5 pat_val t" { arm5.pat_val.t == "lit_text" }
-test "arm5 pat_val v" { arm5.pat_val.v == "call_builtin" }
+test "step4 self_eval is closure" { self_eval.t == "closure" }
+
+let user_env = menv.new()
+let lit42 = { t: "lit_int", v: 42 }
+test "step5 apply_fn" { ev.apply_fn(self_eval, [lit42, user_env]) == 42 }

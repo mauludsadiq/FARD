@@ -1,0 +1,48 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc)) else acc
+})
+
+// Debug: Print what's in env1
+print("=== Functions in env1 ===")
+let keys = rec.keys(env1)
+list.iter(keys, fn(k) { 
+    let v = rec.get(env1, k)
+    print(k ++ ": " ++ typeof(v))
+})
+
+// Get functions from env1 instead of from ev
+let self_eval = rec.get(env1, "eval")
+let self_apply_fn = rec.get(env1, "apply_fn")
+let self_eval_args = rec.get(env1, "eval_args")
+
+print("\n=== Retrieved from env1 ===")
+print("self_eval: " ++ typeof(self_eval))
+print("self_apply_fn: " ++ typeof(self_apply_fn))
+print("self_eval_args: " ++ typeof(self_eval_args))
+
+// Now try to use them
+print("\n=== Testing apply_fn ===")
+let test_fn = fn(x) -> x + 1
+let test_result = self_apply_fn(test_fn, [5])
+print("test_result: " ++ to_string(test_result))
+
+print("\n=== Testing eval_args ===")
+let ast_list = [{ t: "lit_int", v: 5 }]
+let evaluated_args = self_eval_args(self_eval, ast_list, env0)
+print("evaluated_args: " ++ to_string(evaluated_args))
+
+print("\n=== Testing eval directly ===")
+let single_result = self_eval({ t: "lit_int", v: 5 }, env0)
+print("single_result: " ++ to_string(single_result))
+
+test "all tests pass" { single_result == 5 }

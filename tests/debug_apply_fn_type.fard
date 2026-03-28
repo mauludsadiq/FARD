@@ -1,0 +1,6 @@
+import("../packages/fard_eval/eval") as ev
+import("std/type") as type
+import("std/record") as rec
+
+test "apply_fn type" { type.of(ev.apply_fn) == "func" }
+test "apply_fn_with_eval in ev" { rec.has(ev, "apply_fn_with_eval") }

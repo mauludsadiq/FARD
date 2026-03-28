@@ -1,0 +1,19 @@
+import("../packages/fard_eval/eval") as ev
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("../packages/fard_parse/parse") as parse
+import("std/io") as io
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let env0 = ev.env_set(ev.env_set(ev.env_set(ev.env_empty(), "list", list), "rec", rec), "type", type)
+let env1 = list.fold(defs, env0, fn(acc, d) {
+  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc))
+  else acc
+})
+let self_eval = ev.env_get(env1, "eval")
+let self_ecb = ev.env_get(env1, "eval_call_builtin")
+let node = { t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 3 }, { t: "lit_int", v: 4 }] }
+let result = ev.apply_fn(self_ecb, [self_eval, node, ev.env_empty()])
+test "result" { result == 7 }

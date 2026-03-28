@@ -14,12 +14,10 @@ let dummy = list.fold(defs, null, fn(acc, d) {
   if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
 })
 
-let self_eval = menv.get(e, "eval")
-let body = self_eval.body
-let arms = body.arms
-test "num arms" { list.len(arms) > 5 }
-test "arm0 pat_val t" { arms[0].pat_val.t == "lit_text" }
-test "arm0 pat_val v" { arms[0].pat_val.v == "lit_int" }
-let arm5 = arms[5]
-test "arm5 pat_val t" { arm5.pat_val.t == "lit_text" }
-test "arm5 pat_val v" { arm5.pat_val.v == "call_builtin" }
+let ab = menv.get(e, "apply_builtin")
+let arms = ab.body.arms
+let n = list.len(arms)
+test "num arms" { n }
+test "arm0 v" { rec.get(arms[0].pat_val, "field") }
+test "arm1 v" { rec.get(arms[1].pat_val, "field") }
+test "arm4 v" { rec.get(arms[4].pat_val, "field") }

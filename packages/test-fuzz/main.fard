@@ -5,11 +5,12 @@
 import("std/random") as rng
 import("std/list")   as list
 import("std/str")    as str
-import("std/bytes")  as bytes
+import("std/bytes") as bytes
+import("std/rec")   as rec
 
 fn random_string(max_len) {
   let n = rng.int(0, max_len)
-  bytes.to_string(rng.bytes(n))
+  bytes.to_str(rng.bytes(n))
 }
 
 fn random_int()   { rng.int(-1000000, 1000000) }

@@ -2,6 +2,7 @@ import("../packages/fard_eval/eval") as ev
 import("../packages/fard_parse/parse") as parse
 import("std/list") as list
 import("std/record") as rec
+import("std/type") as type
 import("std/io") as io
 import("std/menv") as menv
 
@@ -10,16 +11,11 @@ let defs = parse.parse_program(src)
 let e = menv.new()
 menv.set(e, "list", list)
 menv.set(e, "rec", rec)
+menv.set(e, "type", type)
 let dummy = list.fold(defs, null, fn(acc, d) {
   if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
 })
 
 let self_eval = menv.get(e, "eval")
-let body = self_eval.body
-let arms = body.arms
-test "num arms" { list.len(arms) > 5 }
-test "arm0 pat_val t" { arms[0].pat_val.t == "lit_text" }
-test "arm0 pat_val v" { arms[0].pat_val.v == "lit_int" }
-let arm5 = arms[5]
-test "arm5 pat_val t" { arm5.pat_val.t == "lit_text" }
-test "arm5 pat_val v" { arm5.pat_val.v == "call_builtin" }
+test "self_eval type" { type.of(self_eval) == "record" }
+test "self_eval t" { self_eval.t == "closure" }

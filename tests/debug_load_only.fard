@@ -1,0 +1,2 @@
+import("../packages/fard_eval/eval") as ev
+test "loaded" { ev.env_empty() == {} }

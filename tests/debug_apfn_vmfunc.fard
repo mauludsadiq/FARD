@@ -1,0 +1,3 @@
+import("../packages/fard_eval/eval") as ev
+import("std/type") as type
+test "apply_fn type" { type.of(ev.apply_fn) == "func" }
