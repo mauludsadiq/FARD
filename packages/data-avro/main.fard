@@ -1,0 +1,24 @@
+// data-avro@1.6.0 — Apache Avro format support for FARD
+// Depends on core-bytes, core-serde, core-errors.
+// Schema-based binary serialization with schema evolution support.
+
+import("std/avro") as avro
+import("std/rec")  as rec
+import("std/list") as list
+
+fn schema(fields) {
+  { type_: "record", fields: fields, t: "avro-schema" }
+}
+
+fn field(name, type_) {
+  { name: name, type_: type_ }
+}
+
+fn encode(schema_, record) { avro.encode(schema_, record) }
+fn decode(schema_, bytes_) { avro.decode(schema_, bytes_) }
+fn read(path, schema_)     { avro.read(path, schema_) }
+fn write(path, schema_, records) { avro.write(path, schema_, records) }
+
+fn is_compatible(s1, s2) { avro.is_compatible(s1, s2) }
+
+export { schema, field, encode, decode, read, write, is_compatible }

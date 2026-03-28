@@ -1,0 +1,4 @@
+name = "web-jsonrpc"
+version = "1.6.0"
+entry = "main.fard"
+description = "JSON-RPC 2.0 server and client for FARD"

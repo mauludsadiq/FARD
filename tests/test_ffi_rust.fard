@@ -1,0 +1,6 @@
+import("../packages/ffi-rust/main") as rust
+
+let descriptor = { path: "/usr/lib/myfard.so", t: "ffi-rust" }
+
+test "type"  { descriptor.t == "ffi-rust" }
+test "path"  { descriptor.path == "/usr/lib/myfard.so" }

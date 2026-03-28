@@ -1,0 +1,9 @@
+import("../packages/process-sandbox/main") as psb
+
+let sb = psb.sandbox(["echo", "ls"], [])
+
+test "is_allowed true"  { psb.is_allowed(sb, "echo") == true }
+test "is_allowed false" { psb.is_allowed(sb, "rm") == false }
+test "run allowed"      { psb.run(sb, "echo", ["hi"]).exit_code == 0 }
+test "run blocked"      { psb.run(sb, "rm", ["-rf", "/"]).exit_code == 1 }
+test "allowed_cmds"     { list.len(psb.allowed_cmds(sb)) == 2 }

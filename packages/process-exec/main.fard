@@ -1,0 +1,29 @@
+// process-exec@1.6.0 — Process execution primitives for FARD
+// Depends on core-errors, fs-core.
+// Run subprocesses, capture output, and check exit codes.
+
+import("std/process") as proc
+import("std/rec")     as rec
+import("std/list")    as list
+
+fn run(cmd, args, env) {
+  proc.run(cmd, args, env)
+}
+
+fn run_capture(cmd, args) {
+  proc.capture(cmd, args)
+}
+
+fn is_success(result) {
+  rec.has(result, "exit_code") && result.exit_code == 0
+}
+
+fn stdout(result)    { if rec.has(result, "stdout") then result.stdout else "" }
+fn stderr(result)    { if rec.has(result, "stderr") then result.stderr else "" }
+fn exit_code(result) { result.exit_code }
+
+fn shell(cmd) {
+  proc.capture("sh", ["-c", cmd])
+}
+
+export { run, run_capture, is_success, stdout, stderr, exit_code, shell }

@@ -1,0 +1,7 @@
+import("../packages/frame-postgres/main") as fp
+
+let dsn = "postgres://user:pass@localhost/db"
+let f   = fp.connect(dsn)
+
+test "type"  { f.t == "frame-postgres" }
+test "dsn"   { fp.dsn(f) == dsn }

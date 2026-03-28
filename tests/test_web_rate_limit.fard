@@ -1,0 +1,15 @@
+import("../packages/web-rate-limit/main") as rl
+
+let lim = rl.window(3, 60)
+let b   = rl.new_bucket("127.0.0.1", 60)
+let r1  = rl.allow(lim, b)
+let r2  = rl.allow(lim, r1.bucket)
+let r3  = rl.allow(lim, r2.bucket)
+let r4  = rl.allow(lim, r3.bucket)
+
+test "limiter type"    { lim.t == "rate-limiter" }
+test "first allowed"   { r1.allowed == true }
+test "second allowed"  { r2.allowed == true }
+test "third allowed"   { r3.allowed == true }
+test "fourth blocked"  { r4.allowed == false }
+test "not expired"     { rl.is_expired(b) == false }

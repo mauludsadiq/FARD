@@ -1,0 +1,25 @@
+// process-sandbox@1.6.0 — Sandboxed process execution for FARD
+// Depends on process-exec, core-errors.
+// Restricts executable paths and environment to an allowlist.
+
+import("std/process") as proc
+import("std/list")    as list
+import("std/rec")     as rec
+import("std/str")     as str
+
+fn sandbox(allowed_cmds, env_allowlist) {
+  { allowed: allowed_cmds, env_allowlist: env_allowlist, t: "process-sandbox" }
+}
+
+fn is_allowed(sb, cmd) {
+  list.any(sb.allowed, fn(c) { c == cmd })
+}
+
+fn run(sb, cmd, args) {
+  if is_allowed(sb, cmd) then proc.capture(cmd, args)
+  else { exit_code: 1, stdout: "", stderr: str.concat(["command not allowed: ", cmd]) }
+}
+
+fn allowed_cmds(sb) { sb.allowed }
+
+export { sandbox, is_allowed, run, allowed_cmds }

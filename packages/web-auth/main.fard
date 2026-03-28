@@ -1,0 +1,45 @@
+// web-auth@1.6.0 — Authentication primitives for FARD web applications
+// Depends on web-core, core-config, core-serde.
+// Bearer token extraction, basic auth parsing, and identity envelope.
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/bytes") as bytes
+
+fn bearer(req) {
+  let auth = if rec.has(req.headers, "Authorization") then rec.get(req.headers, "Authorization") else null
+  if auth == null then null
+  else if str.starts_with(auth, "Bearer ") then str.slice(auth, 7, str.len(auth))
+  else null
+}
+
+fn basic(req) {
+  let auth = if rec.has(req.headers, "Authorization") then rec.get(req.headers, "Authorization") else null
+  if auth == null then null
+  else if str.starts_with(auth, "Basic ") then
+    let encoded = str.slice(auth, 6, str.len(auth))
+    let decoded = bytes.to_string(bytes.from_base64(encoded))
+    let parts   = str.split(decoded, ":")
+    if list.len(parts) == 2 then { user: list.get(parts, 0), pass: list.get(parts, 1) }
+    else null
+  else null
+}
+
+fn identity(id, roles, meta) {
+  { id: id, roles: roles, meta: meta, t: "identity" }
+}
+
+fn has_role(ident, role) {
+  list.any(ident.roles, fn(r) { r == role })
+}
+
+fn require_bearer(handler) {
+  fn(ctx) {
+    let token = bearer(ctx.request)
+    if token == null then { status: 401, headers: {}, body: "Unauthorized" }
+    else handler(ctx)
+  }
+}
+
+export { bearer, basic, identity, has_role, require_bearer }

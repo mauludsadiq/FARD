@@ -1,0 +1,40 @@
+// web-rate-limit@1.6.0 — Request rate limiting for FARD web applications
+// Depends on web-core, core-time.
+// Token bucket and fixed window rate limiters.
+
+import("std/rec")      as rec
+import("std/datetime") as dt
+
+fn window(max_requests, window_seconds) {
+  { max: max_requests, window: window_seconds, t: "rate-limiter" }
+}
+
+fn bucket(key, count, reset_at) {
+  { key: key, count: count, reset_at: reset_at }
+}
+
+fn new_bucket(key, window_seconds) {
+  bucket(key, 0, dt.now() + window_seconds)
+}
+
+fn is_expired(b) { dt.now() > b.reset_at }
+
+fn allow(limiter, b) {
+  if is_expired(b) then { allowed: true, bucket: new_bucket(b.key, limiter.window) }
+  else if b.count < limiter.max then { allowed: true, bucket: rec.set(b, "count", b.count + 1) }
+  else { allowed: false, bucket: b }
+}
+
+fn middleware(limiter, key_fn) {
+  fn(handler) {
+    fn(ctx) {
+      let key = key_fn(ctx)
+      let b   = new_bucket(key, limiter.window)
+      let r   = allow(limiter, b)
+      if r.allowed then handler(ctx)
+      else { status: 429, headers: {}, body: "Too Many Requests" }
+    }
+  }
+}
+
+export { window, bucket, new_bucket, is_expired, allow, middleware }

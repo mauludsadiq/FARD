@@ -1,0 +1,13 @@
+import("../packages/web-cors/main") as cors
+import("std/rec") as rec
+
+let pol  = cors.default_policy()
+let resp = { status: 200, headers: {}, body: "ok" }
+let out  = cors.apply(resp, pol)
+
+test "policy type"      { pol.t == "cors-policy" }
+test "apply origin"     { rec.has(out.headers, "Access-Control-Allow-Origin") == true }
+test "apply methods"    { rec.has(out.headers, "Access-Control-Allow-Methods") == true }
+test "apply headers"    { rec.has(out.headers, "Access-Control-Allow-Headers") == true }
+test "is_preflight"     { cors.is_preflight({ method: "OPTIONS", url: "/", headers: {}, body: null }) == true }
+test "not preflight"    { cors.is_preflight({ method: "GET", url: "/", headers: {}, body: null }) == false }

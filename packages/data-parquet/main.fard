@@ -1,0 +1,20 @@
+// data-parquet@1.6.0 — Parquet format reading and writing for FARD
+// Depends on core-bytes, core-serde, core-errors.
+// Columnar binary format. Interops with ndarray and frame-memory.
+
+import("std/parquet") as parquet
+import("std/list")    as list
+import("std/rec")     as rec
+
+fn read(path)           { parquet.read(path) }
+fn write(path, records) { parquet.write(path, records) }
+fn read_bytes(b)        { parquet.read_bytes(b) }
+fn to_bytes(records)    { parquet.to_bytes(records) }
+fn schema(records)      { parquet.schema(records) }
+fn nrows(records)       { list.len(records) }
+fn ncols(records) {
+  if list.len(records) == 0 then 0
+  else list.len(rec.keys(list.get(records, 0)))
+}
+
+export { read, write, read_bytes, to_bytes, schema, nrows, ncols }

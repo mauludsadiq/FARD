@@ -1,0 +1,9 @@
+import("../packages/web-websocket/main") as wss
+
+let h = wss.handler(fn(conn) { null }, fn(conn, msg) { null }, fn(conn) { null })
+let m = wss.text_msg("hello")
+
+test "handler type"   { h.t == "ws-handler" }
+test "text_msg type"  { m.type_ == "text" }
+test "text_msg data"  { m.data == "hello" }
+test "binary_msg"     { wss.binary_msg("b").type_ == "binary" }

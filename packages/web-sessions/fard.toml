@@ -1,0 +1,4 @@
+name = "web-sessions"
+version = "1.6.0"
+entry = "main.fard"
+description = "HTTP session management for FARD"

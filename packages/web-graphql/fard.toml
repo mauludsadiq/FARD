@@ -1,0 +1,4 @@
+name = "web-graphql"
+version = "1.6.0"
+entry = "main.fard"
+description = "GraphQL schema and resolver primitives for FARD"

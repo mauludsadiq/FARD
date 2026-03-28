@@ -1,0 +1,33 @@
+// web-cookies@1.6.0 — HTTP cookie parsing and serialization for FARD
+// Depends on web-core, core-serde.
+// Parses Cookie headers and serializes Set-Cookie values.
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn parse(header) {
+  let pairs = str.split(header, "; ")
+  list.fold(pairs, {}, fn(acc, pair) {
+    let kv = str.split(pair, "=")
+    if list.len(kv) == 2 then
+      rec.set(acc, list.get(kv, 0), list.get(kv, 1))
+    else acc
+  })
+}
+
+fn serialize(name, value, opts) {
+  let base = str.concat([name, "=", value])
+  let path = if rec.has(opts, "path") then str.concat(["; Path=", rec.get(opts, "path")]) else ""
+  let http_only = if rec.has(opts, "http_only") && rec.get(opts, "http_only") then "; HttpOnly" else ""
+  let secure = if rec.has(opts, "secure") && rec.get(opts, "secure") then "; Secure" else ""
+  str.concat([base, path, http_only, secure])
+}
+
+fn get(cookies, name) {
+  if rec.has(cookies, name) then rec.get(cookies, name) else null
+}
+
+fn has(cookies, name) { rec.has(cookies, name) }
+
+export { parse, serialize, get, has }

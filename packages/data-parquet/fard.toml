@@ -1,0 +1,4 @@
+name = "data-parquet"
+version = "1.6.0"
+entry = "main.fard"
+description = "Parquet format reading and writing for FARD"

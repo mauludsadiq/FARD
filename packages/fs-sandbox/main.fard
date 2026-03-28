@@ -1,0 +1,39 @@
+// fs-sandbox@1.6.0 — Sandboxed filesystem access for FARD
+// Depends on fs-core, core-errors.
+// Restricts all IO to an allowed root. Path escape attempts return errors.
+
+import("std/io")  as io
+import("std/str") as str
+import("std/rec") as rec
+
+fn sandbox(root) {
+  { root: root, t: "fs-sandbox" }
+}
+
+fn safe_path(sb, path) {
+  let full = str.concat([sb.root, "/", path])
+  if str.starts_with(full, sb.root) then { ok: true, path: full }
+  else { ok: false, error: "path escape attempt" }
+}
+
+fn read(sb, path) {
+  let r = safe_path(sb, path)
+  if r.ok then io.read_file(r.path)
+  else r
+}
+
+fn write(sb, path, data) {
+  let r = safe_path(sb, path)
+  if r.ok then io.write_file(r.path, data)
+  else r
+}
+
+fn exists(sb, path) {
+  let r = safe_path(sb, path)
+  if r.ok then io.exists(r.path)
+  else false
+}
+
+fn root(sb) { sb.root }
+
+export { sandbox, safe_path, read, write, exists, root }

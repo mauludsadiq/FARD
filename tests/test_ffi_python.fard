@@ -1,0 +1,7 @@
+import("../packages/ffi-python/main") as py
+
+let rt = py.default_runtime()
+
+test "runtime type"  { rt.t == "ffi-python" }
+test "runtime bin"   { rt.bin == "python3" }
+test "eval"          { py.eval(rt, "1 + 1") == 2 }

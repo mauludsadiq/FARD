@@ -1,0 +1,4 @@
+name = "ffi-rust"
+version = "1.6.0"
+entry = "main.fard"
+description = "Rust FFI bridge for FARD"

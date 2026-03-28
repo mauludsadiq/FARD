@@ -1,0 +1,4 @@
+name = "data-excel"
+version = "1.6.0"
+entry = "main.fard"
+description = "Excel (XLSX) format reading and writing for FARD"

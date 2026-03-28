@@ -1,0 +1,11 @@
+import("../packages/web-graphql/main") as gql
+
+let s = gql.schema([
+  gql.field("hello", "String", fn(args, ctx) { "world" }),
+  gql.field("add",   "Int",    fn(args, ctx) { args.a + args.b })
+])
+
+test "schema type"      { s.t == "graphql-schema" }
+test "resolve hello"    { gql.resolve(s, "hello", {}, {}).data.hello == "world" }
+test "resolve add"      { gql.resolve(s, "add", { a: 2, b: 3 }, {}).data.add == 5 }
+test "resolve missing"  { gql.is_error(gql.resolve(s, "unknown", {}, {})) == true }

@@ -1,0 +1,6 @@
+import("../packages/frame-sqlite/main") as fs
+
+let f = fs.open_memory()
+
+test "type"       { f.t == "frame-sqlite" }
+test "path"       { fs.path(f) == ":memory:" }

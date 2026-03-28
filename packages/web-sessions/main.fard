@@ -1,0 +1,40 @@
+// web-sessions@1.6.0 — HTTP session management for FARD
+// Depends on web-core, core-time, core-serde, core-random.
+// Creates, reads, and expires sessions keyed by ID.
+
+import("std/rec")      as rec
+import("std/str")      as str
+import("std/datetime") as dt
+import("std/random")   as rng
+import("std/json")     as json
+
+fn new_id() {
+  str.concat(["sess_", str.from(rng.int(100000000, 999999999))])
+}
+
+fn create(data, ttl_seconds) {
+  { id: new_id(), data: data, expires_at: dt.now() + ttl_seconds, t: "session" }
+}
+
+fn is_expired(sess) {
+  dt.now() > sess.expires_at
+}
+
+fn get(sess, key) {
+  if rec.has(sess.data, key) then rec.get(sess.data, key)
+  else null
+}
+
+fn set(sess, key, val) {
+  rec.set(sess, "data", rec.set(sess.data, key, val))
+}
+
+fn delete(sess, key) {
+  rec.set(sess, "data", rec.remove(sess.data, key))
+}
+
+fn id(sess)      { sess.id }
+fn data(sess)    { sess.data }
+fn touch(sess, ttl) { rec.set(sess, "expires_at", dt.now() + ttl) }
+
+export { create, is_expired, get, set, delete, id, data, touch }

@@ -1,0 +1,13 @@
+import("../packages/web-auth/main") as auth
+
+let req_bearer = { headers: { "Authorization": "Bearer mytoken123" }, url: "/", method: "GET", body: null }
+let req_none   = { headers: {}, url: "/", method: "GET", body: null }
+let ident      = auth.identity("user-1", ["admin", "editor"], { email: "a@b.com" })
+let ctx_none   = { request: req_none, state: {}, response: null }
+
+test "bearer hit"      { auth.bearer(req_bearer) == "mytoken123" }
+test "bearer miss"     { auth.bearer(req_none) == null }
+test "has_role true"   { auth.has_role(ident, "admin") == true }
+test "has_role false"  { auth.has_role(ident, "superuser") == false }
+test "identity type"   { ident.t == "identity" }
+test "require_bearer"  { auth.require_bearer(fn(ctx) { { status: 200 } })(ctx_none).status == 401 }

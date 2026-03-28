@@ -1,0 +1,38 @@
+// ffi-python@1.6.0 — Python FFI bridge for FARD
+// Depends on ffi-core, ffi-serialize, ffi-runtime.
+// Calls Python functions from FARD via subprocess or embedded interpreter.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/rec")     as rec
+import("std/str")     as str
+
+fn runtime(python_bin) {
+  { bin: python_bin, t: "ffi-python" }
+}
+
+fn default_runtime() { runtime("python3") }
+
+fn call(rt, module, fn_name, args) {
+  let script = str.concat([
+    "import json, ", module, "\n",
+    "print(json.dumps(", module, ".", fn_name, "(**json.loads('", json.encode(args), "'))))"
+  ])
+  let result = proc.capture(rt.bin, ["-c", script])
+  if result.exit_code == 0 then json.decode(result.stdout)
+  else { error: result.stderr }
+}
+
+fn eval(rt, expr) {
+  let script = str.concat(["import json; print(json.dumps(", expr, "))"])
+  let result = proc.capture(rt.bin, ["-c", script])
+  if result.exit_code == 0 then json.decode(result.stdout)
+  else { error: result.stderr }
+}
+
+fn version(rt) {
+  let result = proc.capture(rt.bin, ["--version"])
+  result.stdout
+}
+
+export { runtime, default_runtime, call, eval, version }

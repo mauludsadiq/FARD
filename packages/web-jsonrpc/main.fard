@@ -1,0 +1,35 @@
+// web-jsonrpc@1.6.0 — JSON-RPC 2.0 server and client for FARD
+// Depends on web-core, core-serde.
+// Request/response envelope, method dispatch, and error codes.
+
+import("std/json") as json
+import("std/rec")  as rec
+import("std/list") as list
+
+fn request(id, method, params) {
+  { jsonrpc: "2.0", id: id, method: method, params: params }
+}
+
+fn success(id, result) {
+  { jsonrpc: "2.0", id: id, result: result }
+}
+
+fn error(id, code, message) {
+  { jsonrpc: "2.0", id: id, error: { code: code, message: message } }
+}
+
+fn is_error(resp)   { rec.has(resp, "error") }
+fn is_success(resp) { rec.has(resp, "result") }
+
+fn dispatch(req, handlers) {
+  if rec.has(handlers, req.method) then
+    let handler = rec.get(handlers, req.method)
+    success(req.id, handler(req.params))
+  else
+    error(req.id, -32601, "Method not found")
+}
+
+fn parse(s)     { json.decode(s) }
+fn serialize(v) { json.encode(v) }
+
+export { request, success, error, is_error, is_success, dispatch, parse, serialize }

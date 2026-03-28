@@ -1,0 +1,37 @@
+// frame-sqlite@1.6.0 — SQLite-backed dataframe for FARD
+// Depends on frame-memory, core-serde, core-errors.
+// Persists dataframe columns to a SQLite database.
+
+import("std/sqlite") as sqlite
+import("std/list")   as list
+import("std/rec")    as rec
+import("std/str")    as str
+
+fn open(path) {
+  { db: sqlite.open(path), path: path, t: "frame-sqlite" }
+}
+
+fn open_memory() {
+  { db: sqlite.open(":memory:"), path: ":memory:", t: "frame-sqlite" }
+}
+
+fn query(frame, sql) {
+  sqlite.query(frame.db, sql)
+}
+
+fn exec(frame, sql) {
+  sqlite.exec(frame.db, sql)
+  frame
+}
+
+fn from_table(frame, table) {
+  let rows = sqlite.query(frame.db, str.concat(["SELECT * FROM ", table]))
+  { db: frame.db, path: frame.path, table: table, rows: rows, t: "frame-sqlite" }
+}
+
+fn nrows(frame)  { list.len(frame.rows) }
+fn get_row(frame, i) { list.get(frame.rows, i) }
+
+fn path(frame)   { frame.path }
+
+export { open, open_memory, query, exec, from_table, nrows, get_row, path }

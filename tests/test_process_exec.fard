@@ -1,0 +1,7 @@
+import("../packages/process-exec/main") as px
+
+let result = px.run_capture("echo", ["hello"])
+
+test "is_success"   { px.is_success(result) == true }
+test "stdout"       { str.contains(px.stdout(result), "hello") == true }
+test "exit_code"    { px.exit_code(result) == 0 }

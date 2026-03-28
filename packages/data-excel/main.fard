@@ -1,0 +1,26 @@
+// data-excel@1.6.0 — Excel (XLSX) format reading and writing for FARD
+// Depends on core-bytes, core-serde, core-errors.
+// Reads and writes XLSX workbooks with sheet and cell access.
+
+import("std/xlsx") as xlsx
+import("std/list") as list
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn open(path)              { xlsx.open(path) }
+fn sheet_names(wb)         { xlsx.sheet_names(wb) }
+fn read_sheet(wb, name)    { xlsx.read_sheet(wb, name) }
+fn write_sheet(wb, name, rows) { xlsx.write_sheet(wb, name, rows) }
+fn save(wb, path)          { xlsx.save(wb, path) }
+
+fn workbook(sheets) {
+  { sheets: sheets, t: "workbook" }
+}
+
+fn nrows(sheet)  { list.len(sheet) }
+fn ncols(sheet) {
+  if list.len(sheet) == 0 then 0
+  else list.len(list.get(sheet, 0))
+}
+
+export { open, sheet_names, read_sheet, write_sheet, save, workbook, nrows, ncols }

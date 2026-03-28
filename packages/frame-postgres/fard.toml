@@ -1,0 +1,4 @@
+name = "frame-postgres"
+version = "1.6.0"
+entry = "main.fard"
+description = "PostgreSQL-backed dataframe for FARD"

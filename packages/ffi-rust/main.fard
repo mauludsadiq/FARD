@@ -1,0 +1,26 @@
+// ffi-rust@1.6.0 — Rust FFI bridge for FARD
+// Depends on ffi-core, ffi-runtime, ffi-serialize.
+// Loads compiled Rust dylibs and calls exported C-ABI functions.
+
+import("std/ffi")  as ffi
+import("std/json") as json
+import("std/rec")  as rec
+
+fn runtime(lib_path) {
+  { lib: ffi.load(lib_path), path: lib_path, t: "ffi-rust" }
+}
+
+fn call(rt, sym, args) {
+  ffi.call(rt.lib, sym, args)
+}
+
+fn call_json(rt, sym, args) {
+  let encoded = json.encode(args)
+  let raw     = ffi.call(rt.lib, sym, [encoded])
+  json.decode(raw)
+}
+
+fn has_sym(rt, sym) { ffi.has_sym(rt.lib, sym) }
+fn path(rt)         { rt.path }
+
+export { runtime, call, call_json, has_sym, path }

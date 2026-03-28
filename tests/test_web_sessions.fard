@@ -1,0 +1,12 @@
+import("../packages/web-sessions/main") as sess
+
+let s  = sess.create({ user: "alice" }, 3600)
+let s2 = sess.set(s, "role", "admin")
+
+test "id starts"      { str.starts_with(sess.id(s), "sess_") == true }
+test "get existing"   { sess.get(s, "user") == "alice" }
+test "get missing"    { sess.get(s, "missing") == null }
+test "set"            { sess.get(s2, "role") == "admin" }
+test "delete"         { sess.get(sess.delete(s2, "role"), "role") == null }
+test "not expired"    { sess.is_expired(s) == false }
+test "type"           { s.t == "session" }

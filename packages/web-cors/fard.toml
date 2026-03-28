@@ -1,0 +1,4 @@
+name = "web-cors"
+version = "1.6.0"
+entry = "main.fard"
+description = "CORS header management for FARD web applications"

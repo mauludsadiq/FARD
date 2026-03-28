@@ -1,0 +1,7 @@
+import("../packages/ffi-node/main") as node
+
+let rt = node.default_runtime()
+
+test "runtime type" { rt.t == "ffi-node" }
+test "runtime bin"  { rt.bin == "node" }
+test "eval"         { node.eval(rt, "1 + 1") == 2 }

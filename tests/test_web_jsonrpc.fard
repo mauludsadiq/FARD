@@ -1,0 +1,13 @@
+import("../packages/web-jsonrpc/main") as rpc
+
+let req     = rpc.request(1, "add", { a: 2, b: 3 })
+let handlers = { add: fn(p) { p.a + p.b } }
+let resp    = rpc.dispatch(req, handlers)
+let miss    = rpc.dispatch(rpc.request(2, "unknown", {}), handlers)
+
+test "request method"   { req.method == "add" }
+test "request jsonrpc"  { req.jsonrpc == "2.0" }
+test "dispatch success" { rpc.is_success(resp) == true }
+test "dispatch result"  { resp.result == 5 }
+test "dispatch miss"    { rpc.is_error(miss) == true }
+test "error code"       { miss.error.code == -32601 }

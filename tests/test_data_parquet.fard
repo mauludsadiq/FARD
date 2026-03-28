@@ -1,0 +1,8 @@
+import("../packages/data-parquet/main") as pq
+import("std/list") as list
+
+let rows = [{ x: 1, y: 2 }, { x: 3, y: 4 }]
+
+test "nrows"  { pq.nrows(rows) == 2 }
+test "ncols"  { pq.ncols(rows) == 2 }
+test "empty"  { pq.nrows([]) == 0 }

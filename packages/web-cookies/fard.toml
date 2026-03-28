@@ -1,0 +1,4 @@
+name = "web-cookies"
+version = "1.6.0"
+entry = "main.fard"
+description = "HTTP cookie parsing and serialization for FARD"

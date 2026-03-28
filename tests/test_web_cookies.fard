@@ -1,0 +1,11 @@
+import("../packages/web-cookies/main") as cookies
+
+let jar = cookies.parse("session=abc123; theme=dark")
+
+test "get session"    { cookies.get(jar, "session") == "abc123" }
+test "get theme"      { cookies.get(jar, "theme") == "dark" }
+test "get missing"    { cookies.get(jar, "missing") == null }
+test "has true"       { cookies.has(jar, "session") == true }
+test "has false"      { cookies.has(jar, "nope") == false }
+test "serialize basic"{ cookies.serialize("tok", "xyz", {}) == "tok=xyz" }
+test "serialize path" { str.contains(cookies.serialize("tok", "xyz", { path: "/" }), "Path=/") == true }

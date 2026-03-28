@@ -1,0 +1,39 @@
+// ffi-node@1.6.0 — Node.js FFI bridge for FARD
+// Depends on ffi-core, ffi-serialize.
+// Calls Node.js modules from FARD via subprocess with JSON stdio.
+
+import("std/process") as proc
+import("std/json")    as json
+import("std/str")     as str
+import("std/rec")     as rec
+
+fn runtime(node_bin) {
+  { bin: node_bin, t: "ffi-node" }
+}
+
+fn default_runtime() { runtime("node") }
+
+fn call(rt, module, fn_name, args) {
+  let script = str.concat([
+    "const m = require('", module, "');\n",
+    "const args = JSON.parse('", json.encode(args), "');\n",
+    "console.log(JSON.stringify(m.", fn_name, "(args)));"
+  ])
+  let result = proc.capture(rt.bin, ["-e", script])
+  if result.exit_code == 0 then json.decode(result.stdout)
+  else { error: result.stderr }
+}
+
+fn eval(rt, expr) {
+  let script = str.concat(["console.log(JSON.stringify(", expr, "))"])
+  let result = proc.capture(rt.bin, ["-e", script])
+  if result.exit_code == 0 then json.decode(result.stdout)
+  else { error: result.stderr }
+}
+
+fn version(rt) {
+  let result = proc.capture(rt.bin, ["--version"])
+  result.stdout
+}
+
+export { runtime, default_runtime, call, eval, version }

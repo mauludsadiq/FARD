@@ -1,0 +1,28 @@
+// web-graphql@1.6.0 — GraphQL schema and resolver primitives for FARD
+// Depends on web-core, core-serde.
+// Schema definition, resolver registration, and query dispatch.
+
+import("std/rec")  as rec
+import("std/list") as list
+import("std/json") as json
+
+fn field(name, type_, resolver) {
+  { name: name, type_: type_, resolver: resolver }
+}
+
+fn schema(query_fields) {
+  { query: query_fields, t: "graphql-schema" }
+}
+
+fn resolve(schema_, field_name, args, ctx) {
+  let matched = list.find(schema_.query, fn(f) { f.name == field_name })
+  if matched != null then { data: rec.set({}, field_name, matched.resolver(args, ctx)) }
+  else { errors: [{ message: str.concat(["Unknown field: ", field_name]) }] }
+}
+
+fn is_error(resp) { rec.has(resp, "errors") }
+
+fn response(data)       { { data: data } }
+fn error_resp(message)  { { errors: [{ message: message }] } }
+
+export { field, schema, resolve, is_error, response, error_resp }

@@ -1,0 +1,4 @@
+name = "web-auth"
+version = "1.6.0"
+entry = "main.fard"
+description = "Authentication primitives for FARD web applications"

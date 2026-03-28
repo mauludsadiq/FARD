@@ -1,0 +1,9 @@
+import("../packages/fs-sandbox/main") as sb
+
+let s = sb.sandbox("/tmp/safe")
+
+test "root"            { sb.root(s) == "/tmp/safe" }
+test "type"            { s.t == "fs-sandbox" }
+test "safe path ok"    { sb.safe_path(s, "file.txt").ok == true }
+test "safe path full"  { sb.safe_path(s, "file.txt").path == "/tmp/safe/file.txt" }
+test "escape blocked"  { sb.safe_path(s, "../../etc/passwd").ok == false }

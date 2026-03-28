@@ -1,0 +1,27 @@
+// fs-watch@1.6.0 — Filesystem change watching for FARD
+// Depends on fs-core, async-core.
+// Watches paths for create, modify, delete events.
+
+import("std/watch") as watch
+import("std/async") as async
+import("std/rec")   as rec
+
+fn watcher(paths, handler) {
+  { paths: paths, handler: handler, t: "fs-watcher" }
+}
+
+fn start(w) {
+  async.spawn(fn() { watch.start(w.paths, w.handler) })
+}
+
+fn stop(w) { watch.stop(w) }
+
+fn event(kind, path) {
+  { kind: kind, path: path, t: "fs-event" }
+}
+
+fn is_create(e) { e.kind == "create" }
+fn is_modify(e) { e.kind == "modify" }
+fn is_delete(e) { e.kind == "delete" }
+
+export { watcher, start, stop, event, is_create, is_modify, is_delete }

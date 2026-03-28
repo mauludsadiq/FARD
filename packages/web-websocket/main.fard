@@ -1,0 +1,26 @@
+// web-websocket@1.6.0 — WebSocket connection primitives for FARD
+// Depends on web-core, async-core.
+// Connection envelope, send/recv, and lifecycle hooks.
+
+import("std/ws")   as ws
+import("std/async") as async
+import("std/rec")  as rec
+
+fn connect(url)       { ws.connect(url) }
+fn send(conn, msg)    { ws.send(conn, msg) }
+fn recv(conn)         { ws.recv(conn) }
+fn close(conn)        { ws.close(conn) }
+fn is_open(conn)      { ws.is_open(conn) }
+
+fn handler(on_open, on_message, on_close) {
+  { on_open: on_open, on_message: on_message, on_close: on_close, t: "ws-handler" }
+}
+
+fn serve(url, h) {
+  async.spawn(fn() { ws.serve(url, h.on_open, h.on_message, h.on_close) })
+}
+
+fn text_msg(s)   { { type_: "text",   data: s } }
+fn binary_msg(b) { { type_: "binary", data: b } }
+
+export { connect, send, recv, close, is_open, handler, serve, text_msg, binary_msg }

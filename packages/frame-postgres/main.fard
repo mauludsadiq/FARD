@@ -1,0 +1,33 @@
+// frame-postgres@1.6.0 — PostgreSQL-backed dataframe for FARD
+// Depends on frame-memory, core-serde, core-errors.
+// Connects to PostgreSQL and exposes query results as dataframes.
+
+import("std/postgres") as pg
+import("std/list")     as list
+import("std/rec")      as rec
+import("std/str")      as str
+
+fn connect(dsn) {
+  { conn: pg.connect(dsn), dsn: dsn, t: "frame-postgres" }
+}
+
+fn query(frame, sql) {
+  pg.query(frame.conn, sql)
+}
+
+fn exec(frame, sql) {
+  pg.exec(frame.conn, sql)
+  frame
+}
+
+fn from_table(frame, table) {
+  let rows = pg.query(frame.conn, str.concat(["SELECT * FROM ", table]))
+  rec.set(frame, "rows", rows)
+}
+
+fn nrows(frame)      { list.len(frame.rows) }
+fn get_row(frame, i) { list.get(frame.rows, i) }
+fn dsn(frame)        { frame.dsn }
+fn close(frame)      { pg.close(frame.conn) }
+
+export { connect, query, exec, from_table, nrows, get_row, dsn, close }

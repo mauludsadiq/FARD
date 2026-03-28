@@ -1,0 +1,4 @@
+name = "process-exec"
+version = "1.6.0"
+entry = "main.fard"
+description = "Process execution primitives for FARD"

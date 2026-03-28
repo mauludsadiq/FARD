@@ -1,0 +1,4 @@
+name = "fs-sandbox"
+version = "1.6.0"
+entry = "main.fard"
+description = "Sandboxed filesystem access for FARD"

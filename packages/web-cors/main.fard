@@ -1,0 +1,39 @@
+// web-cors@1.6.0 — CORS header management for FARD web applications
+// Depends on web-core.
+// Adds Access-Control-* headers to responses.
+
+import("std/rec")  as rec
+import("std/list") as list
+import("std/str")  as str
+
+fn policy(origins, methods, headers, max_age) {
+  { origins: origins, methods: methods, headers: headers, max_age: max_age, t: "cors-policy" }
+}
+
+fn default_policy() {
+  policy(["*"], ["GET","POST","PUT","DELETE","OPTIONS"], ["Content-Type","Authorization"], 86400)
+}
+
+fn apply(resp, pol) {
+  let h = resp.headers
+  let h2 = rec.set(h, "Access-Control-Allow-Origin", str.join(pol.origins, ", "))
+  let h3 = rec.set(h2, "Access-Control-Allow-Methods", str.join(pol.methods, ", "))
+  let h4 = rec.set(h3, "Access-Control-Allow-Headers", str.join(pol.headers, ", "))
+  rec.set(resp, "headers", h4)
+}
+
+fn middleware(pol) {
+  fn(handler) {
+    fn(ctx) { apply(handler(ctx), pol) }
+  }
+}
+
+fn is_preflight(req) {
+  req.method == "OPTIONS"
+}
+
+fn preflight(pol) {
+  { status: 204, headers: {}, body: null }
+}
+
+export { policy, default_policy, apply, middleware, is_preflight, preflight }

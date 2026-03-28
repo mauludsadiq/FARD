@@ -1,0 +1,4 @@
+name = "data-avro"
+version = "1.6.0"
+entry = "main.fard"
+description = "Apache Avro format support for FARD"

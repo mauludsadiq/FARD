@@ -1,0 +1,4 @@
+name = "frame-sqlite"
+version = "1.6.0"
+entry = "main.fard"
+description = "SQLite-backed dataframe for FARD"

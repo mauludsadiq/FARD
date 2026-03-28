@@ -1,0 +1,13 @@
+import("../packages/fs-watch/main") as fw
+
+let e_create = fw.event("create", "/tmp/foo.txt")
+let e_modify = fw.event("modify", "/tmp/foo.txt")
+let e_delete = fw.event("delete", "/tmp/foo.txt")
+let w = fw.watcher(["/tmp"], fn(e) { null })
+
+test "is_create"    { fw.is_create(e_create) == true }
+test "is_modify"    { fw.is_modify(e_modify) == true }
+test "is_delete"    { fw.is_delete(e_delete) == true }
+test "not create"   { fw.is_create(e_modify) == false }
+test "watcher type" { w.t == "fs-watcher" }
+test "event type"   { e_create.t == "fs-event" }

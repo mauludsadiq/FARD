@@ -1,0 +1,9 @@
+import("../packages/data-avro/main") as avro
+
+let s = avro.schema([avro.field("name", "string"), avro.field("age", "int")])
+let f = avro.field("score", "float")
+
+test "schema type"  { s.t == "avro-schema" }
+test "field name"   { f.name == "score" }
+test "field type"   { f.type_ == "float" }
+test "field count"  { list.len(s.fields) == 2 }
