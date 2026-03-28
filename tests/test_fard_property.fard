@@ -1,0 +1,10 @@
+import("../packages/fard-property/main") as prop
+
+fn gen_int(i) { i }
+
+fn is_non_negative(x) { x >= 0 }
+
+test "property non-negative" {
+  let r = prop.for_all("nonneg", gen_int, is_non_negative, 5)
+  r.ok == true
+}
