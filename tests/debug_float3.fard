@@ -1,0 +1,2 @@
+test "float add" { 1.0 + 2.0 == 3.0 }
+test "float mul" { 2.0 * 3.0 == 6.0 }

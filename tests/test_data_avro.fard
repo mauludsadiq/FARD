@@ -1,3 +1,4 @@
+import("std/list") as list
 import("../packages/data-avro/main") as avro
 
 let s = avro.schema([avro.field("name", "string"), avro.field("age", "int")])

@@ -25,7 +25,7 @@ fn with_retry(pol, request_fn) {
     if n >= pol.max_attempts then resp
     else if should_retry(pol, resp) then
       let delay = pol.backoff_ms * n in
-      async.sleep(delay)
+      let _ = async.sleep(delay) in
       attempt(n + 1)
     else resp
   }

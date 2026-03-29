@@ -27,7 +27,7 @@ fn sse_data(data) {
 fn chunked(chunks) {
   list.map(chunks, fn(c) {
     let hex_len = str.from(str.len(c))
-    str.concat([hex_len, "\r\n", c, "\r\n"])
+    str.concat([hex_len, "\n", c, "\n"])
   })
 }
 

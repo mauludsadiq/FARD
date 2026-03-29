@@ -24,12 +24,12 @@ fn get(store, key) {
 }
 
 fn set(store, key, value) {
-  http.put(key_url(store, key), { "x-ms-blob-type": "BlockBlob" }, value)
+  let _ = http.put(key_url(store, key), { "x-ms-blob-type": "BlockBlob" }, value) in
   store
 }
 
 fn delete(store, key) {
-  http.delete(key_url(store, key), {})
+  let _ = http.delete(key_url(store, key), {}) in
   store
 }
 

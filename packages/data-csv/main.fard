@@ -9,30 +9,26 @@ import("std/rec")  as rec
 fn parse_row(line, sep) { str.split(line, sep) }
 
 fn parse(text, sep) {
-  let lines = list.filter(str.split(text, "\n"), fn(l) { str.len(l) > 0 })
+  let lines = list.filter(str.split(text, "\n"), fn(l) { str.len(l) > 0 }) in
   if list.len(lines) == 0 then []
-  else {
-    let headers = parse_row(list.get(lines, 0), sep)
-    let data_lines = list.drop(lines, 1)
-    list.map(data_lines, fn(line) {
-      let vals = parse_row(line, sep)
-      list.fold(list.range(0, list.len(headers)), {}, fn(acc, i) {
-        rec.set(acc, list.get(headers, i), list.get(vals, i))
-      })
-    })
-  }
+  else let headers = parse_row(list.get(lines, 0), sep) in
+       let data_lines = list.drop(lines, 1) in
+       list.map(data_lines, fn(line) {
+         let vals = parse_row(line, sep) in
+         list.fold(list.range(0, list.len(headers)), {}, fn(acc, i) {
+           rec.set(acc, list.get(headers, i), list.get(vals, i))
+         })
+       })
 }
 
 fn serialize(records, sep) {
   if list.len(records) == 0 then ""
-  else {
-    let headers = rec.keys(list.get(records, 0))
-    let header_line = str.join(headers, sep)
-    let data_lines = list.map(records, fn(r) {
-      str.join(list.map(headers, fn(k) { rec.get(r, k) }), sep)
-    })
-    str.join(list.concat([[header_line], data_lines]), "\n")
-  }
+  else let headers = rec.keys(list.get(records, 0)) in
+       let header_line = str.join(headers, sep) in
+       let data_lines = list.map(records, fn(r) {
+         str.join(list.map(headers, fn(k) { rec.get(r, k) }), sep)
+       }) in
+       str.join(list.concat([[header_line], data_lines]), "\n")
 }
 
 fn parse_csv(text)     { parse(text, ",") }

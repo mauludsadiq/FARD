@@ -5,6 +5,7 @@
 import("std/rec")  as rec
 import("std/str")  as str
 import("std/list") as list
+import("std/type") as type
 
 fn make(code, message) {
   { t: "error", code: code, message: message }
@@ -15,7 +16,7 @@ fn wrap(code, message, cause) {
 }
 
 fn is_error(v) {
-  rec.has(v, "t") && rec.get(v, "t") == "error"
+  if type.of(v) == "record" then if rec.has(v, "t") then rec.get(v, "t") == "error" else false else false
 }
 
 fn code(e)    { rec.get(e, "code") }

@@ -4,11 +4,12 @@
 
 import("std/chan")  as chan
 import("std/async") as async
+import("std/rec")   as rec
 
 fn channel()          { chan.new() }
 fn bounded(n)         { chan.bounded(n) }
 fn send(ch, val)      { chan.send(ch, val) }
-fn recv(ch)           { chan.recv(ch) }
+fn recv(ch)           { let r = chan.recv(ch) in if rec.has(r, "v") then r.v else null }
 fn try_recv(ch)       { chan.try_recv(ch) }
 fn close(ch)          { chan.close(ch) }
 fn is_closed(ch)      { chan.is_closed(ch) }

@@ -1,0 +1,6 @@
+import("std/float") as float
+let a = float.from_int(1)
+let b = float.from_int(1)
+let c = float.add(a, b)
+test "add" { c == 2.0 }
+test "fold" { c == float.from_int(2) }

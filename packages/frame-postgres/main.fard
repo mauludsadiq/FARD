@@ -15,10 +15,7 @@ fn query(frame, sql) {
   pg.query(frame.conn, sql)
 }
 
-fn exec(frame, sql) {
-  pg.exec(frame.conn, sql)
-  frame
-}
+fn exec(frame, sql) { let _ = pg.exec(frame.conn, sql) in frame }
 
 fn from_table(frame, table) {
   let rows = pg.query(frame.conn, str.concat(["SELECT * FROM ", table]))

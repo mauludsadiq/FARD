@@ -2,6 +2,7 @@
 // Depends on ffi-rust, async-core.
 // Spawns async Rust tasks from FARD via dylib with JSON IO.
 
+import("std/str") as str
 import("std/ffi")  as ffi
 import("std/json") as json
 import("std/rec")  as rec

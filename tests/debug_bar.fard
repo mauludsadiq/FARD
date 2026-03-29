@@ -1,0 +1,4 @@
+import("../packages/cli-progress/main") as prog
+let r = prog.bar(0, 10, 10)
+test "bar result" { r }
+test "bar 0" { r == "[----------] 0%" }

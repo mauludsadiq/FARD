@@ -3,21 +3,22 @@
 // Drops in for ndarray-cpu with SIMD vectorization on supported hardware.
 
 import("std/list")   as list
+import("std/cast") as cast
 import("std/float")  as float
 import("std/linalg") as linalg
 
 fn zeros(shape) {
   let n = list.fold(shape, 1, fn(acc, d) { acc * d })
-  { data: linalg.zeros(n), shape: shape, backend: "simd" }
+  { data: list.repeat(0.0, n), shape: shape, backend: "simd" }
 }
 
 fn ones(shape) {
   let n = list.fold(shape, 1, fn(acc, d) { acc * d })
-  { data: list.repeat(float.from_int(1), n), shape: shape, backend: "simd" }
+  { data: list.repeat(1.0, n), shape: shape, backend: "simd" }
 }
 
 fn from_list(data, shape) {
-  { data: list.map(data, fn(x) { float.from_int(x) }), shape: shape, backend: "simd" }
+  { data: list.map(data, fn(x) { cast.float(x) }), shape: shape, backend: "simd" }
 }
 
 fn size(t)  { list.fold(t.shape, 1, fn(acc, d) { acc * d }) }
@@ -25,15 +26,15 @@ fn shape(t) { t.shape }
 fn ndim(t)  { list.len(t.shape) }
 
 fn add(a, b) {
-  { data: list.zip_with(a.data, b.data, fn(x,y) { float.add(x,y) }), shape: a.shape, backend: "simd" }
+  { data: list.zip_with(a.data, b.data, fn(x,y) { x + y }), shape: a.shape, backend: "simd" }
 }
 
 fn mul(a, b) {
-  { data: list.zip_with(a.data, b.data, fn(x,y) { float.mul(x,y) }), shape: a.shape, backend: "simd" }
+  { data: list.zip_with(a.data, b.data, fn(x,y) { x + y }), shape: a.shape, backend: "simd" }
 }
 
 fn sum(t) {
-  list.fold(t.data, float.from_int(0), fn(acc, x) { float.add(acc, x) })
+  list.fold(t.data, 0.0, fn(acc, x) { acc + x })
 }
 
 fn reshape(t, new_shape) {

@@ -19,8 +19,8 @@ fn parse(header) {
 fn serialize(name, value, opts) {
   let base = str.concat([name, "=", value])
   let path = if rec.has(opts, "path") then str.concat(["; Path=", rec.get(opts, "path")]) else ""
-  let http_only = if rec.has(opts, "http_only") && rec.get(opts, "http_only") then "; HttpOnly" else ""
-  let secure = if rec.has(opts, "secure") && rec.get(opts, "secure") then "; Secure" else ""
+  let http_only = if rec.has(opts, "http_only") then if rec.get(opts, "http_only") then "; HttpOnly" else "" else ""
+  let secure = if rec.has(opts, "secure") then if rec.get(opts, "secure") then "; Secure" else "" else ""
   str.concat([base, path, http_only, secure])
 }
 

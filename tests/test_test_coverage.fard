@@ -1,3 +1,4 @@
+import("std/list") as list
 import("../packages/test-coverage/main") as cov
 
 let tr  = cov.tracker()

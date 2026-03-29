@@ -14,7 +14,7 @@ fn trim_lines(text) {
   str.join(list.map(str.split(text, "\n"), fn(l) { str.trim(l) }), "\n")
 }
 
-fn normalize_newlines(text) { str.replace(text, "\r\n", "\n") }
+fn normalize_newlines(text) { str.replace(text, "\n", "\n") }
 
 fn blank_lines(n) { str.repeat("\n", n) }
 

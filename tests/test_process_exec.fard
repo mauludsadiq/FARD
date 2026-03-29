@@ -1,3 +1,4 @@
+import("std/str") as str
 import("../packages/process-exec/main") as px
 
 let result = px.run_capture("echo", ["hello"])

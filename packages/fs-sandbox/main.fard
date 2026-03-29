@@ -12,7 +12,8 @@ fn sandbox(root) {
 
 fn safe_path(sb, path) {
   let full = str.concat([sb.root, "/", path])
-  if str.starts_with(full, sb.root) then { ok: true, path: full }
+  if str.contains(path, "..") then { ok: false, error: "path escape attempt" }
+  else if str.starts_with(full, sb.root) then { ok: true, path: full }
   else { ok: false, error: "path escape attempt" }
 }
 

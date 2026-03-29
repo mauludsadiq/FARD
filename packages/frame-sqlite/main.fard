@@ -19,10 +19,7 @@ fn query(frame, sql) {
   sqlite.query(frame.db, sql)
 }
 
-fn exec(frame, sql) {
-  sqlite.exec(frame.db, sql)
-  frame
-}
+fn exec(frame, sql) { let _ = sqlite.exec(frame.db, sql) in frame }
 
 fn from_table(frame, table) {
   let rows = sqlite.query(frame.db, str.concat(["SELECT * FROM ", table]))

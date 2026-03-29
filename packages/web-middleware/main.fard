@@ -2,6 +2,7 @@
 // Depends on web-core, http-core.
 // Wraps handlers with pre/post processing. Compose with pipe.
 
+import("std/str") as str
 import("std/list") as list
 import("std/rec")  as rec
 
@@ -37,7 +38,7 @@ fn require_header(handler, name) {
   fn(ctx) {
     let req = ctx.request
     if rec.has(req.headers, name) then handler(ctx)
-    else { status: 400, headers: {}, body: str.concat(["Missing header: ", name]) }
+    else { status: 400, headers: {}, body: str.concat("Missing header: ", name) }
   }
 }
 

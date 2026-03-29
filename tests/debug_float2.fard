@@ -1,0 +1,8 @@
+import("std/float") as float
+import("std/type") as type
+let a = float.from_int(1)
+test "a type" { type.of(a) }
+test "a val" { a }
+let c = float.add(a, a)
+test "c type" { type.of(c) }
+test "c val" { c }

@@ -23,7 +23,7 @@ fn is_success(resp) { rec.has(resp, "result") }
 
 fn dispatch(req, handlers) {
   if rec.has(handlers, req.method) then
-    let handler = rec.get(handlers, req.method)
+    let handler = rec.get(handlers, req.method) in
     success(req.id, handler(req.params))
   else
     error(req.id, -32601, "Method not found")

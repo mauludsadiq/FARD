@@ -8,7 +8,7 @@ import("std/json")  as json
 import("std/rec")   as rec
 
 fn get(url, headers) {
-  async.spawn(fn() { http.get(url, headers) })
+  async.spawn(fn() { http.get(url) })
 }
 
 fn post(url, headers, body) {

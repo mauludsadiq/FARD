@@ -1,0 +1,10 @@
+import("std/list") as list
+import("std/type") as type
+let data = [1.0, 2.0, 3.0, 4.0]
+let idx = 0 * 2 + 1
+test "idx type" { type.of(idx) }
+test "idx val" { idx == 1 }
+let v = list.get(data, idx)
+test "v type" { type.of(v) }
+test "v val" { v == 2.0 }
+test "add" { 0.0 + v == 2.0 }

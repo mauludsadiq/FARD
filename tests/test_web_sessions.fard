@@ -1,3 +1,4 @@
+import("std/str") as str
 import("../packages/web-sessions/main") as sess
 
 let s  = sess.create({ user: "alice" }, 3600)

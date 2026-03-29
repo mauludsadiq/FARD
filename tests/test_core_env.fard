@@ -1,3 +1,4 @@
+import("std/rec") as rec
 import("../packages/core-env/main") as env
 
 test "get_or default"  { env.get_or("FARD_NONEXISTENT_VAR_XYZ", "fallback") == "fallback" }

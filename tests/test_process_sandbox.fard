@@ -1,3 +1,4 @@
+import("std/list") as list
 import("../packages/process-sandbox/main") as psb
 
 let sb = psb.sandbox(["echo", "ls"], [])

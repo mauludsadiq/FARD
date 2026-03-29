@@ -2,6 +2,7 @@
 // Depends on ffi-rust, core-serde.
 // Serializes and deserializes FARD values using Rust serde_json via dylib.
 
+import("std/list") as list
 import("std/json") as json
 import("std/rec")  as rec
 import("std/str")  as str

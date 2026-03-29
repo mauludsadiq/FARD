@@ -3,16 +3,17 @@
 // Typed accessors for environment variables with defaults.
 
 import("std/env") as env
+import("std/rec") as rec
 import("std/str") as str
 import("std/int") as ints
 
-fn get(key)            { env.get(key) }
-fn get_or(key, def)    { let v = env.get(key) in if v == null then def else v }
-fn has(key)            { env.get(key) != null }
+fn get(key)            { let r = env.get(key) in if rec.has(r, "some") then r.some else null }
+fn get_or(key, def)    { let v = get(key) in if v == null then def else v }
+fn has(key)            { rec.has(env.get(key), "some") }
 fn all()               { env.all() }
 
 fn get_int(key, def) {
-  let v = env.get(key)
+  let v = get(key)
   if v == null then def
   else ints.parse(v)
 }
@@ -24,7 +25,7 @@ fn get_bool(key, def) {
 }
 
 fn require(key) {
-  let v = env.get(key)
+  let v = get(key)
   if v == null then { error: str.concat(["missing required env var: ", key]) }
   else v
 }

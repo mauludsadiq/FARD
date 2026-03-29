@@ -1,0 +1,7 @@
+import("../packages/ndarray-blas/main") as nd
+import("std/type") as type
+import("std/list") as list
+let a = nd.from_list([1.0, 2.0], [2])
+test "item type" { type.of(list.get(a.data, 0)) }
+test "item val" { list.get(a.data, 0) }
+test "dot" { nd.dot(a, nd.from_list([3.0, 4.0], [2])) == 11.0 }

@@ -23,7 +23,7 @@ fn matches(route, method, path) {
 
 fn dispatch(r, method, path, ctx) {
   let matched = list.find(r.routes, fn(route) { matches(route, method, path) })
-  if matched != null then matched.handler(ctx)
+  if rec.has(matched, "some") then matched.some.handler(ctx)
   else { error: "no route matched", method: method, path: path }
 }
 

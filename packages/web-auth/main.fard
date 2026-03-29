@@ -18,9 +18,9 @@ fn basic(req) {
   let auth = if rec.has(req.headers, "Authorization") then rec.get(req.headers, "Authorization") else null
   if auth == null then null
   else if str.starts_with(auth, "Basic ") then
-    let encoded = str.slice(auth, 6, str.len(auth))
-    let decoded = bytes.to_string(bytes.from_base64(encoded))
-    let parts   = str.split(decoded, ":")
+    let encoded = str.slice(auth, 6, str.len(auth)) in
+    let decoded = bytes.to_string(bytes.from_base64(encoded)) in
+    let parts   = str.split(decoded, ":") in
     if list.len(parts) == 2 then { user: list.get(parts, 0), pass: list.get(parts, 1) }
     else null
   else null

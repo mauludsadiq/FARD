@@ -5,6 +5,7 @@
 import("std/io")  as io
 import("std/str") as str
 import("std/rec") as rec
+import("std/list") as list
 
 fn mime(ext) {
   if ext == "html" then "text/html"

@@ -1,3 +1,4 @@
+import("std/str") as str
 import("../packages/test-replay/main") as replay
 import("std/list") as list
 

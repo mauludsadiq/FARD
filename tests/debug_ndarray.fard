@@ -1,0 +1,8 @@
+import("../packages/ndarray-cpu/main") as nd
+import("std/type") as type
+import("std/list") as list
+let o = nd.ones([4])
+test "data type" { type.of(o.data) }
+test "item type" { type.of(list.get(o.data, 0)) }
+test "item val"  { list.get(o.data, 0) }
+test "sum" { nd.sum(o) == 4.0 }

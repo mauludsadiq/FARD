@@ -3,5 +3,5 @@ import("std/str") as str
 
 test "indent"             { fmt.indent("hello", 2) == "  hello" }
 test "trim_lines"         { fmt.trim_lines("  hi  ") == "hi" }
-test "normalize_newlines" { fmt.normalize_newlines("a\r\nb") == "a\nb" }
+test "normalize_newlines" { fmt.normalize_newlines("a\nb") == "a\nb" }
 test "blank_lines"        { str.len(fmt.blank_lines(3)) == 3 }

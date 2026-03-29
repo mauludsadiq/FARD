@@ -19,10 +19,7 @@ fn query(frame, sql) {
   duck.query(frame.db, sql)
 }
 
-fn exec(frame, sql) {
-  duck.exec(frame.db, sql)
-  frame
-}
+fn exec(frame, sql) { let _ = duck.exec(frame.db, sql) in frame }
 
 fn from_table(frame, table) {
   let rows = duck.query(frame.db, str.concat(["SELECT * FROM ", table]))

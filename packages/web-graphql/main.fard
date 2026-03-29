@@ -2,6 +2,7 @@
 // Depends on web-core, core-serde.
 // Schema definition, resolver registration, and query dispatch.
 
+import("std/str") as str
 import("std/rec")  as rec
 import("std/list") as list
 import("std/json") as json
@@ -16,8 +17,8 @@ fn schema(query_fields) {
 
 fn resolve(schema_, field_name, args, ctx) {
   let matched = list.find(schema_.query, fn(f) { f.name == field_name })
-  if matched != null then { data: rec.set({}, field_name, matched.resolver(args, ctx)) }
-  else { errors: [{ message: str.concat(["Unknown field: ", field_name]) }] }
+  if rec.has(matched, "some") then { data: rec.set({}, field_name, matched.some.resolver(args, ctx)) }
+  else { errors: [{ message: str.concat("Unknown field: ", field_name) }] }
 }
 
 fn is_error(resp) { rec.has(resp, "errors") }

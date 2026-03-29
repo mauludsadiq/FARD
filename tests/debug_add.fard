@@ -1,0 +1,7 @@
+import("../packages/ndarray-cpu/main") as nd
+import("std/type") as type
+let z = nd.zeros([2])
+let o = nd.ones([2])
+test "z0 type" { type.of(z.data[0]) }
+test "o0 type" { type.of(o.data[0]) }
+test "add" { nd.size(nd.add(z, o)) == 2 }

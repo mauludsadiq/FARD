@@ -1,0 +1,4 @@
+import("std/int") as int
+let v = int.to_string(0)
+test "zero" { v == "0" }
+test "what" { v }

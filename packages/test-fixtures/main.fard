@@ -2,6 +2,7 @@
 // Depends on test-core, fs-core, core-serde.
 // Loads, registers, and tears down test fixtures.
 
+import("std/str") as str
 import("std/io")   as io
 import("std/json") as json
 import("std/rec")  as rec
@@ -27,7 +28,7 @@ fn registry(fixtures) {
 
 fn get(reg, name) {
   let matched = list.find(reg.fixtures, fn(f) { f.name == name })
-  if matched != null then matched.data
+  if rec.has(matched, "some") then matched.some.data
   else null
 }
 

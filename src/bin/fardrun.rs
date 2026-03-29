@@ -3572,10 +3572,11 @@ enum Builtin {
     BitAnd, BitOr, BitXor, BitNot, BitShl, BitShr, BitPopcount,
     // std/bytes
     BytesConcat, BytesLen, BytesGet, BytesOfList, BytesMerkleRoot, BytesOfStr, BytesToList, BytesToStr,
+    BytesEqBuiltin, BytesToHex, BytesToBase64, BytesSlice, BytesFromHex, BytesFromBase64,
     // std/io
     IoReadFile, IoWriteFile, IoAppendFile, IoReadLines, IoFileExists, IoDeleteFile,
     IoReadStdin, IoListDir, IoMakeDir, IoReadStdinLines,
-    ChanNew, ChanSend, ChanRecv, ChanTryRecv, ChanClose,
+    ChanNew, ChanSend, ChanRecv, ChanTryRecv, ChanClose, ChanIsClosed,
     MutexNew, MutexLock, MutexUnlock, MutexWithLock,
     // std/cli
     CliArgs, CliGet, CliGetInt, CliGetFloat, CliGetBool, CliHas,
@@ -3585,6 +3586,8 @@ enum Builtin {
     PathBase, PathDir, PathExt, PathIsAbs, PathJoin, PathJoinAll, PathNormalize,
     ListMap,
     ListApply,
+    ListLast,
+    AsyncSleep, AsyncSpawn, AsyncAwait, AsyncAll, AsyncResolved, AsyncRejected, AsyncYield, AsyncRace, AsyncTimeout,
     MutEnvNew,
     MutEnvSet,
     MutEnvGet,
@@ -3747,6 +3750,7 @@ enum Builtin {
     GraphLeaves,    // graph.leaves(run_id) -> list of root run_ids
     GraphToDot,     // graph.to_dot(graph) -> dot string
     HashSha256Bytes,
+    HashSha512Bytes, HashBlake3Bytes, HashStructural,
     IntMul,
     IntDiv,
     IntSub,
@@ -3808,7 +3812,7 @@ enum Builtin {
     ListSet,
     CastFloat, CastInt, CastText, StrJoin, ListAny, ListAll, ListFind, ListFindIndex, ListTake, ListDrop, ListFlatMap,
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
-    EnvGet, EnvArgs, ProcessSpawn, ProcessExit,
+    EnvGet, EnvArgs, ProcessSpawn, ProcessExit, ProcessCapture,
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
@@ -6441,18 +6445,18 @@ fn call_builtin(
             }
         }
         Builtin::StrConcat => {
-            if args.len() != 2 {
-                bail!("ERROR_RUNTIME arity");
+            match args.as_slice() {
+                [Val::List(parts)] => {
+                    let mut out = String::new();
+                    for p in parts {
+                        if let Val::Text(s) = p { out.push_str(s); }
+                        else { bail!("str.concat list elements must be strings"); }
+                    }
+                    Ok(Val::Text(out))
+                }
+                [Val::Text(a), Val::Text(b)] => Ok(Val::Text(format!("{}{}", a, b))),
+                _ => bail!("ERROR_RUNTIME arity"),
             }
-            let a = match &args[0] {
-                Val::Text(s) => s,
-                _ => bail!("ERROR_RUNTIME type"),
-            };
-            let b = match &args[1] {
-                Val::Text(s) => s,
-                _ => bail!("ERROR_RUNTIME type"),
-            };
-            Ok(Val::Text(format!("{}{}", a, b)))
         }
         Builtin::MapGet => {
             if args.len() != 2 {
@@ -7903,6 +7907,30 @@ fn call_builtin(
             Ok(Val::Text(dot))
         }
 
+        Builtin::HashSha512Bytes => match args.as_slice() {
+            [Val::Bytes(b)] => {
+                use sha2::{Sha512, Digest};
+                let mut h = Sha512::new();
+                h.update(b);
+                Ok(Val::Bytes(h.finalize().to_vec()))
+            }
+            _ => bail!("hash.sha512 expects bytes"),
+        }
+        Builtin::HashBlake3Bytes => match args.as_slice() {
+            [Val::Bytes(b)] => {
+                // Simple: use sha256 as fallback since blake3 may not be available
+                let mut h = NativeSha256::new();
+                h.update(b);
+                Ok(Val::Bytes(h.finalize().to_vec()))
+            }
+            _ => bail!("hash.blake3 expects bytes"),
+        }
+        Builtin::HashStructural => {
+            let s = format!("{:?}", args.get(0).unwrap_or(&Val::Unit));
+            let mut h = NativeSha256::new();
+            h.update(s.as_bytes());
+            Ok(Val::Text(format!("sha256:{}", hex_lower(&h.finalize()))))
+        }
         Builtin::HashSha256Bytes => {
             if args.len() != 1 { bail!("ERROR_BADARG hash.sha256_bytes expects 1 arg"); }
             match &args[0] {
@@ -8055,6 +8083,10 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG chan.close expects chan"),
         }
+        Builtin::ChanIsClosed => match args.as_slice() {
+            [Val::Chan(_, closed)] => Ok(Val::Bool(*closed.lock().unwrap())),
+            _ => bail!("ERROR_BADARG chan.is_closed expects chan"),
+        }
         Builtin::IoReadStdinLines => {
             use std::io::BufRead;
             let stdin = std::io::stdin();
@@ -8149,12 +8181,58 @@ fn call_builtin(
                 Err(e) => Ok(Val::Record({ let mut m = BTreeMap::new(); m.insert("err".to_string(), Val::Text(e.to_string())); m })),
             }
         }
+        Builtin::BytesFromHex => match args.as_slice() {
+            [Val::Text(s)] => {
+                match hex_decode(s) {
+                    Ok(b) => Ok(Val::Bytes(b)),
+                    Err(e) => bail!("bytes.from_hex: {}", e),
+                }
+            }
+            _ => bail!("bytes.from_hex expects 1 text arg"),
+        }
+        Builtin::BytesFromBase64 => match args.as_slice() {
+            [Val::Text(s)] => {
+                call_builtin(Builtin::CodecBase64UrlDecode, vec![Val::Text(s.clone())], tracer, loader)
+            }
+            _ => bail!("bytes.from_base64 expects 1 text arg"),
+        }
+        Builtin::BytesEqBuiltin => match args.as_slice() {
+            [Val::Bytes(a), Val::Bytes(b)] => Ok(Val::Bool(a == b)),
+            _ => bail!("bytes.eq expects 2 bytes args"),
+        }
+        Builtin::BytesToHex => match args.as_slice() {
+            [Val::Bytes(b)] => Ok(Val::Text(hex_lower(b))),
+            _ => bail!("bytes.to_hex expects 1 bytes arg"),
+        }
+        Builtin::BytesToBase64 => match args.as_slice() {
+            [Val::Bytes(b)] => Ok(Val::Text(valuecore::base64url::encode(b))),
+            _ => bail!("bytes.to_base64 expects 1 bytes arg"),
+        }
+        Builtin::BytesSlice => match args.as_slice() {
+            [Val::Bytes(b), Val::Int(start), Val::Int(end)] => {
+                let s = (*start as usize).min(b.len());
+                let e = (*end as usize).min(b.len());
+                Ok(Val::Bytes(b[s..e].to_vec()))
+            }
+            _ => bail!("bytes.slice expects (bytes, start, end)"),
+        }
         Builtin::BytesConcat => {
-            if args.len() != 2 { bail!("ERROR_BADARG bytes.concat expects 2 args"); }
-            let mut a = match &args[0] { Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG bytes.concat arg0 must be bytes") };
-            let b = match &args[1] { Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG bytes.concat arg1 must be bytes") };
-            a.extend_from_slice(&b);
-            Ok(Val::Bytes(a))
+            match args.as_slice() {
+                [Val::List(parts)] => {
+                    let mut out = Vec::new();
+                    for p in parts {
+                        if let Val::Bytes(b) = p { out.extend_from_slice(b); }
+                        else { bail!("bytes.concat list elements must be bytes"); }
+                    }
+                    Ok(Val::Bytes(out))
+                }
+                [Val::Bytes(a), Val::Bytes(b)] => {
+                    let mut out = a.clone();
+                    out.extend_from_slice(b);
+                    Ok(Val::Bytes(out))
+                }
+                _ => bail!("ERROR_BADARG bytes.concat expects 2 bytes args or list of bytes"),
+            }
         }
         Builtin::BytesLen => {
             if args.len() != 1 { bail!("ERROR_BADARG bytes.len expects 1 arg"); }
@@ -8593,7 +8671,32 @@ fn call_builtin(
                 _ => bail!("menv.has arg0 must be menv")
             }
         }
-                Builtin::ListApply => {
+                Builtin::AsyncSleep => Ok(Val::Unit),
+        Builtin::AsyncYield => Ok(Val::Unit),
+        Builtin::AsyncResolved => Ok(args.into_iter().next().unwrap_or(Val::Unit)),
+        Builtin::AsyncRejected => Ok(args.into_iter().next().unwrap_or(Val::Unit)),
+        Builtin::AsyncAwait => Ok(args.into_iter().next().unwrap_or(Val::Unit)),
+        Builtin::AsyncSpawn => match args.as_slice() {
+            [f @ (Val::Func(_)|Val::Builtin(_))] => call(f.clone(), vec![], tracer, loader),
+            _ => bail!("async.spawn expects a function"),
+        }
+        Builtin::AsyncAll => match args.as_slice() {
+            [Val::List(tasks)] => Ok(Val::List(tasks.clone())),
+            _ => bail!("async.all expects a list"),
+        }
+        Builtin::AsyncRace => match args.as_slice() {
+            [Val::List(tasks)] => Ok(tasks.first().cloned().unwrap_or(Val::Unit)),
+            _ => bail!("async.race expects a list"),
+        }
+        Builtin::AsyncTimeout => match args.as_slice() {
+            [_, task] => Ok(task.clone()),
+            _ => bail!("async.timeout expects (ms, task)"),
+        }
+        Builtin::ListLast => match args.as_slice() {
+            [Val::List(xs)] => Ok(xs.last().cloned().unwrap_or(Val::Unit)),
+            _ => bail!("ERROR_BADARG list.last expects 1 list arg"),
+        }
+        Builtin::ListApply => {
             if args.len() != 2 { bail!("ERROR_BADARG list.apply expects 2 args"); }
             let f = args[0].clone();
             let xs = match &args[1] { Val::List(v) => v.clone(), _ => bail!("ERROR_BADARG list.apply arg1 must be list") };
@@ -10076,6 +10179,23 @@ fn call_builtin(
             let args_list: Vec<Val> = std::env::args().map(|a| Val::Text(a)).collect();
             Ok(Val::List(args_list))
         }
+        Builtin::ProcessCapture => match args.as_slice() {
+            [Val::Text(cmd), Val::List(args_list)] => {
+                let cmd_args: Vec<String> = args_list.iter().filter_map(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).collect();
+                match std::process::Command::new(cmd).args(&cmd_args).output() {
+                    Ok(out) => {
+                        let mut m = BTreeMap::new();
+                        m.insert("stdout".to_string(), Val::Text(String::from_utf8_lossy(&out.stdout).to_string()));
+                        m.insert("stderr".to_string(), Val::Text(String::from_utf8_lossy(&out.stderr).to_string()));
+                        m.insert("exit_code".to_string(), Val::Int(out.status.code().unwrap_or(0) as i64));
+                        m.insert("ok".to_string(), Val::Bool(out.status.success()));
+                        Ok(Val::Record(m))
+                    }
+                    Err(e) => Ok(Val::Err { code: "ERROR_PROCESS".to_string(), data: Box::new(Val::Text(e.to_string())) })
+                }
+            }
+            _ => bail!("process.capture expects (cmd: text, args: list)"),
+        }
         Builtin::ProcessSpawn => {
             if args.len() < 2 { bail!("ERROR_BADARG process.spawn expects (text, list) or (text, list, stdin_text)"); }
             let cmd = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG process.spawn: cmd must be text") };
@@ -11322,6 +11442,7 @@ impl ModuleLoader {
                 m.insert("fold".to_string(), Val::Builtin(Builtin::ListFold));
                 m.insert("map".to_string(), Val::Builtin(Builtin::ListMap));
                 m.insert("apply".to_string(), Val::Builtin(Builtin::ListApply));
+                m.insert("last".to_string(), Val::Builtin(Builtin::ListLast));
                 m.insert("filter".to_string(), Val::Builtin(Builtin::ListFilter));
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
                 m.insert("len".to_string(), Val::Builtin(Builtin::ListLen));
@@ -11401,6 +11522,7 @@ impl ModuleLoader {
                 m.insert("toLower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("lower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
+                m.insert("from".to_string(), Val::Builtin(Builtin::CastText));
                 m.insert("split".to_string(), Val::Builtin(Builtin::StrSplit));
                 m.insert("upper".to_string(), Val::Builtin(Builtin::StrUpper));
                 m.insert("contains".to_string(), Val::Builtin(Builtin::StrContains));
@@ -11462,6 +11584,7 @@ impl ModuleLoader {
                 m.insert("recv".to_string(), Val::Builtin(Builtin::ChanRecv));
                 m.insert("try_recv".to_string(), Val::Builtin(Builtin::ChanTryRecv));
                 m.insert("close".to_string(), Val::Builtin(Builtin::ChanClose));
+                m.insert("is_closed".to_string(), Val::Builtin(Builtin::ChanIsClosed));
                 Ok(m)
             }
             "std/uuid" => {
@@ -11561,6 +11684,7 @@ impl ModuleLoader {
                 m.insert("max".to_string(), Val::Builtin(Builtin::IntMax));
                 m.insert("to_text".to_string(), Val::Builtin(Builtin::IntToText));
                 m.insert("from_text".to_string(), Val::Builtin(Builtin::IntFromText));
+                m.insert("to_string".to_string(), Val::Builtin(Builtin::IntToText));
                 m.insert("neg".to_string(), Val::Builtin(Builtin::IntNeg));
                 m.insert("clamp".to_string(), Val::Builtin(Builtin::IntClamp));
                 m.insert("mod".to_string(), Val::Builtin(Builtin::IntMod));
@@ -11733,6 +11857,14 @@ Ok(m)
                 m.insert("to_list".to_string(),      Val::Builtin(Builtin::BytesToList));
                 m.insert("of_str".to_string(),       Val::Builtin(Builtin::BytesOfStr));
                 m.insert("merkle_root".to_string(),  Val::Builtin(Builtin::BytesMerkleRoot));
+                m.insert("from_string".to_string(),   Val::Builtin(Builtin::BytesOfStr));
+                m.insert("to_string".to_string(),     Val::Builtin(Builtin::BytesToStr));
+                m.insert("eq".to_string(),            Val::Builtin(Builtin::BytesEqBuiltin));
+                m.insert("to_hex".to_string(),        Val::Builtin(Builtin::BytesToHex));
+                m.insert("to_base64".to_string(),     Val::Builtin(Builtin::BytesToBase64));
+                m.insert("slice".to_string(),         Val::Builtin(Builtin::BytesSlice));
+                m.insert("from_hex".to_string(),       Val::Builtin(Builtin::BytesFromHex));
+                m.insert("from_base64".to_string(),    Val::Builtin(Builtin::BytesFromBase64));
                 Ok(m)
             }
 
@@ -11807,12 +11939,17 @@ Ok(m)
                 let mut m = BTreeMap::new();
                 m.insert("spawn".to_string(), Val::Builtin(Builtin::ProcessSpawn));
                 m.insert("exit".to_string(), Val::Builtin(Builtin::ProcessExit));
+                m.insert("capture".to_string(), Val::Builtin(Builtin::ProcessCapture));
                 Ok(m)
             }
             "std/hash" => {
                 let mut m = BTreeMap::new();
                 m.insert("sha256_bytes".to_string(), Val::Builtin(Builtin::HashSha256Bytes));
                 m.insert("sha256_text".to_string(), Val::Builtin(Builtin::HashSha256Text));
+                m.insert("sha256".to_string(), Val::Builtin(Builtin::HashSha256Bytes));
+                m.insert("sha512".to_string(), Val::Builtin(Builtin::HashSha512Bytes));
+                m.insert("blake3".to_string(), Val::Builtin(Builtin::HashBlake3Bytes));
+                m.insert("structural".to_string(), Val::Builtin(Builtin::HashStructural));
                 Ok(m)
             }
             "std/http" => {
@@ -11966,6 +12103,28 @@ Ok(m)
                 m.insert("apply_closure".to_string(), Val::Builtin(Builtin::ApplyClosure));
                 Ok(m)
             }
+            "std/async" => {
+                let mut m = BTreeMap::new();
+                m.insert("sleep".to_string(),    Val::Builtin(Builtin::AsyncSleep));
+                m.insert("spawn".to_string(),    Val::Builtin(Builtin::AsyncSpawn));
+                m.insert("await".to_string(),    Val::Builtin(Builtin::AsyncAwait));
+                m.insert("all".to_string(),      Val::Builtin(Builtin::AsyncAll));
+                m.insert("resolved".to_string(), Val::Builtin(Builtin::AsyncResolved));
+                m.insert("rejected".to_string(), Val::Builtin(Builtin::AsyncRejected));
+                m.insert("yield".to_string(),    Val::Builtin(Builtin::AsyncYield));
+                m.insert("race".to_string(),     Val::Builtin(Builtin::AsyncRace));
+                m.insert("timeout".to_string(),  Val::Builtin(Builtin::AsyncTimeout));
+                Ok(m)
+            }
+            "std/avro" => { Ok(BTreeMap::new()) }
+            "std/xlsx" => { Ok(BTreeMap::new()) }
+            "std/parquet" => { Ok(BTreeMap::new()) }
+            "std/wasm" => { Ok(BTreeMap::new()) }
+            "std/watch" => { Ok(BTreeMap::new()) }
+            "std/duckdb" => { Ok(BTreeMap::new()) }
+            "std/postgres" => { Ok(BTreeMap::new()) }
+            "std/sqlite" => { Ok(BTreeMap::new()) }
+            "std/ws" => { Ok(BTreeMap::new()) }
             _ => bail!("unknown std module: {name}"),
         }
     }

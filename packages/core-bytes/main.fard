@@ -6,12 +6,12 @@ import("std/bytes") as bytes
 import("std/str")   as str
 import("std/list")  as list
 
-fn from_string(s)    { bytes.from_string(s) }
-fn to_string(b)      { bytes.to_string(b) }
-fn from_list(xs)     { bytes.from_list(xs) }
+fn from_string(s)    { bytes.of_str(s) }
+fn to_string(b)      { bytes.to_str(b) }
+fn from_list(xs)     { bytes.of_list(xs) }
 fn to_list(b)        { bytes.to_list(b) }
 fn len(b)            { bytes.len(b) }
-fn empty()           { bytes.from_list([]) }
+fn empty()           { bytes.of_list([]) }
 fn is_empty(b)       { bytes.len(b) == 0 }
 fn concat(bs)        { bytes.concat(bs) }
 fn slice(b, lo, hi)  { bytes.slice(b, lo, hi) }

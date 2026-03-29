@@ -9,13 +9,11 @@ fn empty() { { columns: {}, nrows: 0 } }
 
 fn from_records(rows) {
   if list.len(rows) == 0 then empty()
-  else {
-    let keys = rec.keys(list.get(rows, 0))
-    let columns = list.fold(keys, {}, fn(acc, k) {
-      rec.set(acc, k, list.map(rows, fn(r) { rec.get(r, k) }))
-    })
-    { columns: columns, nrows: list.len(rows) }
-  }
+  else let keys = rec.keys(list.get(rows, 0)) in
+       let columns = list.fold(keys, {}, fn(acc, k) {
+         rec.set(acc, k, list.map(rows, fn(r) { rec.get(r, k) }))
+       }) in
+       { columns: columns, nrows: list.len(rows) }
 }
 
 fn add_column(df, name, data) {

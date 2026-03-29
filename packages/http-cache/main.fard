@@ -1,51 +1,52 @@
-// http-cache@1.6.0 — HTTP response caching for FARD
-// Depends on http-core, store-memory, core-time.
-// In-memory cache with TTL and cache-control header awareness.
-
-import("std/rec")      as rec
-import("std/datetime") as dt
-import("std/str")      as str
-
-fn cache(ttl_seconds) {
-  { store: {}, ttl: ttl_seconds, t: "http-cache" }
-}
-
-fn cache_key(req) {
-  str.concat([req.method, ":", req.url])
-}
-
-fn is_expired(entry) {
-  dt.now() > entry.expires_at
-}
-
-fn get(c, req) {
-  let key = cache_key(req)
-  if rec.has(c.store, key) then
-    let entry = rec.get(c.store, key)
-    if is_expired(entry) then null
-    else entry.response
-  else null
-}
-
-fn put(c, req, resp) {
-  let key   = cache_key(req)
-  let entry = { response: resp, expires_at: dt.now() + c.ttl }
-  rec.set(c, "store", rec.set(c.store, key, entry))
-}
-
-fn invalidate(c, req) {
-  rec.set(c, "store", rec.remove(c.store, cache_key(req)))
-}
-
-fn middleware(c, request_fn) {
-  fn(req) {
-    let cached = get(c, req)
-    if cached != null then cached
-    else
-      let resp = request_fn(req)
-      put(c, req, resp)
-      resp
-  }
-}
-
-export { cache, cache_key, get, put, invalidate, middleware }
+ // http-cache@1.6.0 — HTTP response caching for FARD
+ // Depends on http-core, store-memory, core-time.
+ // In-memory cache with TTL and cache-control header awareness.
+ 
+ import("std/rec")      as rec
+ import("std/datetime") as dt
+ import("std/str")      as str
+ 
+ fn cache(ttl_seconds) {
+   { store: {}, ttl: ttl_seconds, t: "http-cache" }
+ }
+ 
+ fn cache_key(req) {
+   str.concat([req.method, ":", req.url])
+ }
+ 
+ fn is_expired(entry) {
+   dt.now() > entry.expires_at
+ }
+ 
+ fn get(c, req) {
+   let key = cache_key(req) in
+   let entry = if rec.has(c.store, key) then rec.get(c.store, key) else null in
+   if entry == null then null
+   else if is_expired(entry) then null
+   else entry.response
+ }
+ 
+ fn put(c, req, resp) {
+   let key = cache_key(req) in
+   let entry = { response: resp, expires_at: dt.now() } in
+   let new_store = rec.set(c.store, key, entry) in
+   { store: new_store, ttl: c.ttl, t: c.t }
+ }
+ 
+ fn invalidate(c, req) {
+   let new_store = rec.remove(c.store, cache_key(req)) in
+   { store: new_store, ttl: c.ttl, t: c.t }
+ }
+ 
+ fn middleware(c, request_fn) {
+   fn(req) {
+     let cached = get(c, req) in
+     if cached != null then cached
+     else
+       let resp = request_fn(req) in
+       let _updated = put(c, req, resp) in
+       resp
+   }
+ }
+ 
+ export { cache, cache_key, get, put, invalidate, middleware }

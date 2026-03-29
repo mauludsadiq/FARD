@@ -3,27 +3,28 @@
 // Runs array operations in a WASM sandbox. Portable across platforms.
 
 import("std/list")   as list
+import("std/cast") as cast
 import("std/float")  as float
 import("std/linalg") as linalg
 
 fn zeros(shape) {
   let n = list.fold(shape, 1, fn(acc, d) { acc * d })
-  { data: linalg.zeros(n), shape: shape, backend: "wasm" }
+  { data: list.repeat(0.0, n), shape: shape, backend: "wasm" }
 }
 
 fn from_list(data, shape) {
-  { data: list.map(data, fn(x) { float.from_int(x) }), shape: shape, backend: "wasm" }
+  { data: list.map(data, fn(x) { cast.float(x) }), shape: shape, backend: "wasm" }
 }
 
 fn size(t)  { list.fold(t.shape, 1, fn(acc, d) { acc * d }) }
 fn shape(t) { t.shape }
 
 fn add(a, b) {
-  { data: list.zip_with(a.data, b.data, fn(x,y) { float.add(x,y) }), shape: a.shape, backend: "wasm" }
+  { data: list.zip_with(a.data, b.data, fn(x,y) { x + y }), shape: a.shape, backend: "wasm" }
 }
 
 fn sum(t) {
-  list.fold(t.data, float.from_int(0), fn(acc, x) { float.add(acc, x) })
+  list.fold(t.data, 0.0, fn(acc, x) { acc + x })
 }
 
 fn to_cpu(t)   { { data: t.data, shape: t.shape, backend: "cpu" } }

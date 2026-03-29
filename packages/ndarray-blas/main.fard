@@ -3,16 +3,17 @@
 // High-performance matmul, dot, and decomposition via BLAS/LAPACK.
 
 import("std/list")   as list
+import("std/cast") as cast
 import("std/float")  as float
 import("std/linalg") as linalg
 
 fn zeros(shape) {
   let n = list.fold(shape, 1, fn(acc, d) { acc * d })
-  { data: linalg.zeros(n), shape: shape, backend: "blas" }
+  { data: list.repeat(0.0, n), shape: shape, backend: "blas" }
 }
 
 fn from_list(data, shape) {
-  { data: list.map(data, fn(x) { float.from_int(x) }), shape: shape, backend: "blas" }
+  { data: list.map(data, fn(x) { cast.float(x) }), shape: shape, backend: "blas" }
 }
 
 fn size(t)  { list.fold(t.shape, 1, fn(acc, d) { acc * d }) }
@@ -24,11 +25,8 @@ fn matmul(a, b) {
   let cols_b = list.get(b.shape, 1)
   let data = list.flat_map(list.range(0, rows_a), fn(i) {
     list.map(list.range(0, cols_b), fn(j) {
-      list.fold(list.range(0, cols_a), float.from_int(0), fn(acc, k) {
-        float.add(acc, float.mul(
-          list.get(a.data, i * cols_a + k),
-          list.get(b.data, k * cols_b + j)
-        ))
+      list.fold(list.range(0, cols_a), 0.0, fn(acc, k) {
+        acc + list.get(a.data, i * cols_a + k) * list.get(b.data, k * cols_b + j)
       })
     })
   })
@@ -36,8 +34,8 @@ fn matmul(a, b) {
 }
 
 fn dot(a, b) {
-  list.fold(list.range(0, size(a)), float.from_int(0), fn(acc, i) {
-    float.add(acc, float.mul(list.get(a.data, i), list.get(b.data, i)))
+  list.fold(list.range(0, size(a)), 0.0, fn(acc, i) {
+    acc + list.get(a.data, i) * list.get(b.data, i)
   })
 }
 

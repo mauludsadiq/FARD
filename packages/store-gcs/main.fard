@@ -21,12 +21,12 @@ fn get(store, key) {
 }
 
 fn set(store, key, value) {
-  http.post(key_url(store, key), { "Content-Type": "application/octet-stream" }, value)
+  let _ = http.post(key_url(store, key), { "Content-Type": "application/octet-stream" }, value) in
   store
 }
 
 fn delete(store, key) {
-  http.delete(key_url(store, key), {})
+  let _ = http.delete(key_url(store, key), {}) in
   store
 }
 

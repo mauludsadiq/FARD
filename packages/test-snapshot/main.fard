@@ -5,6 +5,7 @@
 import("std/json") as json
 import("std/hash") as hash
 import("std/bytes") as bytes
+import("std/str") as str
 import("std/io")   as io
 import("std/rec")  as rec
 
@@ -15,7 +16,7 @@ fn snapshot_path(name) {
 fn serialize(v) { json.canonicalize(json.encode(v)) }
 
 fn digest(v) {
-  bytes.to_hex(hash.sha256(bytes.from_string(serialize(v))))
+  hash.sha256_text(serialize(v))
 }
 
 fn write(name, v) {
@@ -28,15 +29,15 @@ fn read(name) {
   else null
 }
 
-fn match(name, v) {
+fn match_snapshot(name, v) {
   let stored = read(name)
   if stored == null then { new: true, matched: false }
   else { new: false, matched: stored == serialize(v) }
 }
 
 fn assert_match(name, v) {
-  let r = match(name, v)
+  let r = match_snapshot(name, v)
   r.matched == true || r.new == true
 }
 
-export { serialize, digest, write, read, match, assert_match }
+export { serialize, digest, write, read, match_snapshot, assert_match }
