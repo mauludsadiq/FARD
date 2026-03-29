@@ -10,8 +10,6 @@ Traceability is not a feature — it is an invariant of execution.
 
 **Version:** v1.6.0 — [Releases](https://github.com/mauludsadiq/FARD/releases)
 
-**Test suite:** 98 package tests passing (stdlib additions, package fixes, syntax normalization)
-
 -----
 
 ## What FARD Is
@@ -21,14 +19,14 @@ FARD is a deterministic scripting language with a functional core, controlled mu
 It provides:
 
 - cryptographic witness receipts on every run
-- 53 standard library modules
+- 77 standard library modules
 - 242 built-in primitives
 - a 13-binary toolchain
 - native FFI via dynamic library loading
 - a WebAssembly compilation target
 - an LSP server with go-to-definition and find-references
 - a SQLite-backed receipt registry with CRDT replication
-- a content-addressed package manager with 58 packages and semver ranges
+- a content-addressed package manager with 164 packages and semver ranges
 - a web playground (playground/index.jsx)
 - a doc generator (farddoc)
 - a verifiable build system (fard-build)
