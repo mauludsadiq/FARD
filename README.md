@@ -10,6 +10,8 @@ Traceability is not a feature — it is an invariant of execution.
 
 **Version:** v1.6.0 — [Releases](https://github.com/mauludsadiq/FARD/releases)
 
+**Test suite:** 98 package tests passing (stdlib additions, package fixes, syntax normalization)
+
 -----
 
 ## What FARD Is
