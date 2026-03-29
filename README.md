@@ -354,7 +354,7 @@ greet.hello("world")
 
 Registry: `https://github.com/mauludsadiq/FARD/releases/latest/download/registry.json`
 
-### Available Packages (58)
+### Available Packages (164)
 
 | Package | Category | Description |
 |---|---|---|
