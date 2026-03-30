@@ -115,6 +115,13 @@
       "name": "CG1_color_geometry",
       "kind": "cg1_color_geometry",
       "program": "tests/programs/cg1_hue_report.fard"
+    },
+    {
+      "id": "G11_self_hosted_eval",
+      "name": "G11_self_hosted_eval",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g11_self_hosted_eval.fard",
+      "expect_result": 55
     }
   ]
 }
