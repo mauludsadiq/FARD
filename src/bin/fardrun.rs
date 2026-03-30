@@ -574,8 +574,46 @@ fn expr_contains_var(expr: &Expr, name: &str) -> bool {
 
 
 
+fn cmd_verify(args: fard_v0_5_language_gate::cli::fardrun_cli::VerifyArgs) -> Result<()> {
+    let out = &args.out;
+    let result_path = out.join("result.json");
+    let digests_path = out.join("digests.json");
+    let trace_path = out.join("trace.ndjson");
+
+    if !result_path.exists() {
+        anyhow::bail!("No result.json found in {:?} -- was this a valid fardrun run?", out);
+    }
+
+    let result_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&result_path)?)?;
+    let digests: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&digests_path)?)?;
+    let trace_lines = std::fs::read_to_string(&trace_path).unwrap_or_default();
+    let trace_steps = trace_lines.lines().count();
+    let preimage = digests["preimage_sha256"].as_str().unwrap_or("unknown");
+    let runtime = digests["runtime_version"].as_str().unwrap_or("unknown");
+
+    println!();
+    println!("  ✓ FARD Execution Verified");
+    println!();
+    println!("  Result:  {}", result_json["result"]);
+    println!("  Digest:  {}", preimage);
+    println!("  Runtime: fardrun v{}", runtime);
+    println!("  Trace:   {} steps", trace_steps);
+    println!("  Out:     {:?}", out);
+    if args.verbose {
+        println!();
+        if let Some(files) = digests["files"].as_object() {
+            println!("  Files:");
+            for (k, v) in files {
+                println!("    {} -> {}", k, v.as_str().unwrap_or("?"));
+            }
+        }
+    }
+    println!();
+    Ok(())
+}
+
 fn main() -> Result<()> {
-    let (run, want_version, want_repl, test_args, publish_args, install_args, new_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl, test_args, publish_args, install_args, new_args, verify_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
 
     // Handle search subcommand
     if std::env::var("FARD_SEARCH_MODE").is_ok() {
@@ -609,6 +647,9 @@ fn main() -> Result<()> {
     if let Some(new_args) = new_args {
         use fard_v0_5_language_gate::cli::fardrun_cli::NewArgs;
         return cmd_new(new_args);
+    }
+    if let Some(verify_args) = verify_args {
+        return cmd_verify(verify_args);
     }
 
 fn pretty_print_val(v: &Val, indent: usize) -> String {
