@@ -129,6 +129,13 @@
       "kind": "run_expect_result",
       "program": "tests/gate/programs/g12_data_pipeline.fard",
       "expect_result": 9197.7
+    },
+    {
+      "id": "G13_pipeline_e2e",
+      "name": "G13_pipeline_e2e",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g13_pipeline_e2e.fard",
+      "expect_result": "engineering"
     }
   ]
 }

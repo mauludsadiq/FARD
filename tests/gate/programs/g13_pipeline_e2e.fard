@@ -1,0 +1,24 @@
+import("../../../packages/frame-memory/main") as frame
+import("../../../packages/data-csv/main") as csv
+import("std/io") as io
+import("std/list") as list
+
+let input = "employee,department,salary,years
+Alice,engineering,95000,5
+Bob,marketing,72000,3
+Carol,engineering,110000,8
+Dave,marketing,68000,2
+Eve,engineering,88000,4
+Frank,hr,65000,6
+Grace,hr,70000,7"
+
+let _ = io.write_file("/tmp/g13_input.csv", input)
+let df = frame.from_records(csv.parse_csv(io.read_file("/tmp/g13_input.csv").ok))
+let by_dept = frame.group_by(df, "department")
+let dept_stats = list.map(by_dept, fn(g) {
+  { dept: g.key, avg: frame.mean(g.rows, "salary") }
+})
+let sorted = list.sort_by(dept_stats, fn(a, b) {
+  if a.avg > b.avg then -1 else 1
+})
+list.get(sorted, 0).dept
