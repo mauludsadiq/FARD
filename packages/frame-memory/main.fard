@@ -1,11 +1,13 @@
 // frame-memory@1.6.0 — In-memory columnar dataframe for FARD
 // Depends on core-serde, core-errors.
-// Column-oriented store. Backend root for frame-sqlite, postgres, duckdb.
+// Column-oriented store with filter, map, select, join, group_by, aggregate, sort.
 
 import("std/list") as list
 import("std/rec")  as rec
+import("std/str")  as str
 
-fn empty() { { columns: {}, nrows: 0 } }
+// Construction
+fn empty() { { columns: {}, nrows: 0, t: "frame" } }
 
 fn from_records(rows) {
   if list.len(rows) == 0 then empty()
@@ -13,18 +15,18 @@ fn from_records(rows) {
        let columns = list.fold(keys, {}, fn(acc, k) {
          rec.set(acc, k, list.map(rows, fn(r) { rec.get(r, k) }))
        }) in
-       { columns: columns, nrows: list.len(rows) }
+       { columns: columns, nrows: list.len(rows), t: "frame" }
 }
 
+// Accessors
+fn get_column(df, name)  { rec.get(df.columns, name) }
+fn has_column(df, name)  { rec.has(df.columns, name) }
+fn column_names(df)      { rec.keys(df.columns) }
+fn nrows(df)             { df.nrows }
+fn ncols(df)             { list.len(rec.keys(df.columns)) }
 fn add_column(df, name, data) {
-  { columns: rec.set(df.columns, name, data), nrows: df.nrows }
+  { columns: rec.set(df.columns, name, data), nrows: df.nrows, t: "frame" }
 }
-
-fn get_column(df, name) { rec.get(df.columns, name) }
-fn has_column(df, name) { rec.has(df.columns, name) }
-fn column_names(df)     { rec.keys(df.columns) }
-fn nrows(df)            { df.nrows }
-fn ncols(df)            { list.len(rec.keys(df.columns)) }
 
 fn get_row(df, i) {
   list.fold(rec.keys(df.columns), {}, fn(acc, k) {
@@ -32,4 +34,94 @@ fn get_row(df, i) {
   })
 }
 
-export { empty, from_records, add_column, get_column, has_column, column_names, nrows, ncols, get_row }
+fn to_records(df) {
+  list.map(list.range(0, df.nrows), fn(i) { get_row(df, i) })
+}
+
+// Transformation
+fn select(df, names) {
+  let cols = list.fold(names, {}, fn(acc, k) {
+    rec.set(acc, k, rec.get(df.columns, k))
+  }) in
+  { columns: cols, nrows: df.nrows, t: "frame" }
+}
+
+fn filter(df, pred) {
+  let rows = list.filter(to_records(df), pred) in
+  from_records(rows)
+}
+
+fn map_rows(df, f) {
+  from_records(list.map(to_records(df), f))
+}
+
+fn sort_by(df, key, asc) {
+  let rows = list.sort_by(to_records(df), fn(a, b) {
+    let va = rec.get(a, key) in
+    let vb = rec.get(b, key) in
+    if asc then
+      if va < vb then -1 else if va == vb then 0 else 1
+    else
+      if va > vb then -1 else if va == vb then 0 else 1
+  }) in
+  from_records(rows)
+}
+
+fn group_by(df, key) {
+  let rows = to_records(df) in
+  let keys = list.dedupe(list.map(rows, fn(r) { rec.get(r, key) })) in
+  list.map(keys, fn(k) {
+    let group_rows = list.filter(rows, fn(r) { rec.get(r, key) == k }) in
+    { key: k, rows: from_records(group_rows) }
+  })
+}
+
+// Aggregation helpers
+fn count(df)       { df.nrows }
+fn sum(df, col)    { list.fold(get_column(df, col), 0, fn(acc, x) { acc + x }) }
+fn mean(df, col)   { if df.nrows == 0 then 0.0 else sum(df, col) / df.nrows }
+fn min_col(df, col) {
+  let vals = get_column(df, col) in
+  list.fold(list.drop(vals, 1), list.get(vals, 0), fn(acc, x) { if x < acc then x else acc })
+}
+fn max_col(df, col) {
+  let vals = get_column(df, col) in
+  list.fold(list.drop(vals, 1), list.get(vals, 0), fn(acc, x) { if x > acc then x else acc })
+}
+
+// Join
+fn join(left, right, on) {
+  let right_rows = to_records(right) in
+  let left_rows  = to_records(left) in
+  let joined = list.flat_map(left_rows, fn(lr) {
+    let matches = list.filter(right_rows, fn(rr) {
+      rec.get(lr, on) == rec.get(rr, on)
+    }) in
+    list.map(matches, fn(rr) {
+      list.fold(rec.keys(rr), lr, fn(acc, k) {
+        if rec.has(lr, k) then acc else rec.set(acc, k, rec.get(rr, k))
+      })
+    })
+  }) in
+  from_records(joined)
+}
+
+// Rename
+fn rename(df, old_name, new_name) {
+  let col = get_column(df, old_name) in
+  let cols = rec.remove(df.columns, old_name) in
+  { columns: rec.set(cols, new_name, col), nrows: df.nrows, t: "frame" }
+}
+
+// Drop column
+fn drop(df, name) {
+  { columns: rec.remove(df.columns, name), nrows: df.nrows, t: "frame" }
+}
+
+export {
+  empty, from_records, to_records, get_row,
+  get_column, has_column, column_names, nrows, ncols, add_column,
+  select, filter, map_rows, sort_by, group_by,
+  count, sum, mean, min_col, max_col,
+  join, rename, drop
+}

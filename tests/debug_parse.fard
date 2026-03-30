@@ -1,5 +1,10 @@
-import("../packages/fard_parse/parse") as parse
-
-let m = parse.parse_module_text("fn add1(x) { x + 1 }")
-
-m
+import("std/int") as int
+import("std/float") as float
+import("std/rec") as rec
+let r1 = int.parse("42")
+let r2 = int.parse("abc")
+let r3 = float.parse("3.14")
+test "int ok" { r1.t == "ok" }
+test "int fail" { r2.t == "err" }
+test "float ok" { r3.t == "ok" }
+test "int val" { r1.v == 42 }

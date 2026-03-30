@@ -3672,6 +3672,7 @@ enum Builtin {
     Emit,
     Len,
     IntParse,
+    FloatParse,
     IntPow,
     IntAdd,
     IntEq,
@@ -3817,7 +3818,7 @@ enum Builtin {
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
     SetNew, SetAdd, SetRemove, SetHas, SetUnion, SetIntersect, SetDiff, SetToList, SetFromList, SetSize,
-    ListZipWith, ListChunk, ListSortBy,
+    ListZipWith, ListChunk, ListSortBy, ListDedupe,
     MathAsin, MathAcos, MathAtan, MathLog10,
     FloatToStrFixed,
     UuidV4, UuidValidate,
@@ -9114,6 +9115,13 @@ fn call_builtin(
                 _ => bail!("len expects list or string"),
             }
         }
+        Builtin::FloatParse => {
+            let s = match args.first() { Some(Val::Text(s)) => s.clone(), _ => bail!("float.parse expects text") };
+            match s.trim().parse::<f64>() {
+                Ok(f) => Ok(mk_result_ok(Val::Float(f))),
+                Err(e) => Ok(mk_result_err(Val::Text(format!("ERROR_PARSE float.parse ({e})")))),
+            }
+        }
         Builtin::IntParse => {
             if args.len() != 1 {
                 bail!("ERROR_BADARG int.parse expects 1 arg");
@@ -9972,6 +9980,20 @@ fn call_builtin(
                 Ok(Val::List(chunks))
             }
             _ => bail!("ERROR_BADARG list.chunk expects (list, int>0)"),
+        }
+        Builtin::ListDedupe => match args.as_slice() {
+            [Val::List(items)] => {
+                let mut seen: Vec<Val> = Vec::new();
+                let mut out: Vec<Val> = Vec::new();
+                for item in items {
+                    if !seen.iter().any(|s| format!("{:?}", s) == format!("{:?}", item)) {
+                        seen.push(item.clone());
+                        out.push(item.clone());
+                    }
+                }
+                Ok(Val::List(out))
+            }
+            _ => bail!("list.dedupe expects a list"),
         }
         Builtin::ListSortBy => match args.as_slice() {
             [Val::List(items), f] => {
@@ -11464,6 +11486,7 @@ impl ModuleLoader {
                 m.insert("zip_with".to_string(), Val::Builtin(Builtin::ListZipWith));
                 m.insert("chunk".to_string(), Val::Builtin(Builtin::ListChunk));
                 m.insert("sort_by".to_string(), Val::Builtin(Builtin::ListSortBy));
+                m.insert("dedupe".to_string(), Val::Builtin(Builtin::ListDedupe));
                 m.insert(
                     "sort_by_int_key".to_string(),
                     Val::Builtin(Builtin::ListSortByIntKey),
@@ -12028,6 +12051,7 @@ Ok(m)
             "std/float" => {
                 let mut m = BTreeMap::new();
                 m.insert("from_int".to_string(), Val::Builtin(Builtin::FloatFromInt));
+                m.insert("parse".to_string(), Val::Builtin(Builtin::FloatParse));
                 m.insert("to_int".to_string(), Val::Builtin(Builtin::FloatToInt));
                 m.insert("from_text".to_string(), Val::Builtin(Builtin::FloatFromText));
                 m.insert("to_text".to_string(), Val::Builtin(Builtin::FloatToText));

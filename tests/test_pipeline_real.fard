@@ -1,0 +1,59 @@
+import("../packages/frame-memory/main") as frame
+import("../packages/data-csv/main") as csv
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+
+// Simulate a real ETL pipeline:
+// 1. Parse CSV data
+// 2. Load into frame
+// 3. Filter, transform, aggregate
+// 4. Export back to CSV
+
+let raw_csv = "name,age,country,salary
+Alice,32,US,95000
+Bob,24,UK,62000
+Carol,41,US,110000
+Dave,28,UK,71000
+Eve,35,US,88000
+Frank,29,DE,77000
+Grace,38,DE,92000"
+
+// Step 1: parse
+let records = csv.parse_csv(raw_csv)
+test "parse count" { list.len(records) == 7 }
+
+// Step 2: load into frame
+let df = frame.from_records(records)
+test "frame nrows" { frame.nrows(df) == 7 }
+test "frame ncols" { frame.ncols(df) == 4 }
+
+// Step 3a: filter US employees
+let us = frame.filter(df, fn(r) { r.country == "US" })
+test "us count" { frame.nrows(us) == 3 }
+
+// Step 3b: select only name and salary
+let us_pay = frame.select(us, ["name", "salary"])
+test "select cols" { frame.ncols(us_pay) == 2 }
+
+// Step 3c: group by country and count
+let groups = frame.group_by(df, "country")
+test "group count" { list.len(groups) == 3 }
+
+// Step 3d: aggregate - sum salaries per country
+let country_totals = list.map(groups, fn(g) {
+  { country: g.key, total: frame.sum(g.rows, "salary"), count: frame.count(g.rows) }
+})
+test "us total" {
+  let us_g = list.find(country_totals, fn(r) { r.country == "US" }) in
+  us_g.some.total == 293000
+}
+
+// Step 4: sort by salary descending
+let sorted = frame.sort_by(df, "salary", false)
+let top = frame.get_row(sorted, 0)
+test "top earner" { top.name == "Carol" }
+
+// Step 5: roundtrip to CSV
+let output = csv.serialize_csv(frame.to_records(us_pay))
+test "csv roundtrip" { str.contains(output, "Alice") }

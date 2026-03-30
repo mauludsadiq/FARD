@@ -4,9 +4,22 @@
 
 import("std/str")  as str
 import("std/list") as list
+import("std/int")   as int
+import("std/float") as float
+import("std/rec")   as rec
 import("std/rec")  as rec
 
-fn parse_row(line, sep) { str.split(line, sep) }
+fn coerce(v) {
+  let trimmed = str.trim(v) in
+  let as_int = int.parse(trimmed) in
+  if rec.has(as_int, "t") then if as_int.t == "ok" then as_int.v else
+  let as_float = float.parse(trimmed) in
+  if rec.has(as_float, "t") then if as_float.t == "ok" then as_float.v else trimmed
+  else trimmed
+  else trimmed
+}
+
+fn parse_row(line, sep) { list.map(str.split(line, sep), coerce) }
 
 fn parse(text, sep) {
   let lines = list.filter(str.split(text, "\n"), fn(l) { str.len(l) > 0 }) in
@@ -26,7 +39,7 @@ fn serialize(records, sep) {
   else let headers = rec.keys(list.get(records, 0)) in
        let header_line = str.join(headers, sep) in
        let data_lines = list.map(records, fn(r) {
-         str.join(list.map(headers, fn(k) { rec.get(r, k) }), sep)
+         str.join(list.map(headers, fn(k) { str.from(rec.get(r, k)) }), sep)
        }) in
        str.join(list.concat([[header_line], data_lines]), "\n")
 }
