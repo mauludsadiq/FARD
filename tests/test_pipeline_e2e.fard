@@ -1,0 +1,56 @@
+import("../packages/frame-memory/main") as frame
+import("../packages/data-csv/main") as csv
+import("std/io") as io
+import("std/str") as str
+import("std/cast") as cast
+import("std/list") as list
+import("std/rec") as rec
+
+// Write input file
+let input_csv = "employee,department,salary,years
+Alice,engineering,95000,5
+Bob,marketing,72000,3
+Carol,engineering,110000,8
+Dave,marketing,68000,2
+Eve,engineering,88000,4
+Frank,hr,65000,6
+Grace,hr,70000,7"
+
+let _ = io.write_file("/tmp/employees.csv", input_csv)
+
+// Read and parse
+let raw = io.read_file("/tmp/employees.csv").ok
+let df = frame.from_records(csv.parse_csv(raw))
+
+test "loaded" { frame.nrows(df) == 7 }
+
+// Transform: add bonus column (10% of salary)
+let with_bonus = frame.map_rows(df, fn(r) {
+  rec.set(r, "bonus", cast.float(r.salary) * 0.1)
+})
+test "bonus added" { frame.has_column(with_bonus, "bonus") }
+
+// Group by department, compute avg salary
+let by_dept = frame.group_by(df, "department")
+let dept_stats = list.map(by_dept, fn(g) {
+  { dept: g.key, avg_salary: frame.mean(g.rows, "salary"), headcount: frame.count(g.rows) }
+})
+test "dept count" { list.len(dept_stats) == 3 }
+
+// Find highest paid department
+let sorted_depts = list.sort_by(dept_stats, fn(a, b) {
+  if a.avg_salary > b.avg_salary then -1 else 1
+})
+let top_dept = list.get(sorted_depts, 0)
+test "top dept" { top_dept.dept == "engineering" }
+
+// Filter senior employees (5+ years)
+let senior = frame.filter(df, fn(r) { r.years >= 5 })
+test "senior count" { frame.nrows(senior) == 4 }
+
+// Export results
+let output = csv.serialize_csv(frame.to_records(senior))
+let _ = io.write_file("/tmp/senior_employees.csv", output)
+let verify = io.read_file("/tmp/senior_employees.csv").ok
+test "exported" { str.contains(verify, "Alice") }
+test "exported carol" { str.contains(verify, "Carol") }
