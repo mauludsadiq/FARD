@@ -38,3 +38,31 @@ let r5 = ev.apply_fn(self_eval, [if_node, user_env])
 test "if_node" { r5 == 1 }
 
 let call_node = { t: "call", fn: { t: "var", name: "list" }, args: [] }
+
+let let_node = { t: "let", bindings: [{ name: "x", value: { t: "lit_int", v: 10 } }], body: { t: "var", name: "x" } }
+let r6 = ev.apply_fn(self_eval, [let_node, user_env])
+test "let_node" { r6 == 10 }
+
+let add_fn = { t: "closure", name: "add", params: ["a", "b"], body: { t: "call_builtin", name: "int.add", args: [{ t: "var", name: "a" }, { t: "var", name: "b" }] }, env: user_env }
+let call_node = { t: "call", fn: { t: "var", name: "add" }, args: [{ t: "lit_int", v: 3 }, { t: "lit_int", v: 4 }] }
+let call_env = menv.new()
+let _ = menv.set(call_env, "add", add_fn)
+let r7 = ev.apply_fn(self_eval, [call_node, call_env])
+test "call_node" { r7 == 7 }
+
+let match_node = {
+  t: "match_expr",
+  expr: { t: "lit_text", v: "b" },
+  arms: [
+    { pat_val: { t: "lit_text", v: "a" }, body: { t: "lit_int", v: 1 } },
+    { pat_val: { t: "lit_text", v: "b" }, body: { t: "lit_int", v: 2 } },
+    { pat_val: { t: "var", name: "_" }, body: { t: "lit_int", v: 3 } }
+  ]
+}
+let r8 = ev.apply_fn(self_eval, [match_node, user_env])
+test "match_expr" { r8 == 2 }
+
+let def_node = { t: "def_fn", name: "double", params: ["x"], body: { t: "call_builtin", name: "int.add", args: [{ t: "var", name: "x" }, { t: "var", name: "x" }] } }
+let fn_val = ev.apply_fn(self_eval, [def_node, user_env])
+let r9 = ev.apply_fn(fn_val, [5])
+test "def_fn creates closure" { r9 == 10 }

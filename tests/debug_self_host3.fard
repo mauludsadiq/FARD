@@ -1,0 +1,31 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/menv") as menv
+
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
+
+let src = "packages/fard_eval/eval.fard"
+import("std/io") as io
+let eval_src = io.read_file(src).ok
+import("../packages/fard_parse/parse") as p2
+let eval_defs = p2.parse_program(eval_src)
+let dummy = list.fold(eval_defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+
+let fib_src = "fn fib(n) { if n <= 1 then n else fib(n - 1) + fib(n - 2) }"
+let fib_defs = p2.parse_program(fib_src)
+let fib_fn = ev.apply_fn(self_eval, [fib_defs[0], e])
+menv.set(e, "fib", fib_fn)
+
+let call_fib = { t: "call", fn: { t: "var", name: "fib" }, args: [{ t: "lit_int", v: 10 }] }
+let result = ev.apply_fn(self_eval, [call_fib, e])
+test "self-hosted fib(10)" { result == 55 }

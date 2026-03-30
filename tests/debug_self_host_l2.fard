@@ -1,0 +1,39 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+import("std/menv") as menv
+
+// Layer 1: bootstrap self_eval
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let e1 = menv.new()
+menv.set(e1, "list", list)
+menv.set(e1, "rec", rec)
+menv.set(e1, "type", type)
+menv.set(e1, "menv", menv)
+let dummy1 = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e1, d.name, ev.eval(d, e1)) else null
+})
+let self_eval = menv.get(e1, "eval")
+
+// Layer 2: use self_eval to load eval.fard again
+let e2 = menv.new()
+menv.set(e2, "list", list)
+menv.set(e2, "rec", rec)
+menv.set(e2, "type", type)
+menv.set(e2, "menv", menv)
+let dummy2 = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then
+    let fn_val = ev.apply_fn(self_eval, [d, e2]) in
+    menv.set(e2, d.name, fn_val)
+  else null
+})
+let self_eval2 = menv.get(e2, "eval")
+
+// Use self_eval2 to evaluate a simple call
+let call_node = { t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 10 }, { t: "lit_int", v: 32 }] }
+let result = ev.apply_fn(self_eval2, [call_node, e2])
+test "layer 2 eval" { result == 42 }
