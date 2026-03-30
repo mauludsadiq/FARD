@@ -46,7 +46,7 @@ let country_totals = list.map(groups, fn(g) {
 })
 test "us total" {
   let us_g = list.find(country_totals, fn(r) { r.country == "US" }) in
-  us_g.some.total == 293000
+  us_g.some.total == 293000.0
 }
 
 // Step 4: sort by salary descending
