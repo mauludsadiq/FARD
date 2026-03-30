@@ -1,0 +1,32 @@
+import("../packages/http-client-sync/main") as client
+import("../packages/frame-memory/main") as frame
+import("std/rec") as rec
+import("std/list") as list
+
+// Fetch JSON array from API and load into frame
+let resp = client.get_json("http://httpbin.org/anything?data=1")
+test "fetch ok" { rec.has(resp, "ok") }
+
+// Simulate: parse JSON array into frame (using local data since we control it)
+let records = [
+  { city: "NYC", population: 8336817, area: 783 },
+  { city: "LA",  population: 3979576, area: 1302 },
+  { city: "CHI", population: 2693976, area: 606 }
+]
+let df = frame.from_records(records)
+test "frame loaded" { frame.nrows(df) == 3 }
+
+// Compute density
+let with_density = frame.map_rows(df, fn(r) {
+  rec.set(r, "density", r.population / r.area)
+})
+let densest = frame.sort_by(with_density, "density", false)
+test "densest city" { frame.get_row(densest, 0).city == "NYC" }
+
+// Filter cities over 2M population
+let big = frame.filter(df, fn(r) { r.population > 2000000 })
+test "big cities" { frame.nrows(big) == 3 }
+
+// Sum total population
+let total = frame.sum(df, "population")
+test "total pop" { total == 15010369.0 }

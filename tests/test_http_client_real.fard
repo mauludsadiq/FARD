@@ -1,0 +1,10 @@
+import("../packages/http-client-sync/main") as client
+import("std/rec") as rec
+import("std/str") as str
+
+let resp = client.get("http://httpbin.org/json")
+test "status ok" { client.ok(resp) }
+test "has body"  { str.len(client.body(resp)) > 0 }
+
+let json_resp = client.get_json("http://httpbin.org/get")
+test "json ok"   { rec.has(json_resp, "ok") }

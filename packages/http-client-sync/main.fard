@@ -5,37 +5,42 @@
 import("std/http")  as http
 import("std/rec")   as rec
 import("std/json")  as json
+import("std/str")   as str
+import("std/list")  as list
 
-fn get(url, headers) {
-  http.get(url, headers)
-}
+fn get(url)              { http.get(url) }
+fn post(url, body)       { http.post(url, body) }
+fn put(url, body)        { http.put(url, body) }
+fn delete(url)           { http.delete(url) }
 
-fn post(url, headers, body) {
-  http.post(url, headers, body)
-}
-
-fn put(url, headers, body) {
-  http.put(url, headers, body)
-}
-
-fn delete(url, headers) {
-  http.delete(url, headers)
-}
+fn ok(resp)              { if resp.status >= 200 then resp.status < 300 else false }
+fn status(resp)          { resp.status }
+fn body(resp)            { resp.body }
 
 fn get_json(url) {
-  let resp = http.get(url, { "Accept": "application/json" })
-  if rec.has(resp, "body") then json.decode(resp.body)
-  else { error: "no body" }
+  let resp = http.get(url) in
+  if ok(resp) then { ok: json.decode(resp.body) }
+  else { err: str.concat("HTTP ", str.from(resp.status)) }
 }
 
 fn post_json(url, data) {
-  let body = json.encode(data)
-  http.post(url, { "Content-Type": "application/json" }, body)
+  let resp = http.post(url, json.encode(data)) in
+  if ok(resp) then { ok: json.decode(resp.body) }
+  else { err: str.concat("HTTP ", str.from(resp.status)) }
 }
 
-fn is_ok(resp)    { resp.status >= 200 && resp.status < 300 }
-fn status(resp)   { resp.status }
-fn body(resp)     { resp.body }
-fn headers(resp)  { resp.headers }
+fn get_text(url) {
+  let resp = http.get(url) in
+  if ok(resp) then { ok: resp.body }
+  else { err: str.concat("HTTP ", str.from(resp.status)) }
+}
 
-export { get, post, put, delete, get_json, post_json, is_ok, status, body, headers }
+fn with_retry(url, max_attempts) {
+  list.fold(list.range(0, max_attempts), { err: "not attempted" }, fn(acc, i) {
+    if rec.has(acc, "ok") then acc
+    else let resp = http.get(url) in
+    if ok(resp) then { ok: resp.body } else { err: "failed" }
+  })
+}
+
+export { get, post, put, delete, ok, status, body, get_json, post_json, get_text, with_retry }
