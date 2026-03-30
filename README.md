@@ -697,9 +697,15 @@ Infrastructure added:
 
 Verified self-hosted execution:
 - lit_int, lit_bool, var, call_builtin, if_node, eval_args
+- let_node, call_node (closures), match_expr, def_fn, recursion
+- fib(10) = 55 via self-hosted recursive evaluation
 
-The self-hosted evaluator is now the execution substrate for the
-self-hosting pipeline. FARD evaluates FARD.
+2-layer bootstrap confirmed:
+- Layer 1: native eval bootstraps self_eval from eval.fard
+- Layer 2: self_eval bootstraps self_eval2 from eval.fard
+- self_eval2 correctly evaluates int.add(10,32) = 42
+
+FARD evaluates FARD evaluating FARD.
 
 -----
 
