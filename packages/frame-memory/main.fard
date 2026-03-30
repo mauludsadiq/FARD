@@ -5,6 +5,7 @@
 import("std/list") as list
 import("std/rec")  as rec
 import("std/str")  as str
+import("std/cast") as cast
 
 // Construction
 fn empty() { { columns: {}, nrows: 0, t: "frame" } }
@@ -78,8 +79,8 @@ fn group_by(df, key) {
 
 // Aggregation helpers
 fn count(df)       { df.nrows }
-fn sum(df, col)    { list.fold(get_column(df, col), 0, fn(acc, x) { acc + x }) }
-fn mean(df, col)   { if df.nrows == 0 then 0.0 else sum(df, col) / df.nrows }
+fn sum(df, col)    { list.fold(get_column(df, col), 0.0, fn(acc, x) { acc + cast.float(x) }) }
+fn mean(df, col)   { if df.nrows == 0 then 0.0 else sum(df, col) / cast.float(df.nrows) }
 fn min_col(df, col) {
   let vals = get_column(df, col) in
   list.fold(list.drop(vals, 1), list.get(vals, 0), fn(acc, x) { if x < acc then x else acc })

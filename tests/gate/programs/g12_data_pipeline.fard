@@ -1,0 +1,15 @@
+import("../../../packages/frame-memory/main") as frame
+import("../../../packages/data-csv/main") as csv
+import("std/list") as list
+
+let raw = "product,category,units,price
+Widget A,electronics,150,29.99
+Widget B,electronics,80,49.99
+Gadget X,tools,200,14.99
+Gadget Y,tools,120,24.99
+Part Z,hardware,500,4.99"
+
+let df = frame.from_records(csv.parse_csv(raw))
+let electronics = frame.filter(df, fn(r) { r.category == "electronics" })
+let revenue = frame.sum(electronics, "units") * frame.mean(electronics, "price")
+revenue

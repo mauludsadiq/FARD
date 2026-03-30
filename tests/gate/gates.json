@@ -122,6 +122,13 @@
       "kind": "run_expect_result",
       "program": "tests/gate/programs/g11_self_hosted_eval.fard",
       "expect_result": 55
+    },
+    {
+      "id": "G12_data_pipeline",
+      "name": "G12_data_pipeline",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g12_data_pipeline.fard",
+      "expect_result": 9197.7
     }
   ]
 }
