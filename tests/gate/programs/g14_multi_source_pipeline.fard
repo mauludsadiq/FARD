@@ -1,0 +1,32 @@
+import("../../../packages/frame-memory/main") as frame
+import("../../../packages/data-csv/main") as csv
+import("std/list") as list
+import("std/rec") as rec
+import("std/cast") as cast
+
+let sales_csv = "product_id,units,region
+101,150,north
+102,80,south
+101,200,south
+103,120,north
+102,60,north"
+
+let products_csv = "id,name,price,category
+101,Widget,29.99,hardware
+102,Gadget,49.99,electronics
+103,Tool,14.99,hardware"
+
+let sales = frame.from_records(csv.parse_csv(sales_csv))
+let products = frame.rename(frame.from_records(csv.parse_csv(products_csv)), "id", "product_id")
+let joined = frame.join(sales, products, "product_id")
+let with_revenue = frame.map_rows(joined, fn(r) {
+  rec.set(r, "revenue", cast.float(r.units) * r.price)
+})
+let by_cat = frame.group_by(with_revenue, "category")
+let totals = list.map(by_cat, fn(g) {
+  { category: g.key, total_revenue: frame.sum(g.rows, "revenue") }
+})
+let sorted = list.sort_by(totals, fn(a, b) {
+  if a.total_revenue > b.total_revenue then -1 else 1
+})
+list.get(sorted, 0).category

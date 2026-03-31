@@ -136,6 +136,13 @@
       "kind": "run_expect_result",
       "program": "tests/gate/programs/g13_pipeline_e2e.fard",
       "expect_result": "engineering"
+    },
+    {
+      "id": "G14_multi_source_pipeline",
+      "name": "G14_multi_source_pipeline",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g14_multi_source_pipeline.fard",
+      "expect_result": "hardware"
     }
   ]
 }
