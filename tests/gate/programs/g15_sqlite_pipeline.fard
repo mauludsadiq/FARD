@@ -1,0 +1,24 @@
+import("../../../packages/frame-memory/main") as frame
+import("../../../packages/data-csv/main") as csv
+import("std/sqlite") as sqlite
+import("std/list") as list
+import("std/str") as str
+
+let data = "city,population,area
+Tokyo,13960000,2194
+Delhi,16787941,1484
+Shanghai,24183300,6341
+Beijing,21542000,16411
+Mumbai,12442373,603"
+
+let df = frame.from_records(csv.parse_csv(data))
+let db = sqlite.open("/tmp/g15_cities.db")
+let _ = sqlite.exec(db, "DROP TABLE IF EXISTS cities")
+let _ = sqlite.exec(db, "CREATE TABLE cities (city TEXT, population INTEGER, area INTEGER)")
+let _ = list.fold(frame.to_records(df), null, fn(acc, r) {
+  sqlite.exec(db, str.concat([
+    "INSERT INTO cities VALUES ('", r.city, "', ", str.from(r.population), ", ", str.from(r.area), ")"
+  ]))
+})
+let result = sqlite.query(db, "SELECT city FROM cities ORDER BY population DESC LIMIT 1")
+list.get(result, 0).city

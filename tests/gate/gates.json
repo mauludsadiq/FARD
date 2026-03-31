@@ -143,6 +143,13 @@
       "kind": "run_expect_result",
       "program": "tests/gate/programs/g14_multi_source_pipeline.fard",
       "expect_result": "hardware"
+    },
+    {
+      "id": "G15_sqlite_pipeline",
+      "name": "G15_sqlite_pipeline",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g15_sqlite_pipeline.fard",
+      "expect_result": "Shanghai"
     }
   ]
 }
