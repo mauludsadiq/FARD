@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**18 Mar 2026 · v1.6.0 · fully audited against `src/bin/fardrun.rs`**
+**31 Mar 2026 · v1.6.0 · updated for data pipeline domain**
 
 This document covers the **fardrun** production dialect. All stdlib module contents
 verified directly from source — not inferred from prior documentation.
@@ -363,7 +363,7 @@ remain as `Unimplemented` — all other registered builtins are functional.
 
 `len`, `trim`, `split_lines`, `lower`, `toLower`, `upper`, `concat`, `split`,
 `contains`, `starts_with`, `ends_with`, `replace`, `slice`, `format`,
-`from_int`, `from_float`, `join`, `pad_left`, `pad_right`, `repeat`,
+`from_int`, `from_float`, `from`, `join`, `pad_left`, `pad_right`, `repeat`,
 `index_of`, `chars`
 
 > **Name note:** `lower` and `upper` are the correct names. `to_lower`/`to_upper`
@@ -372,10 +372,10 @@ remain as `Unimplemented` — all other registered builtins are functional.
 ### std/list
 
 `len`, `range`, `repeat`, `concat`, `group_by`, `fold`, `map`, `filter`,
-`get`, `head`, `tail`, `append`, `zip`, `reverse`, `flatten`, `set`,
+`get`, `head`, `tail`, `last`, `append`, `zip`, `reverse`, `flatten`, `set`,
 `any`, `all`, `find`, `find_index`, `take`, `drop`, `flat_map`, `par_map`,
 `zip_with`, `chunk`, `sort_by`, `sort_by_int_key`, `sort_int`,
-`dedupe_sorted_int`, `hist_int`
+`dedupe`, `dedupe_sorted_int`, `hist_int`
 
 ### std/rec
 
@@ -396,13 +396,13 @@ remain as `Unimplemented` — all other registered builtins are functional.
 ### std/int
 
 `add`, `eq`, `parse`, `pow`, `to_hex`, `to_bin`, `mul`, `div`, `sub`,
-`abs`, `min`, `max`, `to_text`, `from_text`, `neg`, `clamp`, `mod`,
+`abs`, `min`, `max`, `to_text`, `to_string`, `from_text`, `neg`, `clamp`, `mod`,
 `lt`, `gt`, `le`, `ge`, `to_str_padded`
 
 > **Alias restriction:** `import("std/int") as int` is rejected. Use any other alias.
 
 ### std/float
-
+`from_int`, `to_int`, `from_text`, `to_text`, `parse`, `add`, `sub`, `mul`, `div`,
 `from_int`, `to_int`, `from_text`, `to_text`, `add`, `sub`, `mul`, `div`,
 `exp`, `ln`, `sqrt`, `pow`, `abs`, `neg`, `floor`, `ceil`, `round`,
 `lt`, `gt`, `le`, `ge`, `eq`, `nan`, `inf`, `is_nan`, `is_finite`, `min`, `max`
@@ -431,8 +431,8 @@ Constants: `pi`, `e`, `inf` (registered as `Val::Float` values, not functions)
 
 ### std/bytes
 
-`concat`, `to_str`, `len`, `get`, `of_list`, `to_list`, `of_str`, `merkle_root`
-
+`concat`, `to_str`, `to_string`, `from_string`, `len`, `get`, `of_list`, `to_list`,
+`of_str`, `merkle_root`, `eq`, `to_hex`, `to_base64`, `from_hex`, `from_base64`, `slice`
 ### std/codec
 
 `base64url_encode`, `base64url_encode_hex`, `base64url_decode`,
@@ -516,9 +516,31 @@ Returns hex string prefixed `sha256:`.
 
 ### std/chan
 
-`new`, `send`, `recv`, `try_recv`, `close`
+`new`, `send`, `recv`, `try_recv`, `close`, `is_closed`
 
 ### std/mutex
+
+### std/sqlite
+
+`open`, `exec`, `query`, `close`
+
+> `sqlite.open(path)` — returns a db handle record. Use `":memory:"` for in-memory.
+> `sqlite.exec(db, sql)` — execute DDL/DML, returns db handle.
+> `sqlite.query(db, sql)` — returns list of records.
+
+### std/menv
+
+`new`, `set`, `get`, `has`, `child`, `call_eval`, `apply_closure`
+
+> Mutable environment used for self-hosting bootstrap. `menv.set` returns `Unit`.
+> `menv.call_eval(body, env, eval_fn)` — evaluates FIR body natively.
+
+### std/async
+
+`sleep`, `spawn`, `await`, `all`, `resolved`, `rejected`, `yield`, `race`, `timeout`
+
+> Stub implementation — operations complete synchronously in current runtime.
+
 
 `new`, `lock`, `unlock`, `with_lock`
 
@@ -648,6 +670,14 @@ Returns hex string prefixed `sha256:`.
 1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`**, not the previously documented API.
 1. **`Val` field is `Text` not `Str`.** The runtime type name is `"text"`, returned by `type.of()`.
 
+1. **`str.from(v)` converts any scalar to string.** `str.from(42)` → `"42"`. Do not use `cast.text` for number-to-string — it converts to unicode codepoint char.
+1. **`float + int` is a type error.** Use `cast.float(int_val)` to upcast before mixed arithmetic.
+1. **`list.find` returns `{some: value}` or `{none: unit}`.** Access value with `.some`, not `.data` or `.value`.
+1. **`menv.set` returns `Unit`.** Never use it in value position. Always `let _ = menv.set(...)`.
+1. **`and`/`or` are not keywords.** Use nested `if/then/else` for boolean combination.
+1. **`&&` is lexed but not evaluated.** Use nested `if/then/else` instead.
+1. **CSV values are type-inferred.** `csv.parse_csv` calls `int.parse` and `float.parse` on each cell. Numbers come back as `Int` or `Float`, not `Text`.
+1. **SQLite exec is per-connection.** `sqlite.open` on a file path creates a new connection each call. Use a single `db` handle throughout a pipeline.
 -----
 
 *Audited against fardrun v1.6.0. Canonical source: `src/bin/fardrun.rs`.*
