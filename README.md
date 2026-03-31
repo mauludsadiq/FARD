@@ -734,11 +734,30 @@ CID(bytes) = "sha256:" || hex(SHA256(bytes))
 ```
 
 -----
+## Data Pipeline Domain
+
+FARD has a complete data pipeline stack. Write code normally. Every run produces a cryptographic proof.
+
+
+
+
+
+| Package | Capability |
+|---|---|
+|  | CSV parse/serialize with type inference |
+|  | filter, select, map, sort, group_by, join, aggregate |
+|  | Persist to SQLite, query with SQL |
+|  | Fetch JSON from APIs |
+|  | Read/write files |
+|  | Show execution proof on demand |
+
+**Gates G11-G15:** self-hosting, CSV pipelines, multi-source joins, SQLite persistence.
+
+-----
 
 ## Self-Verifying
 
-313 tests across 36 files, all written in pure FARD:
-
+98 package tests + gate suite, all written in pure FARD:
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
 ```
