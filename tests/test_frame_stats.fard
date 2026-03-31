@@ -1,0 +1,45 @@
+import("../packages/frame-memory/main") as frame
+import("../packages/data-csv/main") as csv
+import("std/list") as list
+import("std/rec") as rec
+import("std/cast") as cast
+
+let data_csv = "product,category,units,price,region
+A,electronics,100,29.99,north
+B,electronics,50,49.99,south
+C,tools,200,14.99,north
+D,tools,150,24.99,south
+E,electronics,75,39.99,north
+F,tools,300,9.99,south"
+
+let df = frame.from_records(csv.parse_csv(data_csv))
+
+// value_counts equivalent
+let by_cat = frame.group_by(df, "category")
+let counts = list.map(by_cat, fn(g) { { category: g.key, count: frame.count(g.rows) } })
+test "value counts" { list.len(counts) == 2 }
+
+// describe equivalent - min, max, mean for a column
+let prices = frame.get_column(df, "price")
+test "min price" { frame.min_col(df, "price") == 9.99 }
+test "max price" { frame.max_col(df, "price") == 49.99 }
+test "mean price" { frame.mean(df, "price") > 20.0 }
+
+// pivot equivalent - group by two dimensions
+let by_region_cat = list.flat_map(
+  frame.group_by(df, "region"),
+  fn(rg) {
+    list.map(
+      frame.group_by(rg.rows, "category"),
+      fn(cg) { { region: rg.key, category: cg.key, total_units: frame.sum(cg.rows, "units") } }
+    )
+  }
+)
+test "pivot rows" { list.len(by_region_cat) == 4 }
+
+// revenue column
+let with_revenue = frame.map_rows(df, fn(r) {
+  rec.set(r, "revenue", cast.float(r.units) * r.price)
+})
+test "revenue col" { frame.has_column(with_revenue, "revenue") }
+test "total revenue" { frame.sum(with_revenue, "revenue") > 10000.0 }
