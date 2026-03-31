@@ -1,0 +1,30 @@
+import("../packages/frame-memory/main") as frame
+import("../packages/data-csv/main") as csv
+import("std/list") as list
+import("std/rec") as rec
+
+let employees_csv = "id,name,dept_id,salary
+1,Alice,10,95000
+2,Bob,20,72000
+3,Carol,10,110000
+4,Dave,20,68000
+5,Eve,10,88000"
+
+let departments_csv = "id,dept_name,budget
+10,Engineering,500000
+20,Marketing,200000
+30,HR,150000"
+
+let emp = frame.from_records(csv.parse_csv(employees_csv))
+let dept = frame.from_records(csv.parse_csv(departments_csv))
+
+test "emp loaded" { frame.nrows(emp) == 5 }
+test "dept loaded" { frame.nrows(dept) == 3 }
+
+let dept2 = frame.rename(dept, "id", "dept_id")
+let joined = frame.join(emp, dept2, "dept_id")
+test "join produces rows" { frame.nrows(joined) > 0 }
+
+let eng = frame.filter(joined, fn(r) { r.dept_name == "Engineering" })
+test "eng count" { frame.nrows(eng) == 3 }
+test "eng avg salary" { frame.mean(eng, "salary") > 90000.0 }
