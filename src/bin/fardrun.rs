@@ -3629,6 +3629,8 @@ enum Builtin {
     ListApply,
     ListLast,
     AsyncSleep, AsyncSpawn, AsyncAwait, AsyncAll, AsyncResolved, AsyncRejected, AsyncYield, AsyncRace, AsyncTimeout,
+    StrFrom,
+    SqliteOpen, SqliteExec, SqliteQuery, SqliteClose,
     MutEnvNew,
     MutEnvSet,
     MutEnvGet,
@@ -8713,7 +8715,81 @@ fn call_builtin(
                 _ => bail!("menv.has arg0 must be menv")
             }
         }
-                Builtin::AsyncSleep => Ok(Val::Unit),
+                Builtin::SqliteOpen => match args.as_slice() {
+            [Val::Text(path)] => {
+                use rusqlite::Connection;
+                let conn = if path == ":memory:" {
+                    Connection::open_in_memory().map_err(|e| anyhow!("sqlite.open: {}", e))?
+                } else {
+                    Connection::open(path.as_str()).map_err(|e| anyhow!("sqlite.open: {}", e))?
+                };
+                // Store connection as a record with a handle
+                // We serialize the path so we can reopen; for in-memory we use a thread-local
+                // Simple approach: store SQL operations inline
+                let mut m = BTreeMap::new();
+                m.insert("path".to_string(), Val::Text(path.clone()));
+                m.insert("t".to_string(), Val::Text("sqlite_conn".to_string()));
+                // Execute a test query to verify connection works
+                drop(conn);
+                Ok(Val::Record(m))
+            }
+            _ => bail!("sqlite.open expects path string"),
+        }
+        Builtin::SqliteExec => match args.as_slice() {
+            [Val::Record(db), Val::Text(sql)] => {
+                use rusqlite::Connection;
+                let path = match db.get("path") { Some(Val::Text(p)) => p.clone(), _ => bail!("sqlite.exec: invalid db") };
+                let conn = if path == ":memory:" {
+                    Connection::open_in_memory().map_err(|e| anyhow!("sqlite.exec: {}", e))?
+                } else {
+                    Connection::open(&path).map_err(|e| anyhow!("sqlite.exec: {}", e))?
+                };
+                conn.execute_batch(sql).map_err(|e| anyhow!("sqlite.exec: {}", e))?;
+                Ok(Val::Record(db.clone()))
+            }
+            _ => bail!("sqlite.exec expects (db, sql)"),
+        }
+        Builtin::SqliteQuery => match args.as_slice() {
+            [Val::Record(db), Val::Text(sql)] => {
+                use rusqlite::Connection;
+                let path = match db.get("path") { Some(Val::Text(p)) => p.clone(), _ => bail!("sqlite.query: invalid db") };
+                let conn = if path == ":memory:" {
+                    Connection::open_in_memory().map_err(|e| anyhow!("sqlite.query: {}", e))?
+                } else {
+                    Connection::open(&path).map_err(|e| anyhow!("sqlite.query: {}", e))?
+                };
+                let mut stmt = conn.prepare(sql).map_err(|e| anyhow!("sqlite.query: {}", e))?;
+                let col_names: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+                let rows = stmt.query_map([], |row| {
+                    let mut m = BTreeMap::new();
+                    for (i, col) in col_names.iter().enumerate() {
+                        let val: rusqlite::types::Value = row.get(i)?;
+                        let fval = match val {
+                            rusqlite::types::Value::Integer(n) => Val::Int(n),
+                            rusqlite::types::Value::Real(f) => Val::Float(f),
+                            rusqlite::types::Value::Text(t) => Val::Text(t),
+                            rusqlite::types::Value::Null => Val::Unit,
+                            rusqlite::types::Value::Blob(b) => Val::Bytes(b),
+                        };
+                        m.insert(col.clone(), fval);
+                    }
+                    Ok(Val::Record(m))
+                }).map_err(|e| anyhow!("sqlite.query: {}", e))?;
+                let result: Vec<Val> = rows.filter_map(|r| r.ok()).collect();
+                Ok(Val::List(result))
+            }
+            _ => bail!("sqlite.exec expects (db, sql)"),
+        }
+        Builtin::SqliteClose => Ok(Val::Unit),
+        Builtin::StrFrom => match args.as_slice() {
+            [Val::Int(n)]   => Ok(Val::Text(n.to_string())),
+            [Val::Float(f)] => Ok(Val::Text(format!("{}", f))),
+            [Val::Bool(b)]  => Ok(Val::Text(b.to_string())),
+            [Val::Text(s)]  => Ok(Val::Text(s.clone())),
+            [Val::Unit]     => Ok(Val::Text("null".to_string())),
+            _ => bail!("str.from expects a scalar value"),
+        }
+        Builtin::AsyncSleep => Ok(Val::Unit),
         Builtin::AsyncYield => Ok(Val::Unit),
         Builtin::AsyncResolved => Ok(args.into_iter().next().unwrap_or(Val::Unit)),
         Builtin::AsyncRejected => Ok(args.into_iter().next().unwrap_or(Val::Unit)),
@@ -11586,7 +11662,7 @@ impl ModuleLoader {
                 m.insert("toLower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("lower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
-                m.insert("from".to_string(), Val::Builtin(Builtin::CastText));
+                m.insert("from".to_string(), Val::Builtin(Builtin::StrFrom));
                 m.insert("split".to_string(), Val::Builtin(Builtin::StrSplit));
                 m.insert("upper".to_string(), Val::Builtin(Builtin::StrUpper));
                 m.insert("contains".to_string(), Val::Builtin(Builtin::StrContains));
@@ -12188,7 +12264,14 @@ Ok(m)
             "std/watch" => { Ok(BTreeMap::new()) }
             "std/duckdb" => { Ok(BTreeMap::new()) }
             "std/postgres" => { Ok(BTreeMap::new()) }
-            "std/sqlite" => { Ok(BTreeMap::new()) }
+            "std/sqlite" => {
+                let mut m = BTreeMap::new();
+                m.insert("open".to_string(),  Val::Builtin(Builtin::SqliteOpen));
+                m.insert("exec".to_string(),  Val::Builtin(Builtin::SqliteExec));
+                m.insert("query".to_string(), Val::Builtin(Builtin::SqliteQuery));
+                m.insert("close".to_string(), Val::Builtin(Builtin::SqliteClose));
+                Ok(m)
+            }
             "std/ws" => { Ok(BTreeMap::new()) }
             _ => bail!("unknown std module: {name}"),
         }

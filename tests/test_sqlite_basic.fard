@@ -1,0 +1,16 @@
+import("std/sqlite") as sqlite
+import("std/list") as list
+import("std/rec") as rec
+
+let db = sqlite.open("/tmp/fard_test.db")
+test "db open" { db.t == "sqlite_conn" }
+
+let _ = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER, name TEXT, score REAL)")
+let _ = sqlite.exec(db, "INSERT INTO users VALUES (1, 'Alice', 95.5)")
+let _ = sqlite.exec(db, "INSERT INTO users VALUES (2, 'Bob', 87.3)")
+let _ = sqlite.exec(db, "INSERT INTO users VALUES (3, 'Carol', 92.1)")
+
+let rows = sqlite.query(db, "SELECT * FROM users ORDER BY score DESC")
+test "row count" { list.len(rows) == 3 }
+test "top scorer" { list.get(rows, 0).name == "Alice" }
+test "score type" { list.get(rows, 0).score == 95.5 }
