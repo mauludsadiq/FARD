@@ -332,7 +332,7 @@ named_type      = ident , [ "<" , type , { "," , type } , ">" ] ;
 |`Int(i64)`                    |64-bit signed integer                                                   |
 |`Float(f64)`                  |Produced only by `json.decode` on JSON floats or `std/math` constants   |
 |`Text(String)`                |UTF-8 text (note: field is `Text`, not `Str`)                           |
-|`Bytes(Vec<u8>)`              |Raw bytes; used by `std/float` (IEEE 754 LE); produced by float literals|
+|`Bytes(Vec<u8>)`              |Raw bytes — produced by `std/bytes` operations. Not used for floats.                  |
 |`List(Vec<Val>)`              |Ordered list                                                            |
 |`Record(BTreeMap<String,Val>)`|Record with sorted string keys                                          |
 |`Err { code, data }`          |Error value with string code and data payload                           |
@@ -344,9 +344,7 @@ named_type      = ident , [ "<" , type , { "," , type } , ">" ] ;
 |`Big(BigInt)`                 |Arbitrary-precision integer (`std/bigint`)                              |
 |`Promise`                     |Async promise (`std/promise`)                                           |
 
-**Float gap:** `Val::Float` (from JSON decode or math constants like `math.pi`) and
-`Val::Bytes` (from source literals and `std/float` builtins) both represent floats.
-Both work with `float.*` builtins via `fb64_1`. They do NOT compare equal with `==`.
+**Float representation:** `Val::Float(f64)` is used consistently throughout. Float literals, JSON-decoded floats, and `std/float` results all produce `Val::Float`. No gap exists.
 
 **`Val::Text` not `Val::Str`:** The field is named `Text` in the current source,
 not `Str` as in earlier versions. The `type_name()` method returns `"text"` for
@@ -676,7 +674,7 @@ Returns hex string prefixed `sha256:`.
 1. **`Val` field is `Text` not `Str`.** The runtime type name is `"text"`, returned by `type.of()`.
 
 1. **`str.from(v)` converts any scalar to string.** `str.from(42)` → `"42"`. Do not use `cast.text` for number-to-string — it converts to unicode codepoint char.
-1. **`float + int` is a type error.** Use `cast.float(int_val)` to upcast before mixed arithmetic.
+1. **`float + int` is automatically promoted.** `1 + 0.5 == 1.5` works without explicit casting. `cast.float` is no longer needed for mixed arithmetic.
 1. **`list.find` returns `{some: value}` or `{none: unit}`.** Access value with `.some`, not `.data` or `.value`.
 1. **`menv.set` returns `Unit`.** Never use it in value position. Always `let _ = menv.set(...)`.
 1. **`and`/`or` are not keywords.** Use `&&` and `||` instead.
