@@ -1,0 +1,14 @@
+import("../../../packages/messenger/main") as msg
+import("std/list") as list
+import("std/chan")  as chan
+
+let bus   = chan.new()
+let alice = msg.node_new("alice")
+let bob   = msg.node_new("bob")
+
+let alice2 = msg.node_send(alice, msg.zero_digest(), { t: "draft_text", raw: "hello world" }, 1, bus)
+let bob2   = msg.node_poll(msg.node_new("bob"), bus)
+let parent = msg.node_last_digest(alice2)
+let alice3 = msg.node_send(alice2, parent, { t: "draft_text", raw: "reply" }, 2, bus)
+
+list.len(alice3.inbox)

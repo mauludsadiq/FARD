@@ -150,6 +150,13 @@
       "kind": "run_expect_result",
       "program": "tests/gate/programs/g15_sqlite_pipeline.fard",
       "expect_result": "Shanghai"
+    },
+    {
+      "id": "G16_messenger",
+      "name": "G16_messenger",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g16_messenger.fard",
+      "expect_result": 2
     }
   ]
 }
