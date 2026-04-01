@@ -1,0 +1,8 @@
+fn test_fn(x) {
+  if x > 0 then {
+    let y = x * 2
+    y + 1
+  } else
+    0
+}
+test "block let in if" { test_fn(5) == 11 }

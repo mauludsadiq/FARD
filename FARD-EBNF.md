@@ -654,7 +654,7 @@ Returns hex string prefixed `sha256:`.
 
 ## Known Parser Constraints
 
-1. **No `let` as direct body of `if/else` branch.** Extract to a helper function.
+1. **`let` inside `if/else` branches works in both forms.** `if c then let x = e in body` and `if c then { let x = e\n body }` both work correctly.
 1. **`[[…]]` as fn tail is FIXED.** The postfix parser now checks for newlines and
    literal bases before treating `[` as an index operator. `[[a, b], [c, d]]` works
    correctly as a tail expression.
