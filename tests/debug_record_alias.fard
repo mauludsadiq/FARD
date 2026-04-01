@@ -1,0 +1,6 @@
+import("std/record") as record
+import("std/rec") as rec
+let r = { x: 1, y: 2 }
+test "record has" { record.has(r, "x") }
+test "record get" { record.get(r, "x") == 1 }
+test "record keys" { record.keys(r) == ["x", "y"] }

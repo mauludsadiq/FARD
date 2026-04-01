@@ -12134,10 +12134,7 @@ Ok(m)
                 m.insert("serve".to_string(), Val::Builtin(Builtin::NetServe));
                 Ok(m)
             }
-            "std/record" => {
-                let m: BTreeMap<String, Val> = BTreeMap::new();
-                Ok(m)
-            }
+            "std/record" => { self.builtin_std("std/rec") }
 
             "std/png" => {
                 let mut m = BTreeMap::new();
