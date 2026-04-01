@@ -1,0 +1,64 @@
+// messenger node server — HTTP transport for the messenger kernel
+// POST /send   {evidence, parent, timestamp} -> {digest}
+// GET  /inbox  -> [{digest, sender, content, timestamp}]
+// GET  /health -> "ok"
+
+import("../messenger/main") as msg
+import("std/net")    as net
+import("std/sqlite") as sqlite
+import("std/json")   as json
+import("std/str")    as str
+import("std/list")   as list
+import("std/rec")    as rec
+
+let db = sqlite.open("/tmp/fard_messenger.db")
+let _ = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS inbox (
+  digest TEXT PRIMARY KEY,
+  sender TEXT,
+  parent TEXT,
+  content TEXT,
+  signature TEXT,
+  timestamp INTEGER
+)")
+
+fn store_msg(m) {
+  sqlite.exec(db, str.concat([
+    "INSERT OR IGNORE INTO inbox VALUES ('",
+    m.digest, "','", m.sender, "','", m.parent, "','",
+    json.encode(m.content), "','", m.signature, "',",
+    str.from(m.timestamp), ")"
+  ]))
+}
+
+fn load_inbox() {
+  let rows = sqlite.query(db, "SELECT digest,sender,parent,content,signature,timestamp FROM inbox ORDER BY timestamp") in
+  list.map(rows, fn(r) {
+    { digest: r.digest, sender: r.sender, parent: r.parent,
+      content: json.decode(r.content), signature: r.signature,
+      timestamp: r.timestamp }
+  })
+}
+
+fn handle(req) {
+  if req.path == "/health" then
+    { status: 200, headers: {}, body: "ok" }
+  else if req.path == "/inbox" then
+    { status: 200, headers: {}, body: json.encode(load_inbox()) }
+  else if req.path == "/send" then
+    let body = json.decode(req.body) in
+    let evidence = rec.get(body, "evidence") in
+    let parent = if rec.has(body, "parent") then rec.get(body, "parent") else msg.zero_digest() in
+    let timestamp = if rec.has(body, "timestamp") then rec.get(body, "timestamp") else 0 in
+    let sender = if rec.has(body, "sender") then rec.get(body, "sender") else "anonymous" in
+    let content = msg.collapse(evidence) in
+    let m = msg.assemble(sender, parent, content, timestamp) in
+    if msg.verify_digest_msg(m) then
+      let _ = store_msg(m) in
+      { status: 200, headers: {}, body: json.encode({ digest: m.digest, ok: true }) }
+    else
+      { status: 400, headers: {}, body: json.encode({ ok: false, error: "verification failed" }) }
+  else
+    { status: 404, headers: {}, body: "not found" }
+}
+
+let _ = net.serve(8421, fn(req) { handle(req) })

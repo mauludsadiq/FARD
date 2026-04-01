@@ -1,0 +1,13 @@
+import("../packages/messenger/main") as msg
+import("std/sqlite") as sqlite
+import("std/list")   as list
+import("std/json")   as json
+
+let db = sqlite.open("/tmp/messenger_node.db")
+let rows = sqlite.query(db, "SELECT digest, sender, parent, content, signature, timestamp FROM inbox ORDER BY timestamp")
+let inbox = list.map(rows, fn(r) {
+  { digest: r.digest, sender: r.sender, parent: r.parent,
+    content: json.decode(r.content), signature: r.signature, timestamp: r.timestamp }
+})
+
+list.len(inbox)

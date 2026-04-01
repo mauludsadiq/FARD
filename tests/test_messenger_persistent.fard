@@ -1,0 +1,36 @@
+import("../packages/messenger/main") as msg
+import("std/sqlite") as sqlite
+import("std/list")   as list
+import("std/rec")    as rec
+import("std/json")   as json
+import("std/str")    as str
+
+let db = sqlite.open("/tmp/messenger_node.db")
+let _ = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS inbox (digest TEXT PRIMARY KEY, sender TEXT, parent TEXT, content TEXT, signature TEXT, timestamp INTEGER)")
+
+fn store_msg(db, m) {
+  sqlite.exec(db, str.concat([
+    "INSERT OR IGNORE INTO inbox VALUES ('", m.digest, "','", m.sender,
+    "','", m.parent, "','", json.encode(m.content), "','", m.signature,
+    "',", str.from(m.timestamp), ")"
+  ]))
+}
+
+fn load_inbox(db) {
+  let rows = sqlite.query(db, "SELECT digest, sender, parent, content, signature, timestamp FROM inbox ORDER BY timestamp") in
+  list.map(rows, fn(r) {
+    { digest: r.digest, sender: r.sender, parent: r.parent,
+      content: json.decode(r.content), signature: r.signature, timestamp: r.timestamp }
+  })
+}
+
+// Send a message
+let ev = { t: "draft_text", raw: "hello persistent world" }
+let m  = msg.assemble("alice", msg.zero_digest(), msg.collapse(ev), 1000)
+let _  = store_msg(db, m)
+
+// Load back and verify
+let inbox = load_inbox(db)
+test "persisted" { list.len(inbox) >= 1 }
+test "content survives" { list.get(inbox, 0).content.canonical_text == "hello persistent world" }
+test "digest intact" { msg.verify_digest_msg(list.get(inbox, 0)) }
