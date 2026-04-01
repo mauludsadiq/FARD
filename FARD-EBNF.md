@@ -679,8 +679,8 @@ Returns hex string prefixed `sha256:`.
 1. **`float + int` is a type error.** Use `cast.float(int_val)` to upcast before mixed arithmetic.
 1. **`list.find` returns `{some: value}` or `{none: unit}`.** Access value with `.some`, not `.data` or `.value`.
 1. **`menv.set` returns `Unit`.** Never use it in value position. Always `let _ = menv.set(...)`.
-1. **`and`/`or` are not keywords.** Use nested `if/then/else` for boolean combination.
-1. **`&&` is lexed but not evaluated.** Use nested `if/then/else` instead.
+1. **`and`/`or` are not keywords.** Use `&&` and `||` instead.
+1. **`&&` and `||` are fully implemented** with short-circuit evaluation. `if x > 0 && x < 10` works correctly. Previously documented as broken — now fixed.
 1. **CSV values are type-inferred.** `csv.parse_csv` calls `int.parse` and `float.parse` on each cell. Numbers come back as `Int` or `Float`, not `Text`.
 1. **SQLite exec is per-connection.** `sqlite.open` on a file path creates a new connection each call. Use a single `db` handle throughout a pipeline.
 -----
