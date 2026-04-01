@@ -382,11 +382,16 @@ remain as `Unimplemented` — all other registered builtins are functional.
 `empty`, `keys`, `values`, `has`, `get`, `getOr`, `getOrErr`, `set`,
 `remove`, `merge`, `select`, `rename`, `update`
 
+> **`rec.get` behavior:** returns `Unit` (null) for missing keys — silent, no error.
+> Use `rec.has(r, key)` before `rec.get` when key presence is uncertain.
+> Use `rec.getOr(r, key, default)` for safe access with a fallback value.
+> Use `rec.getOrErr(r, key)` to get an error value on missing key.
+
 ### std/map
 
 `get`, `set`, `keys`, `values`, `has`, `delete`, `entries`, `new`, `from_entries`
 
-> `std/record` — imports successfully but returns empty map. Use `std/rec` or `std/map`.
+> `std/record` — now aliases `std/rec`. Both work identically.
 
 ### std/set
 
@@ -660,7 +665,7 @@ Returns hex string prefixed `sha256:`.
 1. **`!=` IS implemented** — lexed as a two-char operator. Use it directly.
 1. **`\r` not a valid escape.** Only `\n \t \" \\` accepted.
 1. **`str.to_lower`/`str.to_upper` don’t exist.** Use `str.lower`/`str.upper`.
-1. **`list.find` returns `{some: value}` or `{none: null}`.** Check with `rec.has(r, "some")`.
+1. **`list.find` returns `{some: value}` or `{none: unit}`.** Check with `rec.has(r, "some")` or access `.some` directly. There is no `.data` or `.value` field.
 1. **`list.concat` takes one argument** — a list of lists.
 1. **`rec.remove` not `rec.delete`.**
 1. **`int` is a reserved alias.** Use any other name.
