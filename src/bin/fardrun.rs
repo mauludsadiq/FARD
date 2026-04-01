@@ -4482,6 +4482,15 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             }
         }
         Expr::Bin(op, a, b) => {
+            // Short-circuit operators
+            if op == "&&" {
+                let x = eval(a, env, tracer, loader)?;
+                return match x { Val::Bool(false) => Ok(Val::Bool(false)), _ => eval(b, env, tracer, loader) };
+            }
+            if op == "||" {
+                let x = eval(a, env, tracer, loader)?;
+                return match x { Val::Bool(true) => Ok(Val::Bool(true)), _ => eval(b, env, tracer, loader) };
+            }
             let x = eval(a, env, tracer, loader)?;
             let y = eval(b, env, tracer, loader)?;
             match (op.as_str(), x, y) {
@@ -4495,6 +4504,27 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 ("/", Val::Float(l), Val::Float(r)) => Ok(Val::Float(l / r)),
                 ("<", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l < r)),
                 (">", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l > r)),
+                // Int+Float promotion — int is automatically upcast to float
+                ("+", Val::Int(l), Val::Float(r)) => Ok(Val::Float(l as f64 + r)),
+                ("+", Val::Float(l), Val::Int(r)) => Ok(Val::Float(l + r as f64)),
+                ("-", Val::Int(l), Val::Float(r)) => Ok(Val::Float(l as f64 - r)),
+                ("-", Val::Float(l), Val::Int(r)) => Ok(Val::Float(l - r as f64)),
+                ("*", Val::Int(l), Val::Float(r)) => Ok(Val::Float(l as f64 * r)),
+                ("*", Val::Float(l), Val::Int(r)) => Ok(Val::Float(l * r as f64)),
+                ("/", Val::Int(l), Val::Float(r)) => Ok(Val::Float(l as f64 / r)),
+                ("/", Val::Float(l), Val::Int(r)) => Ok(Val::Float(l / r as f64)),
+                ("<", Val::Int(l), Val::Float(r)) => Ok(Val::Bool((l as f64) < r)),
+                ("<", Val::Float(l), Val::Int(r)) => Ok(Val::Bool(l < r as f64)),
+                (">", Val::Int(l), Val::Float(r)) => Ok(Val::Bool((l as f64) > r)),
+                (">", Val::Float(l), Val::Int(r)) => Ok(Val::Bool(l > r as f64)),
+                ("<=", Val::Int(l), Val::Float(r)) => Ok(Val::Bool((l as f64) <= r)),
+                ("<=", Val::Float(l), Val::Int(r)) => Ok(Val::Bool(l <= r as f64)),
+                (">=", Val::Int(l), Val::Float(r)) => Ok(Val::Bool((l as f64) >= r)),
+                (">=", Val::Float(l), Val::Int(r)) => Ok(Val::Bool(l >= r as f64)),
+                ("==", Val::Int(l), Val::Float(r)) => Ok(Val::Bool((l as f64) == r)),
+                ("==", Val::Float(l), Val::Int(r)) => Ok(Val::Bool(l == r as f64)),
+                ("!=", Val::Int(l), Val::Float(r)) => Ok(Val::Bool((l as f64) != r)),
+                ("!=", Val::Float(l), Val::Int(r)) => Ok(Val::Bool(l != r as f64)),
                 ("<=", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l <= r)),
                 (">=", Val::Float(l), Val::Float(r)) => Ok(Val::Bool(l >= r)),
                 ("==", l, r) => {

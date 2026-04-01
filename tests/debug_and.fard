@@ -1,0 +1,5 @@
+test "and true" { true && true }
+test "and false" { true && false == false }
+test "and short circuit" { (false && true) == false }
+test "or true" { false || true }
+test "or short circuit" { true || (1/0 == 0) }

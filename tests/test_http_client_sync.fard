@@ -1,6 +1,6 @@
 import("../packages/http-client-sync/main") as client
 
-test "is_ok 200"   { client.is_ok({ status: 200, headers: {}, body: "" }) == true }
-test "is_ok 404"   { client.is_ok({ status: 404, headers: {}, body: "" }) == false }
+test "is_ok 200"   { client.ok({ status: 200, headers: {}, body: "" }) == true }
+test "is_ok 404"   { client.ok({ status: 404, headers: {}, body: "" }) == false }
 test "status"      { client.status({ status: 201, headers: {}, body: "" }) == 201 }
 test "body"        { client.body({ status: 200, headers: {}, body: "hello" }) == "hello" }

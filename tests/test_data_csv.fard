@@ -7,6 +7,6 @@ let rows = csv.parse_csv(text)
 
 test "row count"      { list.len(rows) == 2 }
 test "first name"     { rec.get(list.get(rows, 0), "name") == "alice" }
-test "second age"     { rec.get(list.get(rows, 1), "age") == "25" }
+test "second age"     { rec.get(list.get(rows, 1), "age") == 25 }
 test "roundtrip rows" { list.len(csv.parse_csv(csv.serialize_csv(rows))) == 2 }
 test "empty parse"    { csv.parse_csv("") == [] }

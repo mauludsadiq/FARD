@@ -1,0 +1,9 @@
+import("std/type") as type
+let x = 1.5
+let y = 3.14
+test "float type" { type.of(x) == "float" }
+test "float eq" { x == 1.5 }
+test "float add" { x + y > 4.6 }
+test "float compare" { x < y }
+test "json float same type" { type.of(1.5) == type.of(x) }
+test "int plus float works" { 1 + 0.5 == 1.5 }
