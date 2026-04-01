@@ -1,0 +1,5 @@
+import("../packages/frame-memory/main") as frame
+import("std/list") as list
+let df = frame.from_records([{x:1},{x:2},{x:3}])
+let n = df |> frame.nrows
+test "pipe frame" { n == 3 }

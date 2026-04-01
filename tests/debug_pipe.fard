@@ -1,0 +1,2 @@
+let r = [1,2,3] |> list.len
+test "pipe" { r == 3 }

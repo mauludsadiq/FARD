@@ -1,0 +1,2 @@
+import("std/int") as int
+test "int alias" { int.parse("42").v == 42 }

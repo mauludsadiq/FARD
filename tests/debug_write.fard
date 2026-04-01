@@ -1,0 +1,6 @@
+import("std/io") as io
+import("std/rec") as rec
+let r = io.write_file("/tmp/fard_test_out.csv", "name,age\nAlice,32\n")
+test "write ok" { rec.has(r, "ok") }
+let r2 = io.read_file("/tmp/fard_test_out.csv")
+test "read back" { r2.ok == "name,age\nAlice,32\n" }

@@ -1,0 +1,5 @@
+import("std/rec") as rec
+import("std/type") as type
+let r = { x: 1 }
+test "get existing" { rec.get(r, "x") == 1 }
+test "get missing" { type.of(rec.get(r, "z")) == "unit" }
