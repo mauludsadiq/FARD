@@ -1,0 +1,117 @@
+// messenger peer node — P2P messenger with peer discovery and forwarding
+// Each node knows its peers and forwards messages to them
+// POST /send          {sender, evidence, parent, timestamp} -> {digest}
+// POST /receive       {message} -> {ok}  (peer-to-peer delivery)
+// GET  /inbox         -> [messages]
+// GET  /peers         -> [peer_urls]
+// POST /peers/add     {url} -> {ok}
+// GET  /health        -> {ok, node_id, peer_count, message_count}
+
+import("../messenger/main") as msg
+import("std/net")           as net
+import("std/http")          as http
+import("std/sqlite")        as sqlite
+import("std/json")          as json
+import("std/str")           as str
+import("std/list")          as list
+import("std/rec")           as rec
+import("std/env")           as env
+import("std/int")           as ints
+
+let node_id = if rec.has(env.get("FARD_NODE_ID"), "some") then env.get("FARD_NODE_ID").some else "node-1"
+let port_str = if rec.has(env.get("FARD_PORT"), "some") then env.get("FARD_PORT").some else "8421"
+let port = ints.parse(port_str).v
+
+let db_path = str.concat(["/tmp/fard_node_", node_id, ".db"])
+let db = sqlite.open(db_path)
+
+let _ = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS inbox (
+  digest TEXT PRIMARY KEY, sender TEXT, parent TEXT,
+  content TEXT, signature TEXT, timestamp INTEGER
+)")
+let _ = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS peers (
+  url TEXT PRIMARY KEY
+)")
+
+fn store_msg(m) {
+  sqlite.exec(db, str.concat([
+    "INSERT OR IGNORE INTO inbox VALUES ('",
+    m.digest, "','", m.sender, "','", m.parent, "','",
+    json.encode(m.content), "','", m.signature, "',",
+    str.from(m.timestamp), ")"
+  ]))
+}
+
+fn load_inbox() {
+  let rows = sqlite.query(db, "SELECT digest,sender,parent,content,signature,timestamp FROM inbox ORDER BY timestamp") in
+  list.map(rows, fn(r) {
+    { digest: r.digest, sender: r.sender, parent: r.parent,
+      content: json.decode(r.content), signature: r.signature, timestamp: r.timestamp }
+  })
+}
+
+fn load_peers() {
+  list.map(sqlite.query(db, "SELECT url FROM peers"), fn(r) { r.url })
+}
+
+fn add_peer(url) {
+  sqlite.exec(db, str.concat(["INSERT OR IGNORE INTO peers VALUES ('", url, "')"]))
+}
+
+fn forward_to_peers(m) {
+  let peers = load_peers() in
+  list.fold(peers, null, fn(acc, peer_url) {
+    let _ = http.post(str.concat([peer_url, "/receive"]), json.encode(m)) in
+    null
+  })
+}
+
+fn handle(req) {
+  if req.path == "/health" then
+    let inbox = load_inbox() in
+    let peers = load_peers() in
+    { status: 200, headers: {}, body: json.encode({
+        ok: true, node_id: node_id,
+        peer_count: list.len(peers),
+        message_count: list.len(inbox)
+      }) }
+
+  else if req.path == "/inbox" then
+    { status: 200, headers: {}, body: json.encode(load_inbox()) }
+
+  else if req.path == "/peers" then
+    { status: 200, headers: {}, body: json.encode(load_peers()) }
+
+  else if req.path == "/peers/add" then
+    let body = json.decode(req.body) in
+    let _ = add_peer(body.url) in
+    { status: 200, headers: {}, body: json.encode({ ok: true }) }
+
+  else if req.path == "/send" then
+    let body = json.decode(req.body) in
+    let evidence  = body.evidence in
+    let parent    = if rec.has(body, "parent") then body.parent else msg.zero_digest() in
+    let timestamp = if rec.has(body, "timestamp") then body.timestamp else 0 in
+    let sender    = if rec.has(body, "sender") then body.sender else "anonymous" in
+    let content   = msg.collapse(evidence) in
+    let m         = msg.assemble(sender, parent, content, timestamp) in
+    if msg.verify_digest_msg(m) then
+      let _ = store_msg(m) in
+      let _ = forward_to_peers(m) in
+      { status: 200, headers: {}, body: json.encode({ digest: m.digest, ok: true }) }
+    else
+      { status: 400, headers: {}, body: json.encode({ ok: false, error: "verification failed" }) }
+
+  else if req.path == "/receive" then
+    let m = json.decode(req.body) in
+    if msg.verify_digest_msg(m) then
+      let _ = store_msg(m) in
+      { status: 200, headers: {}, body: json.encode({ ok: true, digest: m.digest }) }
+    else
+      { status: 400, headers: {}, body: json.encode({ ok: false, error: "invalid message" }) }
+
+  else
+    { status: 404, headers: {}, body: "not found" }
+}
+
+let _ = net.serve(port, fn(req) { handle(req) })
