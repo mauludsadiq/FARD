@@ -361,7 +361,7 @@ remain as `Unimplemented` — all other registered builtins are functional.
 
 ### std/str
 
-`len`, `trim`, `split_lines`, `lower`, `toLower`, `upper`, `concat`, `split`,
+`len`, `trim`, `split_lines`, `lower`, `to_lower`, `toLower`, `upper`, `to_upper`, `toUpper`, `concat`, `split`,
 `contains`, `starts_with`, `ends_with`, `replace`, `slice`, `format`,
 `from_int`, `from_float`, `from`, `join`, `pad_left`, `pad_right`, `repeat`,
 `index_of`, `chars`
@@ -404,7 +404,7 @@ remain as `Unimplemented` — all other registered builtins are functional.
 `abs`, `min`, `max`, `to_text`, `to_string`, `from_text`, `neg`, `clamp`, `mod`,
 `lt`, `gt`, `le`, `ge`, `to_str_padded`
 
-> **Alias restriction:** `import("std/int") as int` is rejected. Use any other alias.
+> **Note:** `import("std/int") as int` works correctly. `int` is not a reserved alias.
 
 ### std/float
 `from_int`, `to_int`, `from_text`, `to_text`, `parse`, `add`, `sub`, `mul`, `div`,
@@ -664,11 +664,11 @@ Returns hex string prefixed `sha256:`.
    `return`, or `}` (empty block). `then { k: v }` is still parsed as a record literal.
 1. **`!=` IS implemented** — lexed as a two-char operator. Use it directly.
 1. **`\r` not a valid escape.** Only `\n \t \" \\` accepted.
-1. **`str.to_lower`/`str.to_upper` don’t exist.** Use `str.lower`/`str.upper`.
+1. **`str.lower`, `str.to_lower`, `str.toLower` all work.** All three aliases exist for case conversion. Same for upper.
 1. **`list.find` returns `{some: value}` or `{none: unit}`.** Check with `rec.has(r, "some")` or access `.some` directly. There is no `.data` or `.value` field.
 1. **`list.concat` takes one argument** — a list of lists.
 1. **`rec.remove` not `rec.delete`.**
-1. **`int` is a reserved alias.** Use any other name.
+1. **`int` as import alias works.** `import("std/int") as int` is valid. Previously documented as reserved — this was incorrect.
 1. **Destructuring in `let`** — `let { a, b } = expr` works at top-level and in fn bodies. Shorthand `{ name }` without `: pat` binds to variable `name`. List destructuring `let [a, b] = list` is also supported.
 1. **Float literals are `Val::Float`.** `1.5` produces `Val::Float(1.5)`. Int+float arithmetic is automatically promoted: `1 + 0.5 == 1.5`. The previous documentation claiming float literals produce `Val::Bytes` was incorrect.
 1. **`std/compress` uses `gzip`/`gunzip`**, not `gzip_compress`/`gzip_decompress`.

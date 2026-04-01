@@ -11691,6 +11691,7 @@ impl ModuleLoader {
                 );
                 m.insert("toLower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("lower".to_string(), Val::Builtin(Builtin::StrToLower));
+                m.insert("to_lower".to_string(), Val::Builtin(Builtin::StrToLower));
                 m.insert("concat".to_string(), Val::Builtin(Builtin::StrConcat));
                 m.insert("from".to_string(), Val::Builtin(Builtin::StrFrom));
                 m.insert("split".to_string(), Val::Builtin(Builtin::StrSplit));
