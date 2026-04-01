@@ -1,0 +1,45 @@
+import("../packages/messenger/main") as msg
+import("std/list") as list
+import("std/chan")  as chan
+import("std/rec")  as rec
+
+// Create transport bus and two nodes
+let bus  = chan.new()
+let alice = msg.node_new("alice")
+let bob   = msg.node_new("bob")
+
+// Alice sends a text message
+let ev1 = { t: "draft_text", raw: "  hello   world  " }
+let alice2 = msg.node_send(alice, msg.zero_digest(), ev1, 1000, bus)
+
+test "alice inbox has message" { list.len(alice2.inbox) == 1 }
+test "text canonicalized" { list.get(alice2.inbox, 0).content.canonical_text == "hello world" }
+test "digest set" { list.get(alice2.inbox, 0).digest != "" }
+test "verify passes" { msg.verify_digest_msg(list.get(alice2.inbox, 0)) }
+
+// Bob polls and receives
+let bob2 = msg.node_poll(bob, bus)
+test "bob received" { list.len(bob2.inbox) == 1 }
+test "bob got same content" { list.get(bob2.inbox, 0).content.canonical_text == "hello world" }
+
+// Thread: alice replies to her own message
+let parent_digest = msg.node_last_digest(alice2)
+let ev2 = { t: "draft_text", raw: "this is a reply" }
+let alice3 = msg.node_send(alice2, parent_digest, ev2, 1001, bus)
+test "thread causal" { list.get(alice3.inbox, 1).parent == parent_digest }
+
+// Reputation: alice rewarded for accepted messages
+test "alice rep rewarded" { msg.rep_get(bob2.rep, "alice") > 0 }
+
+// Status receipt
+let ack_ev = { t: "status_intent", event: msg.status_delivered(parent_digest, 1002) }
+let bob3 = msg.node_send(bob2, msg.zero_digest(), ack_ev, 1002, bus)
+test "status in bob inbox" { list.len(bob3.inbox) == 2 }
+test "status event type" { list.get(bob3.inbox, 1).content.t == "status" }
+
+// Blob message
+let blob_digest = msg.compute_digest("fake-bytes-content")
+let blob_ev = { t: "blob", mime: "image/png", len: 1024, object_digest: blob_digest }
+let alice4 = msg.node_send(alice3, msg.zero_digest(), blob_ev, 1003, bus)
+test "blob in inbox" { list.len(alice4.inbox) == 3 }
+test "blob stored" { rec.has(alice4.blobs, blob_digest) }

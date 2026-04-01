@@ -1,0 +1,118 @@
+// messenger@1.0.0 — Content-addressed causal messenger kernel
+// Evidence -> Phi -> Content -> digest -> Message -> transport -> inbox
+
+import("std/hash")   as hash
+import("std/json")   as json
+import("std/list")   as list
+import("std/rec")    as rec
+import("std/chan")   as chan
+import("std/str")    as str
+
+fn zero_digest() { "0000000000000000000000000000000000000000000000000000000000000000" }
+
+fn compute_digest(content) {
+  hash.sha256_text(json.encode(content))
+}
+
+fn sign_digest(pub_key, digest) {
+  str.concat(["SIG{", pub_key, "::", digest, "}"])
+}
+
+fn text_content(raw) {
+  let words = list.filter(str.split(raw, " "), fn(w) { str.len(w) > 0 }) in
+  { t: "text", canonical_text: str.join(words, " ") }
+}
+
+fn status_delivered(digest_ack, at) {
+  { t: "status", event: "delivered", digest_ack: digest_ack, at: at }
+}
+
+fn status_read(digest_ack, at) {
+  { t: "status", event: "read", digest_ack: digest_ack, at: at }
+}
+
+fn blob_content(mime, len, object_digest) {
+  { t: "blob", mime: mime, len: len, object_digest: object_digest }
+}
+
+fn retina_content(omega_id, a_hat, lambda, cert) {
+  { t: "retina", omega_id: omega_id, a_hat: a_hat, lambda: lambda, cert: cert }
+}
+
+fn collapse(evidence) {
+  match evidence.t {
+    "draft_text"     => text_content(evidence.raw),
+    "status_intent"  => evidence.event,
+    "blob"           => blob_content(evidence.mime, evidence.len, evidence.object_digest),
+    "retina_capture" => retina_content(evidence.omega_id, evidence.a_hat, evidence.lambda, evidence.cert),
+    _                => { t: "error", msg: "unknown evidence type" }
+  }
+}
+
+fn assemble(sender, parent, content, timestamp) {
+  let digest = compute_digest(content) in
+  let signature = sign_digest(sender, digest) in
+  { sender: sender, parent: parent, content: content,
+    digest: digest, signature: signature, timestamp: timestamp }
+}
+
+fn verify_digest_msg(msg) {
+  let d_local = compute_digest(msg.content) in
+  let expected_sig = sign_digest(msg.sender, d_local) in
+  if d_local != msg.digest then false
+  else msg.signature == expected_sig
+}
+
+fn verify_thread(msg, inbox) {
+  if msg.parent == zero_digest() then true
+  else list.any(inbox, fn(m) { m.digest == msg.parent })
+}
+
+fn rep_book() { { scores: {}, threshold: 0 } }
+fn rep_get(book, peer) { if rec.has(book.scores, peer) then rec.get(book.scores, peer) else 0 }
+fn rep_reward(book, peer) { rec.set(book, "scores", rec.set(book.scores, peer, rep_get(book, peer) + 1)) }
+fn rep_punish(book, peer) { rec.set(book, "scores", rec.set(book.scores, peer, rep_get(book, peer) - 1)) }
+fn rep_admits(book, peer) { rep_get(book, peer) >= book.threshold }
+
+fn node_new(id) {
+  { id: id, inbox: [], rep: rep_book(), peers: [], blobs: {}, t: "node" }
+}
+
+fn node_receive(node, msg) {
+  if !verify_digest_msg(msg) then node
+  else if !verify_thread(msg, node.inbox) then node
+  else if !rep_admits(node.rep, msg.sender) then
+    rec.set(node, "rep", rep_punish(node.rep, msg.sender))
+  else
+    let node2 = rec.set(node, "inbox", list.append(node.inbox, msg)) in
+    let node3 = rec.set(node2, "rep", rep_reward(node2.rep, msg.sender)) in
+    if msg.content.t == "blob" then
+      rec.set(node3, "blobs", rec.set(node3.blobs, msg.content.object_digest, msg.content))
+    else node3
+}
+
+fn node_send(node, parent, evidence, timestamp, bus) {
+  let content = collapse(evidence) in
+  let msg = assemble(node.id, parent, content, timestamp) in
+  let node2 = node_receive(node, msg) in
+  let _ = chan.send(bus, msg) in
+  node2
+}
+
+fn node_poll(node, bus) {
+  let r = chan.try_recv(bus) in
+  if rec.has(r, "v") then node_receive(node, r.v) else node
+}
+
+fn node_last_digest(node) {
+  if list.len(node.inbox) == 0 then zero_digest()
+  else list.get(node.inbox, list.len(node.inbox) - 1).digest
+}
+
+export {
+  zero_digest, compute_digest, sign_digest,
+  text_content, status_delivered, status_read, blob_content, retina_content,
+  collapse, assemble, verify_digest_msg, verify_thread,
+  rep_book, rep_get, rep_reward, rep_punish, rep_admits,
+  node_new, node_receive, node_send, node_poll, node_last_digest
+}
