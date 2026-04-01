@@ -1,0 +1,2 @@
+test "exact float eq" { 0.1 + 0.2 == 0.3 }
+test "float precision" { 0.1 + 0.2 }

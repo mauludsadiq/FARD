@@ -344,7 +344,7 @@ named_type      = ident , [ "<" , type , { "," , type } , ">" ] ;
 |`Big(BigInt)`                 |Arbitrary-precision integer (`std/bigint`)                              |
 |`Promise`                     |Async promise (`std/promise`)                                           |
 
-**Float representation:** `Val::Float(f64)` is used consistently throughout. Float literals, JSON-decoded floats, and `std/float` results all produce `Val::Float`. No gap exists.
+**Float representation:** `Val::Float(f64)` is used consistently. Float literals, JSON-decoded floats, and `std/float` results all produce `Val::Float`. Int+float arithmetic is automatically promoted. Note: `==` on floats uses exact IEEE 754 bit comparison — `0.1 + 0.2 == 0.3` is `true` because both sides have the same bit pattern, but accumulated floating-point errors across many operations may produce unexpected results. Use tolerance checks for computed values.
 
 **`Val::Text` not `Val::Str`:** The field is named `Text` in the current source,
 not `Str` as in earlier versions. The `type_name()` method returns `"text"` for
