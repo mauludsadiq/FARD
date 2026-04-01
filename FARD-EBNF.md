@@ -665,7 +665,7 @@ Returns hex string prefixed `sha256:`.
 1. **`rec.remove` not `rec.delete`.**
 1. **`int` is a reserved alias.** Use any other name.
 1. **Destructuring in `let`** — `let { a, b } = expr` works at top-level and in fn bodies. Shorthand `{ name }` without `: pat` binds to variable `name`. List destructuring `let [a, b] = list` is also supported.
-1. **`float.div` returns `Val::Bytes`.** Use integer division for serializable output.
+1. **Float literals are `Val::Float`.** `1.5` produces `Val::Float(1.5)`. Int+float arithmetic is automatically promoted: `1 + 0.5 == 1.5`. The previous documentation claiming float literals produce `Val::Bytes` was incorrect.
 1. **`std/compress` uses `gzip`/`gunzip`**, not `gzip_compress`/`gzip_decompress`.
 1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`**, not the previously documented API.
 1. **`Val` field is `Text` not `Str`.** The runtime type name is `"text"`, returned by `type.of()`.
