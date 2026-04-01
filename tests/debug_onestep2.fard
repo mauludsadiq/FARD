@@ -1,0 +1,21 @@
+import("../packages/onestep/main") as os
+import("std/list") as list
+
+let root = os.node("root", 0)
+let a    = os.node("a", 1)
+let b    = os.node("b", 2)
+let c    = os.node("c", 3)
+let d    = os.node("d", 4)
+let e    = os.node("e", 5)
+
+let a2 = os.add_child(a, c)
+let a3 = os.add_child(a2, d)
+let b2 = os.add_child(b, e)
+let r2 = os.add_child(root, a3)
+let r3 = os.add_child(r2, b2)
+
+test "root children" { list.len(r3.children) }
+test "a children" { list.len(list.get(r3.children, 0).children) }
+let t = os.collapse(r3)
+test "count" { t.summary.node_count }
+test "depth" { t.summary.max_depth }

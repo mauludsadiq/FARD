@@ -1,0 +1,34 @@
+import("../packages/onestep/main") as os
+import("std/list") as list
+import("std/rec") as rec
+
+// Build hierarchy: root -> [a, b] -> [c, d, e]
+let root = os.node("root", 0)
+let a    = os.node("a", 1)
+let b    = os.node("b", 2)
+let c    = os.node("c", 3)
+let d    = os.node("d", 4)
+let e    = os.node("e", 5)
+
+let a2   = os.add_child(a, c)
+let a3   = os.add_child(a2, d)
+let b2   = os.add_child(b, e)
+let r2   = os.add_child(root, a3)
+let r3   = os.add_child(r2, b2)
+
+// Collapse once -> terminal T
+let t = os.collapse(r3)
+test "is terminal"   { t.t == "terminal" }
+test "node count"    { os.node_count(t) == 6 }
+test "max depth"     { os.max_depth(t) == 3 }
+test "label count"   { list.len(os.labels(t)) == 6 }
+
+// O(1) queries on T
+test "search large"  { os.search(r3, fn(s) { s.node_count > 3 }) }
+test "search small"  { os.search(r3, fn(s) { s.node_count > 10 }) == false }
+test "reduce count"  { os.reduce(t, "node_count") == 6 }
+test "map labels"    { list.len(os.map_summary(t, fn(s) { s.labels })) == 6 }
+
+// Full pipeline: H -> T -> R
+let pipeline_result = r3 |> os.collapse |> os.node_count
+test "pipeline"      { pipeline_result == 6 }

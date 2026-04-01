@@ -1,0 +1,58 @@
+// onestep@1.0.0 — Hierarchy collapse to terminal summary
+// H -> T -> R: collapse once, query in O(1)
+
+import("std/list") as list
+import("std/rec")  as rec
+
+fn node(name, ordinal) {
+  { name: name, ordinal: ordinal, children: [], t: "node" }
+}
+
+fn add_child(n, child) {
+  rec.set(n, "children", list.append(n.children, child))
+}
+
+fn node_value(n) {
+  if rec.has(n, "value") then n.value else 0
+}
+
+fn dfs(n, depth, acc) {
+  if list.any(acc.visited, fn(v) { v == n.name }) then acc
+  else
+    let new_depth = if depth > acc.max_depth then depth else acc.max_depth in
+    let acc2 = rec.set(
+      rec.set(
+        rec.set(
+          rec.set(
+            rec.set(acc, "visited", list.append(acc.visited, n.name)),
+            "node_count", acc.node_count + 1),
+          "labels", list.append(acc.labels, n.name)),
+        "max_depth", new_depth),
+      "sum_value", acc.sum_value + node_value(n)) in
+    list.fold(n.children, acc2, fn(a, child) { dfs(child, depth + 1, a) })
+}
+
+fn compute_summary(root) {
+  let init = { visited: [], node_count: 0, labels: [], max_depth: 0, sum_value: 0 } in
+  let r = dfs(root, 1, init) in
+  { node_count: r.node_count, labels: r.labels, max_depth: r.max_depth, sum_value: r.sum_value }
+}
+
+fn terminal(name, summary) { { name: name, summary: summary, t: "terminal" } }
+fn collapse(n)              { terminal("Terminal", compute_summary(n)) }
+
+fn exists(t, pred)   { pred(t.summary) }
+fn reduce(t, key)    { rec.get(t.summary, key) }
+fn map_summary(t, f) { f(t.summary) }
+fn search(n, pred)   { let t = collapse(n) in exists(t, pred) }
+
+fn sum_value(t)  { reduce(t, "sum_value") }
+fn node_count(t) { reduce(t, "node_count") }
+fn max_depth(t)  { reduce(t, "max_depth") }
+fn labels(t)     { reduce(t, "labels") }
+
+export {
+  node, add_child, compute_summary, terminal, collapse,
+  exists, reduce, map_summary, search,
+  sum_value, node_count, max_depth, labels
+}
