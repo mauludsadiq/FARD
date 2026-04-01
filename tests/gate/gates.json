@@ -157,6 +157,13 @@
       "kind": "run_expect_result",
       "program": "tests/gate/programs/g16_messenger.fard",
       "expect_result": 2
+    },
+    {
+      "id": "G17_onestep",
+      "name": "G17_onestep",
+      "kind": "run_expect_result",
+      "program": "tests/gate/programs/g17_onestep.fard",
+      "expect_result": 5
     }
   ]
 }
