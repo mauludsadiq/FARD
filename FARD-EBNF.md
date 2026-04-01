@@ -577,6 +577,10 @@ Returns hex string prefixed `sha256:`.
 
 `float`, `int`, `text`
 
+> **`cast.text` converts integers to Unicode characters** — `cast.text(65)` returns `"A"`, not `"65"`.
+> Use `str.from(n)` to convert a number to its string representation.
+> `cast.text` is correct for Unicode codepoint conversion only.
+
 ### std/re
 
 `is_match`, `find`, `find_all`, `split`, `replace`
@@ -673,7 +677,7 @@ Returns hex string prefixed `sha256:`.
 1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`**, not the previously documented API.
 1. **`Val` field is `Text` not `Str`.** The runtime type name is `"text"`, returned by `type.of()`.
 
-1. **`str.from(v)` converts any scalar to string.** `str.from(42)` → `"42"`. Do not use `cast.text` for number-to-string — it converts to unicode codepoint char.
+1. **`str.from(v)` converts any scalar to string.** `str.from(42)` gives `"42"`. **`cast.text(42)` gives `"*"` (Unicode codepoint 42) — never use it for number-to-string conversion.**
 1. **`float + int` is automatically promoted.** `1 + 0.5 == 1.5` works without explicit casting. `cast.float` is no longer needed for mixed arithmetic.
 1. **`list.find` returns `{some: value}` or `{none: unit}`.** Access value with `.some`, not `.data` or `.value`.
 1. **`menv.set` returns `Unit`.** Never use it in value position. Always `let _ = menv.set(...)`.

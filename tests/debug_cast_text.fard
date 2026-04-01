@@ -1,0 +1,8 @@
+import("std/cast") as cast
+import("std/type") as type
+import("std/str") as str
+
+let n = 65
+test "cast.text gives char" { cast.text(n) == "A" }
+test "str.from gives number" { str.from(n) == "65" }
+test "cast.text is char not num" { cast.text(n) != str.from(n) }
