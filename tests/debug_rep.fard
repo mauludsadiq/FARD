@@ -1,0 +1,6 @@
+import("../packages/messenger/main") as msg
+
+let book = msg.rep_book()
+let book2 = msg.rep_reward(book, "alice")
+test "scores has alice" { book2.scores.alice == 1 }
+test "rep_get alice" { msg.rep_get(book2, "alice") == 1 }

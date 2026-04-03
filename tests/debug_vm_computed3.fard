@@ -1,0 +1,4 @@
+fn g(k, v) {
+  { [k]: v }
+}
+test "pure computed" { g("z", 99).z == 99 }

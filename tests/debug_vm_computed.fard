@@ -1,0 +1,5 @@
+fn f(k, v) {
+  let r = { x: 1 } in
+  { x: 1, [k]: v }
+}
+test "vm computed" { f("y", 2).y == 2 }

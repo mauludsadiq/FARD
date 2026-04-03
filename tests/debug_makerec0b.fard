@@ -1,0 +1,3 @@
+let k = "x"
+let r = { [k]: 1 }
+test "toplevel computed" { r.x == 1 }

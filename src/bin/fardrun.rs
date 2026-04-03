@@ -3510,6 +3510,22 @@ impl Parser {
                             if self.eat_sym("}") { break; }
                             continue;
                         }
+                        // Computed key: [expr]: val
+                        if matches!(self.peek(), Tok::Sym(s) if s == "[") {
+                            self.bump(); // consume [
+                            let key_expr = self.parse_expr()?;
+                            self.expect_sym("]")?;
+                            self.expect_sym(":")?;
+                            let val_expr = self.parse_expr()?;
+                            // Desugar: push a sentinel that eval handles
+                            // We encode as ("__computed__", Expr::List([key_expr, val_expr]))
+                            let idx = kvs.iter().filter(|(k,_)| k.starts_with("__computed_")).count();
+                            kvs.push((format!("__computed_{}", idx), Expr::List(vec![key_expr, val_expr])));
+                            if self.eat_sym("}") { break; }
+                            self.expect_sym(",")?;
+                            if self.eat_sym("}") { break; }
+                            continue;
+                        }
                         let k = match self.bump() {
                             Tok::Ident(x) => x,
                             Tok::Kw(x) => x,
@@ -4308,6 +4324,19 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         Expr::Rec(kvs) => {
             let mut m = BTreeMap::new();
             for (k, v) in kvs {
+                if k.starts_with("__computed_") {
+                    if let Expr::List(pair) = v {
+                        let key_val = eval(&pair[0], env, tracer, loader)?;
+                        let val_val = eval(&pair[1], env, tracer, loader)?;
+                        let key_str = match &key_val {
+                            Val::Text(s) => s.clone(),
+                            Val::Int(n) => n.to_string(),
+                            other => format!("{:?}", other),
+                        };
+                        m.insert(key_str, val_val);
+                        continue;
+                    }
+                }
                 m.insert(k.clone(), eval(v, env, tracer, loader)?);
             }
             Ok(Val::Record(m))
@@ -5222,6 +5251,7 @@ enum VmOp {
     Pop,
     MakeList(usize),
     MakeRec(usize),
+    RecSetDyn, // pops val, key, rec -> pushes rec with key=val
     GetField(String),
     MakeClosure(usize),   // fn_idx into VmProgram.fns
     VmCall(usize),        // n_args
@@ -5349,11 +5379,40 @@ impl VmCompiler {
             }
 
             Expr::Rec(kvs) => {
-                for (k, v) in kvs {
-                    self.emit(VmOp::LoadStr(k.clone()));
-                    self.compile(v, fns)?;
+                // Separate static and computed keys
+                let has_computed = kvs.iter().any(|(k,_)| k.starts_with("__computed_"));
+                if !has_computed {
+                    for (k, v) in kvs {
+                        self.emit(VmOp::LoadStr(k.clone()));
+                        self.compile(v, fns)?;
+                    }
+                    self.emit(VmOp::MakeRec(kvs.len()));
+                } else {
+                    // Build static part first, then apply computed keys via RecSet
+                    let static_kvs: Vec<_> = kvs.iter().filter(|(k,_)| !k.starts_with("__computed_")).collect();
+                    let computed_kvs: Vec<_> = kvs.iter().filter(|(k,_)| k.starts_with("__computed_")).collect();
+                    
+                    if static_kvs.is_empty() {
+                        // No static keys - start with empty record
+                        self.emit(VmOp::MakeRec(0));
+                    } else {
+                        for (k, v) in &static_kvs {
+                            self.emit(VmOp::LoadStr(k.clone()));
+                            self.compile(v, fns)?;
+                        }
+                        self.emit(VmOp::MakeRec(static_kvs.len()));
+                    }
+                    
+                    // For each computed key, emit: rec = RecSet(rec, key, val)
+                    for computed_item in computed_kvs {
+                        let pair_expr = &computed_item.1;
+                        if let Expr::List(pair) = pair_expr {
+                            self.compile(&pair[0], fns)?;
+                            self.compile(&pair[1], fns)?;
+                            self.emit(VmOp::RecSetDyn);
+                        }
+                    }
                 }
-                self.emit(VmOp::MakeRec(kvs.len()));
             }
 
             Expr::Call(f_expr, args) => {
@@ -5581,6 +5640,20 @@ fn vm_exec_fn(
                 stack.push(Val::Record(m)); ip += 1;
             }
 
+            VmOp::RecSetDyn => {
+                let val = stack.pop().ok_or_else(|| anyhow!("RecSetDyn: empty stack"))?;
+                let key = stack.pop().ok_or_else(|| anyhow!("RecSetDyn: empty stack"))?;
+                let rec = stack.pop().ok_or_else(|| anyhow!("RecSetDyn: empty stack"))?;
+                let key_str = match &key {
+                    Val::Text(s) => s.clone(),
+                    Val::Int(n) => n.to_string(),
+                    other => format!("{:?}", other),
+                };
+                match rec {
+                    Val::Record(mut m) => { m.insert(key_str, val); stack.push(Val::Record(m)); ip += 1; }
+                    _ => bail!("RecSetDyn: expected record"),
+                }
+            }
             VmOp::GetField(field) => {
                 let obj = stack.pop().unwrap();
                 match obj {
@@ -5745,6 +5818,13 @@ fn try_vm_eval(
                 VmOp::JumpIfTrue(target)  => { match stack.last() { Some(Val::Bool(true))  => { ip = *target; } Some(Val::Bool(false)) => { ip += 1; } _ => bail!("vm: JumpIfTrue needs bool") } }
                 VmOp::Pop => { stack.pop(); ip += 1; }
                 VmOp::MakeList(n) => { let len = stack.len(); let items: Vec<Val> = stack.drain(len - n ..).collect(); stack.push(Val::List(items)); ip += 1; }
+                VmOp::RecSetDyn => {
+                    let val = stack.pop().ok_or_else(|| anyhow!("RecSetDyn: empty stack"))?;
+                    let key = stack.pop().ok_or_else(|| anyhow!("RecSetDyn: empty stack"))?;
+                    let rec = stack.pop().ok_or_else(|| anyhow!("RecSetDyn: empty stack"))?;
+                    let key_str = match &key { Val::Text(s) => s.clone(), Val::Int(n) => n.to_string(), other => format!("{:?}", other) };
+                    match rec { Val::Record(mut m) => { m.insert(key_str, val); stack.push(Val::Record(m)); ip += 1; } _ => bail!("RecSetDyn: expected record, got {:?}", rec) }
+                }
                 VmOp::MakeRec(n) => {
                     let len = stack.len(); let pairs: Vec<Val> = stack.drain(len - n * 2 ..).collect();
                     let mut m = BTreeMap::new(); let mut i = 0;

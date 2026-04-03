@@ -1,0 +1,2 @@
+fn f(k) { { [k]: 1 } }
+test "simple" { f("x").x == 1 }

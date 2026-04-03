@@ -1,0 +1,5 @@
+fn f(k) {
+  { a: 1, [k]: 2, b: 3 }
+}
+test "mixed" { f("x").x == 2 }
+test "static" { f("x").a == 1 }

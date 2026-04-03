@@ -1,0 +1,3 @@
+let k = "hello"
+let r = { [k]: 42 }
+test "computed key" { r.hello == 42 }

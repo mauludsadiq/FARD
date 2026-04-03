@@ -1,0 +1,6 @@
+fn reward(book, peer) {
+  { ...book, scores: { ...book.scores, [peer]: 1 } }
+}
+let b = { scores: {}, threshold: 0 }
+let b2 = reward(b, "alice")
+test "fn computed key" { b2.scores.alice == 1 }

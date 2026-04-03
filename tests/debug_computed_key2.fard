@@ -1,0 +1,15 @@
+let peer = "alice"
+let scores = {}
+let scores2 = { ...scores, [peer]: 5 }
+test "dynamic key" { scores2.alice == 5 }
+
+let key = "msg-123"
+let inbox = { [key]: { text: "hello", ts: 1000 } }
+test "msg key" { inbox["msg-123"].text == "hello" }
+
+// Rep book update with computed key
+let book = { alice: 0, bob: 0 }
+let sender = "alice"
+let book2 = { ...book, [sender]: book.alice + 1 }
+test "rep update" { book2.alice == 1 }
+test "bob unchanged" { book2.bob == 0 }

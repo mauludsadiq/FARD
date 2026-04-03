@@ -70,8 +70,8 @@ fn verify_thread(msg, inbox) {
 
 fn rep_book() { { scores: {}, threshold: 0 } }
 fn rep_get(book, peer) { if rec.has(book.scores, peer) then rec.get(book.scores, peer) else 0 }
-fn rep_reward(book, peer) { rec.set(book, "scores", rec.set(book.scores, peer, rep_get(book, peer) + 1)) }
-fn rep_punish(book, peer) { rec.set(book, "scores", rec.set(book.scores, peer, rep_get(book, peer) - 1)) }
+fn rep_reward(book, peer) { { ...book, scores: { ...book.scores, [peer]: rep_get(book, peer) + 1 } } }
+fn rep_punish(book, peer) { { ...book, scores: { ...book.scores, [peer]: rep_get(book, peer) - 1 } } }
 fn rep_admits(book, peer) { rep_get(book, peer) >= book.threshold }
 
 fn node_new(id) {
