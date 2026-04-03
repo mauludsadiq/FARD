@@ -218,7 +218,8 @@ pipe_expr       = postfix_expr , { "|>" , postfix_expr } ;
    This resolves the [[...]] fn-tail ambiguity — [[...]] now works correctly. *)
 postfix_expr    = primary_expr , { postfix_op } ;
 
-postfix_op      = "?"
+postfix_op      = "?" "."           (* safe navigation: e?.f -> null if e==null, else e.f *)
+                | "?"
                 | "." , ident
                 | "(" , arg_list , ")"
                 | "[" , expr , "]" ;
