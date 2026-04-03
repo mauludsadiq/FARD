@@ -1,0 +1,4 @@
+import("std/http") as http
+import("std/io")   as io
+
+let _ = io.write_file("/tmp/fard_running.txt", "started")
