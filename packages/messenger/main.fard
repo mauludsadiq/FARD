@@ -82,13 +82,15 @@ fn node_receive(node, msg) {
   if !verify_digest_msg(msg) then node
   else if !verify_thread(msg, node.inbox) then node
   else if !rep_admits(node.rep, msg.sender) then
-    rec.set(node, "rep", rep_punish(node.rep, msg.sender))
+    { ...node, rep: rep_punish(node.rep, msg.sender) }
   else
-    let node2 = rec.set(node, "inbox", list.append(node.inbox, msg)) in
-    let node3 = rec.set(node2, "rep", rep_reward(node2.rep, msg.sender)) in
+    let node2 = { ...node,
+      inbox: list.append(node.inbox, msg),
+      rep: rep_reward(node.rep, msg.sender)
+    } in
     if msg.content.t == "blob" then
-      rec.set(node3, "blobs", rec.set(node3.blobs, msg.content.object_digest, msg.content))
-    else node3
+      { ...node2, blobs: rec.set(node2.blobs, msg.content.object_digest, msg.content) }
+    else node2
 }
 
 fn node_send(node, parent, evidence, timestamp, bus) {

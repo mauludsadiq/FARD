@@ -20,15 +20,13 @@ fn dfs(n, depth, acc) {
   if list.any(acc.visited, fn(v) { v == n.name }) then acc
   else
     let new_depth = if depth > acc.max_depth then depth else acc.max_depth in
-    let acc2 = rec.set(
-      rec.set(
-        rec.set(
-          rec.set(
-            rec.set(acc, "visited", list.append(acc.visited, n.name)),
-            "node_count", acc.node_count + 1),
-          "labels", list.append(acc.labels, n.name)),
-        "max_depth", new_depth),
-      "sum_value", acc.sum_value + node_value(n)) in
+    let acc2 = { ...acc,
+      visited:    list.append(acc.visited, n.name),
+      node_count: acc.node_count + 1,
+      labels:     list.append(acc.labels, n.name),
+      max_depth:  new_depth,
+      sum_value:  acc.sum_value + node_value(n)
+    } in
     list.fold(n.children, acc2, fn(a, child) { dfs(child, depth + 1, a) })
 }
 
