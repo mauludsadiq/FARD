@@ -1,0 +1,16 @@
+import("std/rec") as rec
+
+fn safe_div(a, b) {
+  if b == 0 then { t: "err", e: "div zero" }
+  else { t: "ok", v: a / b }
+}
+
+fn safe_get(r, key, default) {
+  let v = rec.getOr(r, key, null) in
+  v ?? default
+}
+
+fn pipeline(x) {
+  let a = safe_div(x, 2)?
+  a + 1
+}

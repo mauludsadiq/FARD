@@ -324,6 +324,51 @@ fn infer(node, env, s, next_id) {
       let b = node.bindings[0] in
       infer_letrec(b, node.body, env, s, next_id),
 
+    "bin" =>
+      let rl = infer(node.l, env, s, next_id) in
+      if is_err_val(rl) then rl
+      else
+        let rr = infer(node.r, env, rl.s, rl.next) in
+        if is_err_val(rr) then rr
+        else
+          let tv = fresh(rr.next) in
+          if node.op == "??" then
+            // ?? : T -> T -> T (both sides same type, result same)
+            let s1 = unify(rl.ty, rr.ty, rr.s) in
+            if is_err_val(s1) then { ty: apply_subst(rl.ty, rr.s), s: rr.s, next: rr.next + 1 }
+            else { ty: apply_subst(rl.ty, s1), s: s1, next: rr.next + 1 }
+          else if node.op == "||" || node.op == "&&" then
+            { ty: "bool", s: rr.s, next: rr.next }
+          else if node.op == "==" || node.op == "!=" || node.op == "<" || node.op == ">" || node.op == "<=" || node.op == ">=" then
+            { ty: "bool", s: rr.s, next: rr.next }
+          else if node.op == "+" || node.op == "-" || node.op == "*" || node.op == "/" || node.op == "%" then
+            { ty: rl.ty, s: rr.s, next: rr.next }
+          else
+            { ty: tv, s: rr.s, next: rr.next + 1 },
+
+    "try" =>
+      // expr? : unwraps Result{ok:T} -> T, or propagates error
+      let r = infer(node.expr, env, s, next_id) in
+      if is_err_val(r) then r
+      else
+        let tv = fresh(r.next) in
+        { ty: tv, s: r.s, next: r.next + 1 },
+
+    "pipe" =>
+      // x |> f : infer x, infer f, result is fresh
+      let rl = infer(node.l, env, s, next_id) in
+      if is_err_val(rl) then rl
+      else
+        let rr = infer(node.r, env, rl.s, rl.next) in
+        if is_err_val(rr) then rr
+        else
+          let tv = fresh(rr.next) in
+          { ty: tv, s: rr.s, next: rr.next + 1 },
+
+    "spread" =>
+      let tv = fresh(next_id) in
+      { ty: tv, s: s, next: next_id + 1 },
+
     _ => { t: "type_error", e: "unsupported", node_t: node.t }
   }
 }

@@ -1,0 +1,12 @@
+import("std/rec") as rec
+
+// This should type-check fine
+fn good(x) { x ?? 0 }
+
+// Test HM on operator conformance suite
+fn uses_pipe(xs) { xs |> good }
+
+fn uses_try(x) {
+  let r = { t: "ok", v: x } in
+  r?
+}
