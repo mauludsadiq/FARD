@@ -744,20 +744,49 @@ FARD has a complete data pipeline stack. Write code normally. Every run produces
 
 | Package | Capability |
 |---|---|
-|  | CSV parse/serialize with type inference |
-|  | filter, select, map, sort, group_by, join, aggregate |
-|  | Persist to SQLite, query with SQL |
-|  | Fetch JSON from APIs |
-|  | Read/write files |
-|  | Show execution proof on demand |
+| `data-csv` | CSV parse/serialize with type inference |
+| `frame-memory` | filter, select, map, sort, group_by, join, aggregate |
+| `std/sqlite` | Persist to SQLite, query with SQL |
+| `http-client-sync` | Fetch JSON from APIs |
+| `std/io` | Read/write files |
+| `fardrun verify` | Show execution proof on demand |
 
-**Gates G11-G15:** self-hosting, CSV pipelines, multi-source joins, SQLite persistence.
+**Gates G11-G17:** self-hosting, CSV pipelines, multi-source joins, SQLite persistence, messenger P2P, onestep hierarchy collapse.
+
+-----
+## Ergonomics
+
+Recent additions that make FARD feel like a daily driver:
+
+**Record spread** — update records without boilerplate:
+```fard
+let node2 = { ...node, rep: node.rep + 1, inbox: list.append(node.inbox, msg) }
+```
+
+**Computed keys** — dynamic record construction:
+```fard
+let scores2 = { ...scores, [sender]: scores[sender] + 1 }
+```
+
+**Error propagation** — `?` unwraps results at function boundaries:
+```fard
+fn pipeline(x) {
+  let a = safe_div(x, 2)?
+  let b = safe_div(a, 2)?
+  { t: "ok", v: b }
+}
+```
+
+**Auto int+float promotion** — `1 + 0.5 == 1.5` works without casting.
+
+**`&&`/`||` short-circuit** — works as expected in all contexts.
 
 -----
 
+
 ## Self-Verifying
 
-98 package tests + gate suite, all written in pure FARD:
+18 gates + package test suite, all written in pure FARD:
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
 ```
