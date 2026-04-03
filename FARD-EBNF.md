@@ -253,7 +253,9 @@ literal         = integer | "true" | "false" | "null" ;
 
 list_lit        = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
 
-rec_lit         = "{" , [ rec_kv , { "," , rec_kv } , [ "," ] ] , "}" ;
+rec_lit         = "{" , [ rec_spread | rec_kv , { "," , rec_kv } , [ "," ] ] , "}" ;
+rec_spread      = "..." , postfix_expr , { "," , rec_kv } ;
+(* { ...base, key: val } merges base with overrides. Last write wins. No import needed. *)
 rec_kv          = rec_key , ":" , expr ;
 rec_key         = ident | keyword | string ;
 (* Keywords are valid record keys: { ok: true, if: "allowed", return: 42 } *)
