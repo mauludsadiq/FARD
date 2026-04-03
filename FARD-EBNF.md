@@ -256,8 +256,9 @@ list_lit        = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
 rec_lit         = "{" , [ rec_spread | rec_kv , { "," , rec_kv } , [ "," ] ] , "}" ;
 rec_spread      = "..." , postfix_expr , { "," , rec_kv } ;
 (* { ...base, key: val } merges base with overrides. Last write wins. No import needed. *)
-rec_kv          = rec_key , ":" , expr ;
-rec_key         = ident | keyword | string ;
+rec_kv          = rec_key , ":" , expr
+                | "[" , expr , "]" , ":" , expr ;  (* computed key: { [k]: v } *)
+rec_key         = ident | keyword | string ;  (* static keys only; use [expr] form for dynamic keys *)
 (* Keywords are valid record keys: { ok: true, if: "allowed", return: 42 } *)
 ```
 
@@ -679,6 +680,7 @@ Returns hex string prefixed `sha256:`.
 1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`**, not the previously documented API.
 1. **`Val` field is `Text` not `Str`.** The runtime type name is `"text"`, returned by `type.of()`.
 
+1. **Computed record keys `[expr]: val`** — dynamic keys evaluated at runtime. Works in both top-level and fn bodies. Can be combined with spread: `{ ...base, [key]: val }`.
 1. **`str.from(v)` converts any scalar to string.** `str.from(42)` gives `"42"`. **`cast.text(42)` gives `"*"` (Unicode codepoint 42) — never use it for number-to-string conversion.**
 1. **`float + int` is automatically promoted.** `1 + 0.5 == 1.5` works without explicit casting. `cast.float` is no longer needed for mixed arithmetic.
 1. **`list.find` returns `{some: value}` or `{none: unit}`.** Access value with `.some`, not `.data` or `.value`.
