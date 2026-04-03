@@ -193,14 +193,14 @@ if_expr         = "if" , expr , "then" , ( block_expr | expr ) , "else" , expr ;
 block_expr      = "{" , fn_block_inner , "}" ;
 
 (* Infix operators — precedence-climbing, all left-associative:
-   Prec 1 (lowest): ||
+   Prec 1 (lowest): || ??  (null-coalescing: x ?? default returns x if x != null, else default)
    Prec 2:          &&
    Prec 3:          == != < > <= >=
    Prec 4:          + -
    Prec 5 (highest):* / %
 *)
 infix_expr      = unary_expr , { infix_op , unary_expr } ;
-infix_op        = "||" | "&&"
+infix_op        = "||" | "??" | "&&"
                 | "==" | "!=" | "<" | ">" | "<=" | ">="
                 | "+" | "-"
                 | "*" | "/" | "%" ;
