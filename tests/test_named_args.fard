@@ -1,3 +1,4 @@
+import("std/str") as str
 fn greet(name, greeting) {
   str.concat(str.concat(greeting, " "), name)
 }
@@ -6,7 +7,6 @@ fn add(x, y) { x + y }
 
 fn rect_area(width, height) { width * height }
 
-import("std/str") as str
 
 test "named args basic" { greet(name: "Alice", greeting: "Hello") == "Hello Alice" }
 test "named args reordered" { greet(greeting: "Hi", name: "Bob") == "Hi Bob" }
