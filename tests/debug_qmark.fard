@@ -1,0 +1,27 @@
+import("std/int") as ints
+
+fn safe_div(a, b) {
+  if b == 0 then { t: "err", e: "division by zero" }
+  else { t: "ok", v: a / b }
+}
+
+fn pipeline(x) {
+  let a = safe_div(x, 2)?
+  let b = safe_div(a, 2)?
+  { t: "ok", v: b }
+}
+
+test "qmark ok" { pipeline(16).v == 4 }
+test "qmark err" { pipeline(0).t == "err" }  // QMarkUnwind propagates - needs wrapper
+test "int parse ok" { ints.parse("42")? == 42 }
+
+fn try_pipeline(x) {
+  let r = safe_div(x, 2) in
+  if r.t != "ok" then r
+  else let a = r.v in
+  let r2 = safe_div(a, 2) in
+  if r2.t != "ok" then r2
+  else { t: "ok", v: r2.v }
+}
+test "err propagation" { try_pipeline(0).t == "err" }
+test "qmark unwraps" { ints.parse("42")? == 42 }

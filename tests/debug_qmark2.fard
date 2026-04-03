@@ -1,0 +1,15 @@
+fn safe_div(a, b) {
+  if b == 0 then { t: "err", e: "division by zero" }
+  else { t: "ok", v: a / b }
+}
+
+fn pipeline(x, y) {
+  let a = safe_div(x, y)?
+  let b = safe_div(a, y)?
+  { t: "ok", v: b }
+}
+
+test "qmark success" { pipeline(16, 2).v == 4 }
+test "qmark err div zero" { pipeline(16, 0).t == "err" }
+test "qmark err message" { pipeline(16, 0).e == "division by zero" }
+test "qmark unwrap val" { safe_div(10, 2)? == 5 }
