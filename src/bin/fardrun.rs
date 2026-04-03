@@ -3302,6 +3302,19 @@ impl Parser {
         let mut e = self.parse_primary()?;
         loop {
             if self.eat_sym("?") {
+                if self.eat_sym(".") {
+                    let n = self.expect_ident()?;
+                    // e?.n desugars to: let __sn__ = e in if __sn__ == null then null else __sn__.n
+                    let var = Expr::Var("__sn__".to_string());
+                    let inner = Expr::Get(Box::new(var.clone()), n);
+                    let if_expr = Expr::If(
+                        Box::new(Expr::Bin("==".to_string(), Box::new(var), Box::new(Expr::Null))),
+                        Box::new(Expr::Null),
+                        Box::new(inner)
+                    );
+                    e = Expr::Let("__sn__".to_string(), Box::new(e), Box::new(if_expr));
+                    continue;
+                }
                 e = Expr::Try(Box::new(e));
                 continue;
             }

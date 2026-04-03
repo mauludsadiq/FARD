@@ -1,0 +1,15 @@
+import("std/type") as type
+
+let r = { x: 1, y: { z: 42 } }
+let n = null
+
+test "safe nav present" { r?.x == 1 }
+test "safe nav null"    { n?.x == null }
+test "safe nav chained" { r?.y?.z == 42 }
+test "safe nav null chain" { n?.y?.z == null }
+test "safe nav with ??" { n?.x ?? 99 == 99 }
+test "safe nav non-null ??" { (r?.x ?? 99) == 1 }
+
+fn get_host(cfg) { cfg?.host ?? "localhost" }
+test "fn safe nav" { get_host(null) == "localhost" }
+test "fn safe nav present" { get_host({ host: "example.com" }) == "example.com" }
