@@ -1,0 +1,5 @@
+let r = { x: 1, y: 2, z: 3 }
+let r2 = { ...r, x: 10 }
+test "spread update" { r2.x == 10 }
+test "spread keeps" { r2.y == 2 }
+test "original unchanged" { r.x == 1 }

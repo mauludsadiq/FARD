@@ -3497,9 +3497,19 @@ impl Parser {
                 Ok(Expr::List(xs))
             }
             Tok::Sym(s) if s == "{" => {
-                let mut kvs = Vec::new();
+                let mut kvs: Vec<(String, Expr)> = Vec::new();
+                let mut spread: Option<Box<Expr>> = None;
                 if !self.eat_sym("}") {
                     loop {
+                        // Spread: { ...base, key: val }
+                        if self.eat_sym("...") {
+                            let base = self.parse_postfix()?;
+                            spread = Some(Box::new(base));
+                            if self.eat_sym("}") { break; }
+                            self.expect_sym(",")?;
+                            if self.eat_sym("}") { break; }
+                            continue;
+                        }
                         let k = match self.bump() {
                             Tok::Ident(x) => x,
                             Tok::Kw(x) => x,
@@ -3518,7 +3528,16 @@ impl Parser {
                         }
                     }
                 }
-                Ok(Expr::Rec(kvs))
+                // If spread, desugar: { ...base, k: v } -> rec.merge(base, {k: v})
+                if let Some(base) = spread {
+                    let overlay = Expr::Rec(kvs);
+                    Ok(Expr::Call(
+                        Box::new(Expr::Var("__spread__".to_string())),
+                        vec![*base, overlay]
+                    ))
+                } else {
+                    Ok(Expr::Rec(kvs))
+                }
             }
             other => {
                 return Err(anyhow!(ParseError {
@@ -3629,6 +3648,7 @@ enum Builtin {
     ListApply,
     ListLast,
     AsyncSleep, AsyncSpawn, AsyncAwait, AsyncAll, AsyncResolved, AsyncRejected, AsyncYield, AsyncRace, AsyncTimeout,
+    RecSpread,
     StrFrom,
     SqliteOpen, SqliteExec, SqliteQuery, SqliteClose,
     MutEnvNew,
@@ -8819,6 +8839,14 @@ fn call_builtin(
             [Val::Unit]     => Ok(Val::Text("null".to_string())),
             _ => bail!("str.from expects a scalar value"),
         }
+        Builtin::RecSpread => match args.as_slice() {
+            [Val::Record(base), Val::Record(overlay)] => {
+                let mut m = base.clone();
+                for (k, v) in overlay.iter() { m.insert(k.clone(), v.clone()); }
+                Ok(Val::Record(m))
+            }
+            _ => bail!("record spread expects two records"),
+        }
         Builtin::AsyncSleep => Ok(Val::Unit),
         Builtin::AsyncYield => Ok(Val::Unit),
         Builtin::AsyncResolved => Ok(args.into_iter().next().unwrap_or(Val::Unit)),
@@ -11197,6 +11225,8 @@ impl ModuleLoader {
         tracer: &mut Tracer,
         here: &Path,
     ) -> Result<Val> {
+        // Inject builtins used by parser desugaring
+        env.set("__spread__".to_string(), Val::Builtin(Builtin::RecSpread));
         let mut exports: Option<Vec<String>> = None;
         let mut last: Val = Val::Unit;
         for it in items {

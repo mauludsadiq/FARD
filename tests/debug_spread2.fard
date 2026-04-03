@@ -1,0 +1,18 @@
+import("std/rec") as rec
+
+let node = { id: "alice", inbox: [], rep: 0, peers: [] }
+
+// Old way
+let old_way = rec.set(rec.set(node, "rep", 5), "peers", ["bob"])
+
+// New way
+let new_way = { ...node, rep: 5, peers: ["bob"] }
+
+test "same result" { old_way == new_way }
+test "spread nested" { { ...{ x: 1, y: 2 }, y: 99, z: 3 }.y == 99 }
+test "spread keeps z" { { ...{ x: 1, y: 2 }, z: 3 }.x == 1 }
+
+// Real-world: updating messenger node
+let node2 = { ...node, rep: node.rep + 1 }
+test "node update" { node2.rep == 1 }
+test "node id kept" { node2.id == "alice" }
