@@ -2330,7 +2330,7 @@ impl Lex {
             return Ok(Tok::OrOr);
         }
 
-        for op in ["!=", "==", "<=", ">=", "&&", "->", "=>", "|>"] {
+        for op in ["!=", "==", "<=", ">=", "&&", "->", "=>", "|>", "??"] {
             if two.as_deref() == Some(op) {
                 self.i += 2;
                 return Ok(Tok::Sym(op.to_string()));
@@ -3228,6 +3228,7 @@ impl Parser {
     fn infix_prec(tok: &Tok) -> Option<u8> {
         match tok {
             Tok::OrOr                                   => Some(1),
+            Tok::Sym(s) if s == "??"                   => Some(1),
             Tok::Sym(s) if s == "&&"                    => Some(2),
             Tok::Sym(s) if matches!(s.as_str(),
                 "==" | "!=" | "<" | ">" | "<=" | ">=") => Some(3),
@@ -4532,6 +4533,10 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         }
         Expr::Bin(op, a, b) => {
             // Short-circuit operators
+            if op == "??" {
+                let x = eval(a, env, tracer, loader)?;
+                return match x { Val::Unit => eval(b, env, tracer, loader), _ => Ok(x) };
+            }
             if op == "&&" {
                 let x = eval(a, env, tracer, loader)?;
                 return match x { Val::Bool(false) => Ok(Val::Bool(false)), _ => eval(b, env, tracer, loader) };
@@ -5252,6 +5257,7 @@ enum VmOp {
     MakeList(usize),
     MakeRec(usize),
     RecSetDyn, // pops val, key, rec -> pushes rec with key=val
+    JumpIfNotNull(usize),
     GetField(String),
     MakeClosure(usize),   // fn_idx into VmProgram.fns
     VmCall(usize),        // n_args
@@ -5293,7 +5299,7 @@ impl VmCompiler {
 
     fn patch(&mut self, idx: usize, target: usize) {
         match &mut self.code[idx] {
-            VmOp::Jump(t) | VmOp::JumpIfFalse(t) | VmOp::JumpIfTrue(t) => *t = target,
+            VmOp::Jump(t) | VmOp::JumpIfFalse(t) | VmOp::JumpIfTrue(t) | VmOp::JumpIfNotNull(t) => *t = target,
             _ => {}
         }
     }
@@ -5330,6 +5336,14 @@ impl VmCompiler {
             }
 
             Expr::Bin(op, a, b) => {
+                if op == "??" {
+                    self.compile(a, fns)?;
+                    let jnn = self.emit(VmOp::JumpIfNotNull(0));
+                    self.emit(VmOp::Pop);
+                    self.compile(b, fns)?;
+                    self.patch(jnn, self.code.len());
+                    return Ok(());
+                }
                 if op == "&&" {
                     self.compile(a, fns)?;
                     let jf = self.emit(VmOp::JumpIfFalse(0));
@@ -5611,6 +5625,13 @@ fn vm_exec_fn(
                     _ => bail!("vm: JumpIfFalse requires bool"),
                 }
             }
+            VmOp::JumpIfNotNull(target) => {
+                match stack.last() {
+                    Some(Val::Unit) => { ip += 1; }
+                    Some(_) => { ip = *target; }
+                    None => bail!("JumpIfNotNull: empty stack"),
+                }
+            }
             VmOp::JumpIfTrue(target) => {
                 match stack.last() {
                     Some(Val::Bool(true))  => { ip = *target; }
@@ -5815,6 +5836,7 @@ fn try_vm_eval(
                 VmOp::Not => { let a = stack.pop().unwrap(); match a { Val::Bool(b) => stack.push(Val::Bool(!b)), _ => bail!("vm: not type error") } ip += 1; }
                 VmOp::Jump(target)        => { ip = *target; }
                 VmOp::JumpIfFalse(target) => { match stack.last() { Some(Val::Bool(false)) => { ip = *target; } Some(Val::Bool(true)) => { ip += 1; } _ => bail!("vm: JumpIfFalse needs bool") } }
+                VmOp::JumpIfNotNull(target) => { match stack.last() { Some(Val::Unit) => { ip += 1; } Some(_) => { ip = *target; } None => bail!("vm: JumpIfNotNull empty stack") } }
                 VmOp::JumpIfTrue(target)  => { match stack.last() { Some(Val::Bool(true))  => { ip = *target; } Some(Val::Bool(false)) => { ip += 1; } _ => bail!("vm: JumpIfTrue needs bool") } }
                 VmOp::Pop => { stack.pop(); ip += 1; }
                 VmOp::MakeList(n) => { let len = stack.len(); let items: Vec<Val> = stack.drain(len - n ..).collect(); stack.push(Val::List(items)); ip += 1; }

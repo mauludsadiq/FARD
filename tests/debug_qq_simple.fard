@@ -1,0 +1,3 @@
+fn f(x) { x ?? 99 }
+test "fn null" { f(null) == 99 }
+test "fn val" { f(42) == 42 }

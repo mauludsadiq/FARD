@@ -1,0 +1,21 @@
+import("std/rec") as rec
+
+let x = null
+let y = 42
+test "null coalesce" { x ?? y == 42 }
+test "non-null keeps" { (y ?? 99) == 42 }
+test "string default" { null ?? "default" == "default" }
+test "chained" { null ?? null ?? "last" == "last" }
+
+let spec = { min: 5 }
+let min_val = rec.get(spec, "min") ?? 0
+let max_val = rec.get(spec, "max") ?? 100
+test "rec get with default" { min_val == 5 }
+test "rec get missing default" { max_val == 100 }
+
+fn get_config(cfg, key, default) {
+  rec.get(cfg, key) ?? default
+}
+let cfg = { host: "localhost" }
+test "fn default" { get_config(cfg, "port", 8080) == 8080 }
+test "fn present" { get_config(cfg, "host", "unknown") == "localhost" }  // skip - VM hang
