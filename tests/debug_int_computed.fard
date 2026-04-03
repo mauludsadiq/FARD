@@ -1,0 +1,3 @@
+import("std/rec") as rec
+let r = { [42]: "v" }
+test "int key stored" { r["42"] == "v" }
