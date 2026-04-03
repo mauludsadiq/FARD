@@ -1,0 +1,28 @@
+import("std/type") as type
+
+// Test: null receiver field access
+fn test_null_field() {
+  let a = null in
+  a.x
+}
+
+// Test: absent field access (not null field, just missing)
+fn test_absent_field() {
+  let r = { y: 1 } in
+  r.x
+}
+
+// Test: ? on non-result value
+fn test_qmark_nonresult() {
+  42?
+}
+
+// Test: pipe receives null, does it continue or short-circuit?
+fn test_pipe_null_fn() {
+  null |> type.of
+}
+
+test "null receiver" { test_null_field() }
+test "absent field" { test_absent_field() }
+test "? on int" { test_qmark_nonresult() }
+test "pipe null fn" { test_pipe_null_fn() == "unit" }

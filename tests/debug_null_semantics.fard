@@ -1,0 +1,30 @@
+import("std/type") as type
+import("std/rec") as rec
+
+// 1. Field access on null receiver
+let a = null
+// test "null field access" { a.x }  -- what happens?
+
+// 2. Field absence vs null field
+let r = { x: null, y: 1 }
+test "null field present" { rec.has(r, "x") == true }
+test "absent field" { rec.has(r, "z") == false }
+test "null field access" { r.x == null }
+// test "absent field access" { r.z }  -- error or null?
+
+// 3. ?? precedence with || and &&
+test "?? before ||" { (null ?? false) || true }
+test "|| before ??" { (false || null) ?? true }
+test "?? with &&" { (null ?? true) && true }
+
+// 4. pipe into null
+let result = null |> type.of
+test "pipe null" { result == "unit" }
+
+// 5. postfix ? on non-result
+// test "? on int" { 42? }  -- what happens?
+
+// 6. computed key non-text
+let k = 123
+let r2 = { [k]: "val" }
+test "int computed key" { r2["123"] == "val" }
