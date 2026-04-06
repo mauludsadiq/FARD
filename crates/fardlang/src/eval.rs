@@ -126,7 +126,7 @@ pub fn std_aliases() -> BTreeMap<String, BTreeMap<String, String>> {
     let mut m: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let modules: &[(&str, &[&str])] = &[
         ("list", &["len","append","concat","reverse","contains","slice","get"]),
-        ("text", &["len","contains","starts_with","split","trim","slice","replace","join"]),
+        ("text", &["len","contains","starts_with","split","trim","slice","replace","join","url_decode"]),
         ("bytes", &["len","concat","slice","eq","from_text"]),
         ("map",   &["new","set","get","has","keys","delete"]),
         ("crypto",&["sha256","hkdf_sha256","xchacha20poly1305_seal","xchacha20poly1305_open"]),
@@ -654,6 +654,7 @@ fn is_builtin(f: &str) -> bool {
             | "text_trim"
             | "text_slice"
             | "text_replace"
+            | "text_url_decode"
             | "text_join"
             | "list_append"
             | "list_concat"
@@ -921,6 +922,31 @@ fn eval_builtin(f: &str, args: &[V]) -> Result<V> {
                     Ok(V::Text(s.replace(from.as_str(), to.as_str())))
                 }
                 _ => Err(anyhow!("ERROR_BADARG text_replace expects (text, text, text)")),
+            }
+        }
+        "text_url_decode" => {
+            match args.get(0) {
+                Some(V::Text(s)) => {
+                    let mut out = String::with_capacity(s.len());
+                    let bytes = s.as_bytes();
+                    let mut i = 0;
+                    while i < bytes.len() {
+                        if bytes[i] == b'%' && i + 2 < bytes.len() {
+                            let hi = bytes[i + 1];
+                            let lo = bytes[i + 2];
+                            if hi.is_ascii_hexdigit() && lo.is_ascii_hexdigit() {
+                                let val = u8::from_str_radix(std::str::from_utf8(&[hi, lo]).unwrap(), 16).unwrap();
+                                out.push(val as char);
+                                i += 3;
+                                continue;
+                            }
+                        }
+                        out.push(bytes[i] as char);
+                        i += 1;
+                    }
+                    Ok(V::Text(out))
+                }
+                _ => Err(anyhow!("ERROR_BADARG text_url_decode expects text")),
             }
         }
         "text_join" => {

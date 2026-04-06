@@ -3811,6 +3811,7 @@ enum Builtin {
     StrRepeat,
     StrIndexOf,
     StrChars,
+    StrUrlDecode,
     FsReadText,
     FsWriteText,
     FsExists,
@@ -3833,6 +3834,8 @@ enum Builtin {
     FfiCallChecked,  // ffi.call_str(handle_id, symbol, args) -> {ok: text} | {err: text}
     NetServe,   // net.serve(port, handler) -> never (blocking)
     NetRespond, // net.respond(req, status, headers, body) -> null (internal)
+    CryptoEd25519Sign,     // crypto.ed25519_sign(sk_hex, msg_hex) -> sig_hex
+    CryptoEd25519PublicKey,// crypto.ed25519_public_key(sk_hex) -> pk_hex
     CryptoSha512,         // crypto.sha512(bytes) -> text
     CryptoAesEncrypt,     // crypto.aes_encrypt(key_hex, nonce_hex, plaintext) -> {ok: hex} | {err: text}
     CryptoAesDecrypt,     // crypto.aes_decrypt(key_hex, nonce_hex, ciphertext_hex) -> {ok: text} | {err: text}
@@ -6767,6 +6770,27 @@ fn call_builtin(
             let ok  = pk.verify(&msg_bytes, &sig).is_ok();
             Ok(Val::Bool(ok))
         }
+        Builtin::CryptoEd25519Sign => {
+            if args.len() != 2 { bail!("ERROR_RUNTIME ed25519_sign expects 2 args"); }
+            let sk_hex  = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let msg_hex = match &args[1] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let sk_bytes  = hex_decode(&sk_hex)?;
+            let msg_bytes = hex_decode(&msg_hex)?;
+            use ed25519_dalek::{SigningKey, Signer};
+            let sk_arr: [u8;32] = sk_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("bad sk length"))?;
+            let sk = SigningKey::from_bytes(&sk_arr);
+            let sig = sk.sign(&msg_bytes);
+            Ok(Val::Text(hex_lower(&sig.to_bytes())))
+        }
+        Builtin::CryptoEd25519PublicKey => {
+            if args.len() != 1 { bail!("ERROR_RUNTIME ed25519_public_key expects 1 arg"); }
+            let sk_hex = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_RUNTIME type") };
+            let sk_bytes = hex_decode(&sk_hex)?;
+            use ed25519_dalek::SigningKey;
+            let sk_arr: [u8;32] = sk_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("bad sk length"))?;
+            let sk = SigningKey::from_bytes(&sk_arr);
+            Ok(Val::Text(hex_lower(&sk.verifying_key().to_bytes())))
+        }
         Builtin::CryptoHmacSha256 => {
             if args.len() != 2 { bail!("ERROR_RUNTIME hmac_sha256 expects 2 args"); }
             let key_bytes = match &args[0] {
@@ -7829,19 +7853,33 @@ fn call_builtin(
                 // Extract response fields
                 let status = match &resp_val { Val::Record(m) => match m.get("status") { Some(Val::Int(n)) => *n as u32, _ => 200 }, _ => 200 };
                 let body_text = match &resp_val { Val::Record(m) => match m.get("body") { Some(Val::Text(s)) => s.clone(), Some(v) => format!("{:?}", v), _ => String::new() }, _ => String::new() };
-                let content_type = match &resp_val {
-                    Val::Record(m) => match m.get("headers") {
-                        Some(Val::Record(hm)) => match hm.get("content-type") {
-                            Some(Val::Text(ct)) => ct.clone(),
-                            _ => "text/plain".to_string(),
-                        },
+                let headers_v = match &resp_val { Val::Record(m) => m.get("headers").cloned().unwrap_or(Val::Record(BTreeMap::new())), _ => Val::Record(BTreeMap::new()) };
+                let content_type = match &headers_v {
+                    Val::Record(hm) => match hm.get("content-type") {
+                        Some(Val::Text(ct)) => ct.clone(),
                         _ => "text/plain".to_string(),
                     },
                     _ => "text/plain".to_string(),
                 };
-                let response = tiny_http::Response::from_string(body_text)
-                    .with_status_code(status)
-                    .with_header(tiny_http::Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap());
+                let mut response = tiny_http::Response::from_string(body_text)
+                    .with_status_code(status);
+                response = response.with_header(tiny_http::Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap());
+                if let Val::Record(hm) = headers_v {
+                    for (k, v) in hm.iter() {
+                        let val = match v {
+                            Val::Text(s) => s.clone(),
+                            Val::Int(n) => n.to_string(),
+                            Val::Float(f) => f.to_string(),
+                            Val::Bool(b) => if *b { "true".to_string() } else { "false".to_string() },
+                            _ => continue,
+                        };
+                        if k != "Content-Type" {
+                            if let Ok(h) = tiny_http::Header::from_bytes(k.as_bytes(), val.as_bytes()) {
+                                response = response.with_header(h);
+                            }
+                        }
+                    }
+                }
                 req_body.respond(response).ok();
             }
             Ok(Val::Unit)
@@ -8672,6 +8710,31 @@ fn call_builtin(
             match args.first() {
                 Some(Val::Text(s)) => Ok(Val::List(s.chars().map(|c| Val::Text(c.to_string())).collect())),
                 _ => bail!("ERROR_BADARG str.chars expects string"),
+            }
+        }
+        Builtin::StrUrlDecode => {
+            match args.first() {
+                Some(Val::Text(s)) => {
+                    let mut out = String::with_capacity(s.len());
+                    let bytes = s.as_bytes();
+                    let mut i = 0;
+                    while i < bytes.len() {
+                        if bytes[i] == b'%' && i + 2 < bytes.len() {
+                            let hi = bytes[i + 1];
+                            let lo = bytes[i + 2];
+                            if hi.is_ascii_hexdigit() && lo.is_ascii_hexdigit() {
+                                let val = u8::from_str_radix(std::str::from_utf8(&[hi, lo]).unwrap(), 16).unwrap();
+                                out.push(val as char);
+                                i += 3;
+                                continue;
+                            }
+                        }
+                        out.push(bytes[i] as char);
+                        i += 1;
+                    }
+                    Ok(Val::Text(out))
+                }
+                _ => bail!("ERROR_BADARG str.url_decode expects string"),
             }
         }
         Builtin::FsReadText => {
@@ -11855,6 +11918,7 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                m.insert("url_decode".to_string(), Val::Builtin(Builtin::StrUrlDecode));
                 Ok(m)
             }
             "std/ast" => {
@@ -12331,6 +12395,8 @@ Ok(m)
             "std/crypto" => {
                 let mut m = BTreeMap::new();
                 m.insert("ed25519_verify".to_string(), Val::Builtin(Builtin::CryptoEd25519Verify));
+                m.insert("ed25519_sign".to_string(), Val::Builtin(Builtin::CryptoEd25519Sign));
+                m.insert("ed25519_public_key".to_string(), Val::Builtin(Builtin::CryptoEd25519PublicKey));
                 m.insert("hmac_sha256".to_string(), Val::Builtin(Builtin::CryptoHmacSha256));
                 m.insert("sha512".to_string(), Val::Builtin(Builtin::CryptoSha512));
                 m.insert("aes_encrypt".to_string(), Val::Builtin(Builtin::CryptoAesEncrypt));
