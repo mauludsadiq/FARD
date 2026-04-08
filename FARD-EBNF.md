@@ -393,7 +393,7 @@ remain as `Unimplemented` — all other registered builtins are functional.
 
 `get`, `set`, `keys`, `values`, `has`, `delete`, `entries`, `new`, `from_entries`
 
-> `std/record` — now aliases `std/rec`. Both work identically.
+> `std/record` — aliases `std/rec`. Both work identically. `import("std/record") as rec` is valid.
 
 ### std/set
 
