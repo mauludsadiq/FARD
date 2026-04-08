@@ -476,6 +476,45 @@ Returns hex string prefixed `sha256:`.
 
 `uuid_v4`
 
+### std/random
+
+`uuid_v4`, `int`, `float`
+
+> Non-deterministic oracle — results recorded in trace. `int` returns random int, `float` returns random float in [0,1].
+
+### std/avro
+
+> Stub — reserved for Apache Avro serialization support.
+
+### std/duckdb
+
+> Stub — reserved for DuckDB analytical query support.
+
+### std/parquet
+
+> Stub — reserved for Apache Parquet file format support.
+
+### std/postgres
+
+> Stub — reserved for PostgreSQL database support.
+
+### std/wasm
+
+> Stub — reserved for WebAssembly module execution.
+
+### std/watch
+
+> Stub — reserved for filesystem watch/notify support.
+
+### std/ws
+
+> Stub — reserved for WebSocket support.
+
+### std/xlsx
+
+> Stub — reserved for Excel spreadsheet support.
+
+
 ### std/datetime
 
 `now`, `format`, `parse`, `add`, `diff`, `field`
