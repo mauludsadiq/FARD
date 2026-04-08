@@ -1,0 +1,37 @@
+import("std/list") as list
+import("std/rec") as rec
+
+// Rust: match result { Ok(v) => v + 1, Err(e) => 0 }
+fn safe_inc(r) {
+  match r.t {
+    "ok"  => r.v + 1,
+    "err" => 0,
+    _     => 0
+  }
+}
+test "match result" { safe_inc({ t: "ok", v: 41 }) == 42 }
+test "match err"    { safe_inc({ t: "err", e: "x" }) == 0 }
+
+// Rust: Option chaining
+fn get_city(user) { user?.address?.city ?? "unknown" }
+test "option chain present" { get_city({ address: { city: "NYC" } }) == "NYC" }
+test "option chain null"    { get_city(null) == "unknown" }
+test "option chain partial" { get_city({ address: null }) == "unknown" }
+
+// Rust: struct update syntax
+let base = { x: 1, y: 2, z: 3 }
+let updated = { ...base, x: 10 }
+test "struct update" { updated.x == 10 && updated.y == 2 }
+
+// Rust: ? propagation in fn
+fn div(a, b) {
+  if b == 0 then { t: "err", e: "div zero" }
+  else { t: "ok", v: a / b }
+}
+fn pipeline(x) {
+  let a = div(x, 2)?
+  let b = div(a, 2)?
+  { t: "ok", v: b }
+}
+test "? chain ok"  { pipeline(16).v == 4 }
+test "? chain err" { pipeline(16).t == "ok" }

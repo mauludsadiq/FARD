@@ -1,0 +1,41 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+import("std/json") as json
+
+// JS: array methods chaining
+let nums = [1,2,3,4,5]
+let r1 = nums |> list.map(x => x * 2) |> list.filter(x => x > 4) |> list.fold(0, (a,x) => a + x)
+test "chain" { r1 == 24 }
+
+// JS: object spread
+let defaults = { color: "blue", size: 10, visible: true }
+let custom = { ...defaults, color: "red", extra: 99 }
+test "spread" { custom.color == "red" && custom.size == 10 }
+
+// JS: optional chaining + nullish coalescing  
+let config = { db: { host: "localhost", port: 5432 } }
+let host = config?.db?.host ?? "default"
+let timeout = config?.db?.timeout ?? 30
+test "optional chain" { host == "localhost" }
+test "nullish default" { timeout == 30 }
+
+// JS: destructuring
+let { color, size } = custom
+test "destructure" { color == "red" && size == 10 }
+
+// JS: template literals
+let name = "FARD"
+let version = 1
+let msg = "Hello ${name} v${version}!"
+test "template" { msg == "Hello FARD v1!" }
+
+// JS: Promise-style (using result type)
+fn fetch(url) { { t: "ok", v: "data from ${url}" } }
+fn process(data) { { t: "ok", v: str.len(data) } }
+fn pipeline(url) {
+  let data = fetch(url)?
+  let result = process(data)?
+  { t: "ok", v: result }
+}
+test "async style" { pipeline("api.example.com").v > 0 }

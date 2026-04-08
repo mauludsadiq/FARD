@@ -3304,13 +3304,16 @@ impl Parser {
             if self.eat_sym("?") {
                 if self.eat_sym(".") {
                     let n = self.expect_ident()?;
-                    // e?.n desugars to: let __sn__ = e in if __sn__ == null then null else __sn__.n
+                    // e?.n -> let __sn__ = e in if __sn__ == null then null else __safe_get__(__sn__, "n", null)
                     let var = Expr::Var("__sn__".to_string());
-                    let inner = Expr::Get(Box::new(var.clone()), n);
+                    let get_or = Expr::Call(
+                        Box::new(Expr::Var("__safe_get__".to_string())),
+                        vec![Expr::Var("__sn__".to_string()), Expr::Str(n.clone()), Expr::Null]
+                    );
                     let if_expr = Expr::If(
                         Box::new(Expr::Bin("==".to_string(), Box::new(var), Box::new(Expr::Null))),
                         Box::new(Expr::Null),
-                        Box::new(inner)
+                        Box::new(get_or)
                     );
                     e = Expr::Let("__sn__".to_string(), Box::new(e), Box::new(if_expr));
                     continue;
@@ -11405,6 +11408,7 @@ impl ModuleLoader {
     ) -> Result<Val> {
         // Inject builtins used by parser desugaring
         env.set("__spread__".to_string(), Val::Builtin(Builtin::RecSpread));
+        env.set("__safe_get__".to_string(), Val::Builtin(Builtin::RecGetOr));
         let mut exports: Option<Vec<String>> = None;
         let mut last: Val = Val::Unit;
         for it in items {
