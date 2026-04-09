@@ -14,7 +14,7 @@ Computes recency-weighted consensus prices, Greeks, Monte Carlo risk, and unifie
 across public, private, and derivatives books.
 
 Every output is traceable. Any third party can replay the full computation and arrive
-at an identical state digest. 120 files. 4,930 lines. Pure FARD.
+120 files. 4,930 lines. 135 tests. Pure FARD.
 
 https://github.com/mauludsadiq/Qasim-in-FARD
 
