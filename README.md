@@ -1,5 +1,10 @@
 # FARD
 
+
+```bash
+curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
+```
+
 FARD is a deterministic, content-addressed scripting language where every execution produces a cryptographic receipt.
 
 Each run emits a SHA-256 digest committing to the source code, imported modules, inputs, intermediate computation steps, and final result.
