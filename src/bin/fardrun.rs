@@ -3736,6 +3736,7 @@ enum Builtin {
     ListMap,
     ListApply,
     ListLast,
+    ListBuild,
     AsyncSleep, AsyncSpawn, AsyncAwait, AsyncAll, AsyncResolved, AsyncRejected, AsyncYield, AsyncRace, AsyncTimeout,
     RecSpread,
     StrFrom,
@@ -9144,6 +9145,18 @@ fn call_builtin(
             [_, task] => Ok(task.clone()),
             _ => bail!("async.timeout expects (ms, task)"),
         }
+        Builtin::ListBuild => match args.as_slice() {
+            [Val::Int(n), f] => {
+                let n = *n as usize;
+                let mut result = Vec::with_capacity(n);
+                for i in 0..n {
+                    let v = call(f.clone(), vec![Val::Int(i as i64)], tracer, loader)?;
+                    result.push(v);
+                }
+                Ok(Val::List(result))
+            }
+            _ => bail!("list.build expects (n, fn(i) -> val)"),
+        }
         Builtin::ListLast => match args.as_slice() {
             [Val::List(xs)] => Ok(xs.last().cloned().unwrap_or(Val::Unit)),
             _ => bail!("ERROR_BADARG list.last expects 1 list arg"),
@@ -11919,6 +11932,7 @@ impl ModuleLoader {
                 m.insert("map".to_string(), Val::Builtin(Builtin::ListMap));
                 m.insert("apply".to_string(), Val::Builtin(Builtin::ListApply));
                 m.insert("last".to_string(), Val::Builtin(Builtin::ListLast));
+                m.insert("build".to_string(), Val::Builtin(Builtin::ListBuild));
                 m.insert("filter".to_string(), Val::Builtin(Builtin::ListFilter));
                 m.insert("get".to_string(), Val::Builtin(Builtin::ListGet));
                 m.insert("len".to_string(), Val::Builtin(Builtin::ListLen));
