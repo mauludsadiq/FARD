@@ -581,7 +581,7 @@ fn cmd_eval(args: fard_v0_5_language_gate::cli::fardrun_cli::EvalArgs) -> Result
     let tmp = std::env::temp_dir().join("fard_eval_tmp.fard");
     // Auto-import common modules + eval expression
     let src = format!(
-        "import(\"std/list\") as list\nimport(\"std/str\") as str\nimport(\"std/rec\") as rec\nimport(\"std/json\") as json\nimport(\"std/math\") as math\nimport(\"std/type\") as type\nimport(\"std/cast\") as cast\n{}",
+        "import(\"std/list\") as list\nimport(\"std/str\") as str\nimport(\"std/rec\") as rec\nimport(\"std/json\") as json\nimport(\"std/math\") as math\nimport(\"std/io\") as io\nimport(\"std/type\") as type\nimport(\"std/cast\") as cast\n{}",
         expr
     );
     std::fs::write(&tmp, &src)?;
@@ -3740,6 +3740,7 @@ enum Builtin {
     RecSpread,
     StrFrom,
     SqliteOpen, SqliteExec, SqliteQuery, SqliteClose,
+    IoPrintln, IoPrint,
     MutEnvNew,
     MutEnvSet,
     MutEnvGet,
@@ -5983,6 +5984,24 @@ fn call_builtin(
     loader: &mut ModuleLoader,
 ) -> Result<Val> {
     match b {
+        Builtin::IoPrintln => {
+            let out = match args.as_slice() {
+                [Val::Text(t)] => t.clone(),
+                [v] => format!("{:?}", v),
+                _ => args.iter().map(|v| match v { Val::Text(t) => t.clone(), v => format!("{:?}", v) }).collect::<Vec<_>>().join(" "),
+            };
+            println!("{}", out);
+            Ok(Val::Unit)
+        }
+        Builtin::IoPrint => {
+            let out = match args.as_slice() {
+                [Val::Text(t)] => t.clone(),
+                [v] => format!("{:?}", v),
+                _ => args.iter().map(|v| match v { Val::Text(t) => t.clone(), v => format!("{:?}", v) }).collect::<Vec<_>>().join(" "),
+            };
+            print!("{}", out);
+            Ok(Val::Unit)
+        }
         Builtin::PngRed1x1 => {
             if !args.is_empty() {
                 bail!("ERROR_BADARG std/png.red_1x1 expects 0 args");
@@ -12303,7 +12322,8 @@ Ok(m)
                 m.insert("delete_file".to_string(), Val::Builtin(Builtin::IoDeleteFile));
                 m.insert("read_stdin".to_string(),  Val::Builtin(Builtin::IoReadStdin));
                 m.insert("read_stdin_lines".to_string(), Val::Builtin(Builtin::IoReadStdinLines));
-                m.insert("list_dir".to_string(),    Val::Builtin(Builtin::IoListDir));
+                m.insert("println".to_string(), Val::Builtin(Builtin::IoPrintln));
+                m.insert("print".to_string(),   Val::Builtin(Builtin::IoPrint));                m.insert("list_dir".to_string(),    Val::Builtin(Builtin::IoListDir));
                 m.insert("make_dir".to_string(),    Val::Builtin(Builtin::IoMakeDir));
                 Ok(m)
             }
