@@ -4418,19 +4418,28 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                         }
                         bail!("method not found: {k} on type {mod_name}");
                     }
-                    bail!("no methods on type: {}", match v {
-                        Val::Unit => "unit", Val::Bool(_) => "bool",
-                        Val::Int(_) => "int", Val::Float(_) => "float",
-                        Val::Text(_) => "text", Val::Bytes(_) => "bytes",
-                        Val::List(_) => "list", Val::Func(_) | Val::Builtin(_) | Val::MutEnv(_) => "function",
-                        Val::BoundMethod(..) => "bound-method",
-                        Val::Err{..} => "err", Val::Record(_) => "record",
-                        Val::Chan(..) => "chan",
-                        Val::Mtx(..) => "mutex",
-                        Val::Big(..) => "bigint",
-                        Val::Promise(..) => "promise",
-                        Val::VmFunc(_) => "vm-func",
-                    })
+                    {
+                        let tname = match &v {
+                            Val::Unit => "unit", Val::Bool(_) => "bool",
+                            Val::Int(_) => "int", Val::Float(_) => "float",
+                            Val::Text(_) => "text", Val::Bytes(_) => "bytes",
+                            Val::List(_) => "list", Val::Func(_) | Val::Builtin(_) | Val::MutEnv(_) => "function",
+                            Val::BoundMethod(..) => "bound-method",
+                            Val::Err{..} => "err", Val::Record(_) => "record",
+                            Val::Chan(..) => "chan", Val::Mtx(..) => "mutex",
+                            Val::Big(..) => "bigint", Val::Promise(..) => "promise",
+                            Val::VmFunc(_) => "vm-func",
+                        };
+                        let hint = match tname {
+                            "unit" => " -- hint: value is null; use ?? for a default or ?. for safe access",
+                            "int"  => " -- hint: use import('std/int') as i, then i.to_text(n) etc.",
+                            "text" => " -- hint: use import('std/str') as str, then str.len(s) etc.",
+                            "list" => " -- hint: use import('std/list') as list, then list.len(xs) etc.",
+                            "bool" => " -- hint: booleans have no methods; use if/then/else",
+                            _ => "",
+                        };
+                        bail!("no methods on {}{}", tname, hint)
+                    }
                 }
             }
         }
@@ -4628,7 +4637,18 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                     if r == 0 { bail!("ERROR_DIV_ZERO modulo by zero") }
                     Ok(Val::Int(l % r))
                 }
-                _ => bail!("bad binop {op}"),
+                (op, l, r) => {
+                    let lt = match &l { Val::Int(_) => "Int", Val::Float(_) => "Float", Val::Text(_) => "Text", Val::Bool(_) => "Bool", Val::Unit => "Null", Val::List(_) => "List", Val::Record(_) => "Record", _ => "?" };
+                    let rt = match &r { Val::Int(_) => "Int", Val::Float(_) => "Float", Val::Text(_) => "Text", Val::Bool(_) => "Bool", Val::Unit => "Null", Val::List(_) => "List", Val::Record(_) => "Record", _ => "?" };
+                    let hint = match (op, lt, rt) {
+                        ("+", "Text", _) | ("+", _, "Text") => " -- hint: use str.concat([a, str.from(b)]) to join strings",
+                        ("+", "List", _) | ("+", _, "List") => " -- hint: use list.concat([a, b]) to join lists",
+                        ("*", "Text", "Int") | ("*", "Int", "Text") => " -- hint: use str.repeat(s, n) to repeat a string",
+                        ("<"|">"|"<="|">=", "Text", "Text") => " -- hint: use str.lower(a) < str.lower(b) for string comparison",
+                        _ => "",
+                    };
+                    bail!("type error: cannot apply '{}' to {} and {}{}", op, lt, rt, hint)
+                }
             }
         }
         Expr::Call(f, args) => {
