@@ -13,7 +13,13 @@ Ingests signed fills, instruments, corporate actions, and multi-source price fee
 Computes recency-weighted consensus prices, Greeks, Monte Carlo risk, and unified NAV
 across public, private, and derivatives books.
 
-Every output is traceable. Any third party can replay the full computation and arrive
+Every output is traceable. Determinism verified:
+
+```
+# Same digest. Twice. On demand. Forever.
+curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
+curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
+```
 120 files. 4,930 lines. 135 tests. Pure FARD.
 
 https://github.com/mauludsadiq/Qasim-in-FARD
