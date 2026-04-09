@@ -747,6 +747,21 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
             Tracer::new(&t, &t.join("repl_trace.ndjson")).expect("tracer")
         });
 
+        // Auto-import common stdlib modules into REPL environment
+        env.set("__spread__".to_string(), Val::Builtin(Builtin::RecSpread));
+        env.set("__safe_get__".to_string(), Val::Builtin(Builtin::RecGetOr));
+        for (alias, module) in &[
+            ("list", "std/list"), ("str", "std/str"), ("rec", "std/rec"),
+            ("json", "std/json"), ("math", "std/math"), ("io", "std/io"),
+            ("type", "std/type"), ("cast", "std/cast"), ("re", "std/re"),
+        ] {
+            if let Ok(m) = loader.builtin_std(module) {
+                env.set(alias.to_string(), Val::Record(m));
+            }
+        }
+        println!("  auto-imported: list str rec json math io type cast re");
+        println!("");
+
         let mut pending = String::new();
 
         loop {
