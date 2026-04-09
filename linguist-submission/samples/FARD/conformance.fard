@@ -1,0 +1,66 @@
+// Conformance suite: ??, ?, |>, spread, computed keys
+// Tests every interaction in docs/null_semantics.md
+
+import("std/type") as type
+import("std/rec")  as rec
+import("std/list") as list
+
+// ── ?? null-coalescing ─────────────────────────────────────────────────
+test "?? null left"        { null ?? 42 == 42 }
+test "?? non-null left"    { (1 ?? 42) == 1 }
+test "?? false is non-null"{ (false ?? 42) == false }
+test "?? zero is non-null" { (0 ?? 42) == 0 }
+test "?? empty str"        { ("" ?? "x") == "" }
+test "?? chained"          { null ?? null ?? 3 == 3 }
+test "?? chained stops"    { (null ?? 2 ?? 3) == 2 }
+test "?? right not eval"   { (1 ?? (1/0)) == 1 }
+
+// ── ?? precedence ──────────────────────────────────────────────────────
+test "?? same prec as ||"  { (null ?? false) || true }
+test "?? with &&"          { (null ?? true) && true }
+test "?? left assoc"       { (null ?? null) ?? 3 == 3 }
+
+// ── ? error propagation ────────────────────────────────────────────────
+fn ok_val()  { { t: "ok", v: 42 } }
+fn err_val() { { t: "err", e: "fail" } }
+
+fn use_ok()  { let v = ok_val()? in v + 1 }
+fn use_err() { let v = err_val()? in v + 1 }
+
+test "? unwraps ok"        { use_ok() == 43 }
+test "? propagates err"    { use_err().t == "err" }
+test "? err message"       { use_err().e == "fail" }
+
+// ── |> pipe ────────────────────────────────────────────────────────────
+test "pipe basic"          { 5 |> type.of == "int" }
+test "pipe null continues" { null |> type.of == "unit" }
+test "pipe chain"          { [3,1,2] |> list.len == 3 }
+test "pipe with fn"        { 10 |> fn(x) { x * 2 } == 20 }
+
+// ── ?? with pipe ───────────────────────────────────────────────────────
+test "?? then pipe"        { (null ?? [1,2,3]) |> list.len == 3 }
+test "pipe then ??"        { (([] |> list.len) ?? 0) == 0 }
+
+// ── record spread ──────────────────────────────────────────────────────
+let base = { x: 1, y: 2 }
+test "spread override"     { { ...base, x: 10 }.x == 10 }
+test "spread keeps"        { { ...base, x: 10 }.y == 2 }
+test "spread add field"    { { ...base, z: 3 }.z == 3 }
+test "spread immutable"    { base.x == 1 }
+
+// ── computed keys ──────────────────────────────────────────────────────
+let k = "hello"
+test "computed key"        { { [k]: 1 }.hello == 1 }
+test "computed int key"    { let r = { [42]: "v" } in r["42"] == "v" }
+test "computed in spread"  { { ...base, [k]: 9 }.hello == 9 }
+
+fn dyn_rec(key, val) { { [key]: val } }
+test "computed in fn"      { dyn_rec("z", 99).z == 99 }
+
+// ── field access semantics ─────────────────────────────────────────────
+test "present field"       { { a: 1 }.a == 1 }
+test "null field value"    { { a: null }.a == null }
+test "rec.has present"     { rec.has({ a: 1 }, "a") }
+test "rec.has absent"      { rec.has({ a: 1 }, "b") == false }
+test "rec.getOr absent"    { rec.getOr({ a: 1 }, "b", 99) == 99 }
+test "rec.getOr present"   { rec.getOr({ a: 1 }, "a", 99) == 1 }

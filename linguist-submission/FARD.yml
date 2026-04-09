@@ -1,0 +1,10 @@
+FARD:
+  type: programming
+  color: "#FF6B35"
+  extensions:
+  - ".fard"
+  tm_scope: source.fard
+  ace_mode: text
+  language_id: 1000001
+  aliases:
+  - fard

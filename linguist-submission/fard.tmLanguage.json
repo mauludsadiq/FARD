@@ -1,0 +1,137 @@
+{
+  "name": "FARD",
+  "scopeName": "source.fard",
+  "fileTypes": [
+    "fard"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#backtick_strings"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.fard"
+    },
+    "strings": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.fard",
+      "patterns": [
+        {
+          "match": "\\\\[nt\"\\\\]",
+          "name": "constant.character.escape.fard"
+        },
+        {
+          "begin": "\\${",
+          "end": "}",
+          "name": "meta.interpolation.fard",
+          "patterns": [
+            {
+              "include": "$self"
+            }
+          ]
+        }
+      ]
+    },
+    "backtick_strings": {
+      "begin": "`",
+      "end": "`",
+      "name": "string.quoted.backtick.fard"
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(let|fn|if|then|else|match|import|export|as|in|return|while|test|using|true|false|null)\\b",
+          "name": "keyword.control.fard"
+        },
+        {
+          "match": "\\b(artifact)\\b",
+          "name": "keyword.other.fard"
+        }
+      ]
+    },
+    "builtins": {
+      "match": "\\b(std|list|str|rec|json|math|io|type|cast|hash|http|sqlite|chan|promise|result|option|float|int|bytes|csv|re|path|env|net|trace|witness)\\b",
+      "name": "support.class.fard"
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "match": "\\b[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?\\b",
+          "name": "constant.numeric.float.fard"
+        },
+        {
+          "match": "\\b[0-9]+\\b",
+          "name": "constant.numeric.integer.fard"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "match": "\\|>",
+          "name": "keyword.operator.pipe.fard"
+        },
+        {
+          "match": "=>",
+          "name": "keyword.operator.arrow.fard"
+        },
+        {
+          "match": "\\?\\?",
+          "name": "keyword.operator.nullcoalesce.fard"
+        },
+        {
+          "match": "\\?\\.",
+          "name": "keyword.operator.safenav.fard"
+        },
+        {
+          "match": "\\.\\.\\.",
+          "name": "keyword.operator.spread.fard"
+        },
+        {
+          "match": "->",
+          "name": "keyword.operator.arrow.fard"
+        },
+        {
+          "match": "(==|!=|<=|>=|<|>|&&|\\|\\|)",
+          "name": "keyword.operator.comparison.fard"
+        },
+        {
+          "match": "[+\\-*/%]",
+          "name": "keyword.operator.arithmetic.fard"
+        },
+        {
+          "match": "\\?",
+          "name": "keyword.operator.try.fard"
+        }
+      ]
+    },
+    "identifiers": {
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
+      "name": "variable.other.fard"
+    }
+  }
+}
