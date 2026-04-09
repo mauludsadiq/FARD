@@ -1,2 +1,19 @@
+# Tell GitHub Linguist that .fard files are FARD language
 *.fard linguist-language=FARD
 *.fard linguist-detectable=true
+
+# The Rust is the bootstrap runtime - mark as vendored
+# so GitHub shows FARD as the primary language
+src/bin/fardrun.rs linguist-vendored=true
+src/bin/fardfmt.rs linguist-vendored=true
+src/bin/fardcheck.rs linguist-vendored=true
+src/bin/farddoc.rs linguist-vendored=true
+src/bin/fardpkg.rs linguist-vendored=true
+src/bin/fardwasm.rs linguist-vendored=true
+src/bin/fardbundle.rs linguist-vendored=true
+src/bin/fardlock.rs linguist-vendored=true
+src/bin/fardregistry.rs linguist-vendored=true
+src/bin/fardverify.rs linguist-vendored=true
+src/bin/fardbuild.rs linguist-vendored=true
+src/bin/fard-build.rs linguist-vendored=true
+crates/ linguist-vendored=true
