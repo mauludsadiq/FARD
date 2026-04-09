@@ -46,25 +46,17 @@ Programs written in FARD do not merely return values — they return values toge
 ## Install
 
 ```bash
-# macOS (Apple Silicon)
-curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-macos-aarch64.tar.gz | tar xz
-sudo mv fard-macos-aarch64/fard* /usr/local/bin/
-
-# macOS (Intel)
-curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-macos-x86_64.tar.gz | tar xz
-sudo mv fard-macos-x86_64/fard* /usr/local/bin/
-
-# Linux
-curl -L https://github.com/mauludsadiq/FARD/releases/latest/download/fard-linux-x86_64.tar.gz | tar xz
-sudo mv fard-linux-x86_64/fard* /usr/local/bin/
+curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
 ```
+
+Detects your platform automatically (macOS arm64/x86_64, Linux x86_64).
+Installs `fardrun` to `/usr/local/bin`.
 
 Or build from source:
 
 ```bash
-git clone https://github.com/mauludsadiq/FARD.git
-cd FARD
-cargo build --release
+git clone https://github.com/mauludsadiq/FARD.git && cd FARD
+cargo build --release --bin fardrun
 ```
 
 -----
@@ -761,33 +753,27 @@ FARD has a complete data pipeline stack. Write code normally. Every run produces
 -----
 ## Ergonomics
 
-Recent additions that make FARD feel like a daily driver:
+FARD matches Python, Rust, and JS on their home turf:
 
-**Record spread** — update records without boilerplate:
 ```fard
-let node2 = { ...node, rep: node.rep + 1, inbox: list.append(node.inbox, msg) }
+// Python: sum(x*x for x in range(1,11) if x%2==0)
+list.range(1,11) |> list.filter(x => x%2==0) |> list.map(x => x*x) |> list.fold(0, (a,x) => a+x)
+
+// JS: config?.db?.host ?? "localhost"
+let host = config?.db?.host ?? "localhost"
+
+// Rust: fn pipeline(x) -> Result<i64,String> { let a = div(x,2)?; ... }
+fn pipeline(x) { let a = div(x, 2)? let b = div(a, 2)? { t: "ok", v: b } }
+
+// Record spread (JS/Rust)
+let updated = { ...defaults, color: "red", [dynamic_key]: value }
 ```
 
-**Computed keys** — dynamic record construction:
-```fard
-let scores2 = { ...scores, [sender]: scores[sender] + 1 }
-```
-
-**Error propagation** — `?` unwraps results at function boundaries:
-```fard
-fn pipeline(x) {
-  let a = safe_div(x, 2)?
-  let b = safe_div(a, 2)?
-  { t: "ok", v: b }
-}
-```
-
-**Auto int+float promotion** — `1 + 0.5 == 1.5` works without casting.
-
-**`&&`/`||` short-circuit** — works as expected in all contexts.
+**Recent additions:** `?.` safe navigation, `??` null-coalescing, `?` error propagation,
+record spread `{...base, k:v}`, computed keys `{[expr]:v}`, `x => expr` lambdas,
+`&&`/`||` short-circuit, `int+float` auto-promotion.
 
 -----
-
 
 ## Self-Verifying
 
