@@ -24,7 +24,7 @@ FARD is a deterministic scripting language with a functional core, controlled mu
 It provides:
 
 - cryptographic witness receipts on every run
-- 77 standard library modules
+- 65 standard library modules
 - 242 built-in primitives
 - a 13-binary toolchain
 - native FFI via dynamic library loading
@@ -192,7 +192,7 @@ import("pkg:greet")  as greet
 
 -----
 
-## Standard Library (53 Modules)
+## Standard Library (65 Modules)
 
 ### Core Data
 
