@@ -5,6 +5,21 @@
 curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
 ```
 
+## Built with FARD
+
+**Qasim** — cryptographically verifiable financial state engine
+
+Ingests signed fills, instruments, corporate actions, and multi-source price feeds.
+Computes recency-weighted consensus prices, Greeks, Monte Carlo risk, and unified NAV
+across public, private, and derivatives books.
+
+Every output is traceable. Any third party can replay the full computation and arrive
+at an identical state digest. 120 files. 4,930 lines. Pure FARD.
+
+https://github.com/mauludsadiq/Qasim-in-FARD
+
+-----
+
 FARD is a deterministic, content-addressed scripting language where every execution produces a cryptographic receipt.
 
 Each run emits a SHA-256 digest committing to the source code, imported modules, inputs, intermediate computation steps, and final result.
