@@ -574,6 +574,44 @@ fn expr_contains_var(expr: &Expr, name: &str) -> bool {
 
 
 
+fn cmd_eval(args: fard_v0_5_language_gate::cli::fardrun_cli::EvalArgs) -> Result<()> {
+    use fard_v0_5_language_gate::cli::fardrun_cli::EvalArgs;
+    let expr = args.expr;
+    // Wrap in a temp file and run
+    let tmp = std::env::temp_dir().join("fard_eval_tmp.fard");
+    // Auto-import common modules + eval expression
+    let src = format!(
+        "import(\"std/list\") as list\nimport(\"std/str\") as str\nimport(\"std/rec\") as rec\nimport(\"std/json\") as json\nimport(\"std/math\") as math\nimport(\"std/type\") as type\nimport(\"std/cast\") as cast\n{}",
+        expr
+    );
+    std::fs::write(&tmp, &src)?;
+    let devnull = std::path::PathBuf::from("/dev/null");
+    let mut tracer = Tracer::new(&devnull, &devnull).unwrap_or_else(|_| {
+        let t = std::env::temp_dir();
+        Tracer::new(&t, &t.join("eval_trace.ndjson")).expect("tracer")
+    });
+    let mut loader = ModuleLoader::new(std::path::Path::new("."));
+    let src2 = std::fs::read_to_string(&tmp)?;
+    let mut parser = Parser::from_src(&src2, "<eval>")?;
+    let items = parser.parse_module()?;
+    let mut env = Env::new();
+    env.set("__spread__".to_string(), Val::Builtin(Builtin::RecSpread));
+    env.set("__safe_get__".to_string(), Val::Builtin(Builtin::RecGetOr));
+    let result = loader.eval_items(items, &mut env, &mut tracer, std::path::Path::new("."))?;
+    let display = match &result {
+        Val::Text(t) => format!("{}", t),
+        Val::Int(n) => format!("{}", n),
+        Val::Float(f) => format!("{}", f),
+        Val::Bool(b) => format!("{}", b),
+        Val::Unit => "null".to_string(),
+        Val::List(xs) => format!("[{}]", xs.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(", ")),
+        Val::Record(m) => format!("{{{}}}", m.iter().map(|(k,v)| format!("{}: {:?}", k, v)).collect::<Vec<_>>().join(", ")),
+        other => format!("{:?}", other),
+    };
+    println!("{}", display);
+    Ok(())
+}
+
 fn cmd_verify(args: fard_v0_5_language_gate::cli::fardrun_cli::VerifyArgs) -> Result<()> {
     let out = &args.out;
     let result_path = out.join("result.json");
@@ -613,7 +651,7 @@ fn cmd_verify(args: fard_v0_5_language_gate::cli::fardrun_cli::VerifyArgs) -> Re
 }
 
 fn main() -> Result<()> {
-    let (run, want_version, want_repl, test_args, publish_args, install_args, new_args, verify_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
+    let (run, want_version, want_repl, test_args, publish_args, install_args, new_args, verify_args, eval_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
 
     // Handle search subcommand
     if std::env::var("FARD_SEARCH_MODE").is_ok() {
@@ -650,6 +688,9 @@ fn main() -> Result<()> {
     }
     if let Some(verify_args) = verify_args {
         return cmd_verify(verify_args);
+    }
+    if let Some(eval_args) = eval_args {
+        return cmd_eval(eval_args);
     }
 
 fn pretty_print_val(v: &Val, indent: usize) -> String {

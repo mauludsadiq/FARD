@@ -17,6 +17,7 @@ pub struct Cli {
 pub enum Command {
     Run(RunArgs),
     Repl,
+    Eval(EvalArgs),
     Test(TestArgs),
     Publish(PublishArgs),
     Install(InstallArgs),
@@ -24,6 +25,12 @@ pub enum Command {
     Search(SearchArgs),
     Notebook(NotebookArgs),
     Verify(VerifyArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct EvalArgs {
+    /// Expression to evaluate
+    pub expr: String,
 }
 
 #[derive(Args, Debug)]
@@ -129,7 +136,7 @@ pub struct SearchArgs {
 }
 
 impl Cli {
-    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>, Option<InstallArgs>, Option<NewArgs>, Option<VerifyArgs>) {
+    pub fn parse_compat() -> (RunArgs, bool, bool, Option<TestArgs>, Option<PublishArgs>, Option<InstallArgs>, Option<NewArgs>, Option<VerifyArgs>, Option<EvalArgs>) {
         use std::ffi::OsString;
         let mut argv: Vec<OsString> = std::env::args_os().collect();
         if argv.len() >= 2 {
@@ -153,6 +160,20 @@ impl Cli {
                 argv.insert(1, OsString::from("run"));
             }
         }
+        // Handle -e "expr" shorthand
+        if argv.len() >= 3 {
+            let a1 = argv[1].to_string_lossy();
+            if a1 == "-e" || a1 == "--eval" {
+                let expr = argv[2].to_string_lossy().to_string();
+                let dummy = RunArgs {
+                    program: std::path::PathBuf::from("."),
+                    out: std::path::PathBuf::from("."),
+                    lockfile: None, registry: None, enforce_lockfile: false,
+                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
+                };
+                return (dummy, false, false, None, None, None, None, None, Some(EvalArgs { expr }));
+            }
+        }
         let cli = Cli::parse_from(argv.clone());
 
         if cli.version {
@@ -167,7 +188,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
             };
-            return (dummy, true, false, None, None, None, None, None);
+            return (dummy, true, false, None, None, None, None, None, None);
         }
 
         let want_repl = matches!(cli.cmd, Some(Command::Repl));
@@ -185,7 +206,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, Some(t), None, None, None, None);
+                return (dummy, false, false, Some(t), None, None, None, None, None);
             }
             Some(Command::Publish(p)) => {
                 let dummy = RunArgs {
@@ -199,7 +220,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, Some(p), None, None, None);
+                return (dummy, false, false, None, Some(p), None, None, None, None);
             }
             Some(Command::Install(i)) => {
                 let dummy = RunArgs {
@@ -213,7 +234,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, None, Some(i), None, None);
+                return (dummy, false, false, None, None, Some(i), None, None, None);
             }
             Some(Command::New(n)) => {
                 let dummy = RunArgs {
@@ -227,7 +248,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, None, None, Some(n), None);
+                return (dummy, false, false, None, None, None, Some(n), None, None);
             }
             Some(Command::Notebook(_)) => {
                 // Handled directly in fardrun.rs
@@ -242,7 +263,16 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, None, None, None, None);
+                return (dummy, false, false, None, None, None, None, None, None);
+            }
+            Some(Command::Eval(e)) => {
+                let dummy = RunArgs {
+                    program: std::path::PathBuf::from("."),
+                    out: std::path::PathBuf::from("."),
+                    lockfile: None, registry: None, enforce_lockfile: false,
+                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
+                };
+                return (dummy, false, false, None, None, None, None, None, Some(e));
             }
             Some(Command::Verify(v)) => {
                 let dummy = RunArgs {
@@ -251,7 +281,16 @@ impl Cli {
                     lockfile: None, registry: None, enforce_lockfile: false,
                     no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
                 };
-                return (dummy, false, false, None, None, None, None, Some(v));
+                return (dummy, false, false, None, None, None, None, Some(v), None);
+            }
+            Some(Command::Eval(e)) => {
+                let dummy = RunArgs {
+                    program: std::path::PathBuf::from("."),
+                    out: std::path::PathBuf::from("."),
+                    lockfile: None, registry: None, enforce_lockfile: false,
+                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
+                };
+                return (dummy, false, false, None, None, None, None, None, Some(e));
             }
             Some(Command::Verify(v)) => {
                 let dummy = RunArgs {
@@ -260,7 +299,7 @@ impl Cli {
                     lockfile: None, registry: None, enforce_lockfile: false,
                     no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
                 };
-                return (dummy, false, false, None, None, None, None, Some(v));
+                return (dummy, false, false, None, None, None, None, Some(v), None);
             }
             Some(Command::Search(s)) => {
                 let query = s.query.unwrap_or_default();
@@ -279,7 +318,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                 };
-                return (dummy, false, false, None, None, None, None, None);
+                return (dummy, false, false, None, None, None, None, None, None);
             }
             Some(Command::Repl) | None => {
                 if want_repl {
@@ -294,7 +333,7 @@ impl Cli {
                     hm_types: false,
                     program_args: vec![],
                     };
-                    return (dummy, false, true, None, None, None, None, None);
+                    return (dummy, false, true, None, None, None, None, None, None);
                 }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
                 eprintln!("       fardrun test --program <file.fard>");
@@ -304,7 +343,7 @@ impl Cli {
             }
         };
 
-        (run, false, false, None, None, None, None, None)
+        (run, false, false, None, None, None, None, None, None)
     }
 }
 
