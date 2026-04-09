@@ -1,67 +1,50 @@
 #!/bin/sh
-# FARD installer — detects platform and installs all binaries to /usr/local/bin
 set -e
 
 REPO="mauludsadiq/FARD"
-BASE="https://github.com/${REPO}/releases/latest/download"
-INSTALL_DIR="${FARD_INSTALL_DIR:-/usr/local/bin}"
+BINARY="fardrun"
+INSTALL_DIR="/usr/local/bin"
 
 # Detect platform
 OS=$(uname -s)
 ARCH=$(uname -m)
 
-case "$OS" in
-  Darwin)
-    case "$ARCH" in
-      arm64) SUFFIX="macos-aarch64" ;;
-      x86_64) SUFFIX="macos-x86_64" ;;
-      *) echo "Unsupported arch: $ARCH"; exit 1 ;;
-    esac
-    ;;
-  Linux)
-    case "$ARCH" in
-      x86_64) SUFFIX="linux-x86_64" ;;
-      *) echo "Unsupported arch: $ARCH"; exit 1 ;;
-    esac
-    ;;
-  *) echo "Unsupported OS: $OS"; exit 1 ;;
-esac
+if [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
+    ASSET="fardrun-macos-arm64"
+elif [ "$OS" = "Darwin" ] && [ "$ARCH" = "x86_64" ]; then
+    ASSET="fardrun-macos-x86_64"
+elif [ "$OS" = "Linux" ] && [ "$ARCH" = "x86_64" ]; then
+    ASSET="fardrun-linux-x86_64"
+else
+    echo "Unsupported platform: $OS $ARCH"
+    echo "Please build from source: cargo build --release --bin fardrun"
+    exit 1
+fi
 
-ARCHIVE="fard-${SUFFIX}.tar.gz"
-URL="${BASE}/${ARCHIVE}"
+# Get latest release tag
+TAG=$(curl -sf "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
 
-echo "Installing FARD for ${OS}/${ARCH}..."
-echo "Downloading ${URL}..."
+if [ -z "$TAG" ]; then
+    echo "Could not determine latest release. Check https://github.com/$REPO/releases"
+    exit 1
+fi
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+URL="https://github.com/$REPO/releases/download/$TAG/$ASSET"
 
-curl -fsSL "$URL" -o "$TMP/$ARCHIVE"
-tar xzf "$TMP/$ARCHIVE" -C "$TMP"
+echo "Installing fardrun $TAG for $OS/$ARCH..."
+echo "Downloading from $URL"
 
-DIST="$TMP/fard-${SUFFIX}"
-INSTALLED=0
+TMP=$(mktemp)
+curl -sfL "$URL" -o "$TMP"
+chmod +x "$TMP"
 
-for bin in "$DIST"/fard* "$DIST"/fard-lsp "$DIST"/fard-build; do
-  [ -f "$bin" ] || continue
-  name=$(basename "$bin")
-  dest="$INSTALL_DIR/$name"
-  if [ -w "$INSTALL_DIR" ]; then
-    cp "$bin" "$dest"
-    chmod +x "$dest"
-  else
-    sudo cp "$bin" "$dest"
-    sudo chmod +x "$dest"
-  fi
-  INSTALLED=$((INSTALLED + 1))
-done
+if [ -w "$INSTALL_DIR" ]; then
+    mv "$TMP" "$INSTALL_DIR/$BINARY"
+else
+    sudo mv "$TMP" "$INSTALL_DIR/$BINARY"
+fi
 
 echo ""
-echo "Installed $INSTALLED FARD binaries to $INSTALL_DIR"
+echo "fardrun installed to $INSTALL_DIR/$BINARY"
 echo ""
-fardrun --version 2>/dev/null && echo "fardrun ok" || echo "fardrun installed (restart shell to use)"
-echo ""
-echo "Get started:"
-echo "  fardrun new my-project"
-echo "  cd my-project"
-echo "  fardrun run --program main.fard --out ./out"
+fardrun --version

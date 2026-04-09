@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary: fardrun
+            asset: fardrun-linux-x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary: fardrun
+            asset: fardrun-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: fardrun
+            asset: fardrun-macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --bin fardrun --target ${{ matrix.target }}
+
+      - name: Rename binary
+        run: cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.asset }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create checksums
+        run: |
+          cd artifacts
+          for dir in */; do
+            file="${dir%/}"
+            sha256sum "$dir/$file" >> ../checksums.txt
+          done
+          cat ../checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/fardrun-linux-x86_64/fardrun-linux-x86_64
+            artifacts/fardrun-macos-x86_64/fardrun-macos-x86_64
+            artifacts/fardrun-macos-arm64/fardrun-macos-arm64
+            checksums.txt
+          body: |
+            ## Install
+
+            **macOS (Apple Silicon)**
+            ```bash
+            curl -L https://github.com/mauludsadiq/FARD/releases/download/${{ github.ref_name }}/fardrun-macos-arm64 -o fardrun
+            chmod +x fardrun && sudo mv fardrun /usr/local/bin/
+            ```
+
+            **macOS (Intel)**
+            ```bash
+            curl -L https://github.com/mauludsadiq/FARD/releases/download/${{ github.ref_name }}/fardrun-macos-x86_64 -o fardrun
+            chmod +x fardrun && sudo mv fardrun /usr/local/bin/
+            ```
+
+            **Linux (x86_64)**
+            ```bash
+            curl -L https://github.com/mauludsadiq/FARD/releases/download/${{ github.ref_name }}/fardrun-linux-x86_64 -o fardrun
+            chmod +x fardrun && sudo mv fardrun /usr/local/bin/
+            ```
+
+            Or use the one-liner installer:
+            ```bash
+            curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
+            ```
