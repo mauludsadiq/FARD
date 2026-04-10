@@ -1,0 +1,24 @@
+import("std/io") as io
+import("std/bytes") as stdbytes
+import("std/cast") as cast
+import("../../media-core/src/artifact") as artifact
+import("../../packages/audio-core/src/pcm") as pcm
+import("../../packages/audio-core/src/wav") as wav
+
+fn write_wav(path, title, sample_rate, channels, samples) {
+  let pcm_bytes = pcm.encode_pcm_s16le(samples) in
+  let wav_bytes = wav.wav_bytes(sample_rate, channels, pcm_bytes, 16) in
+  let meta = {
+    "artifact_type": "audio/wav",
+    "encoding": "pcm_s16le",
+    "sample_rate": sample_rate,
+    "channels": channels,
+    "title": title,
+    "byte_len": stdbytes.len(wav_bytes),
+    "duration_seconds": cast.float(list.len(samples)) / cast.float(sample_rate * channels)
+  } in
+  let _ = io.write_file(path, stdbytes.to_string(wav_bytes)) in
+  artifact.write_receipt(path, wav_bytes, meta)
+}
+
+export { write_wav }

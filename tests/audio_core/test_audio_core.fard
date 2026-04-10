@@ -1,0 +1,27 @@
+import("../../packages/audio-core/src/sample") as sample
+import("../../packages/audio-core/src/pcm") as pcm
+import("../../packages/audio-core/src/wav") as wav
+import("../../packages/audio-core/src/synth") as synth
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+test "clamp_unit low" { sample.clamp_unit(-2.0) == -1.0 }
+test "clamp_unit mid" { sample.clamp_unit(0.25) == 0.25 }
+test "clamp_unit high" { sample.clamp_unit(2.0) == 1.0 }
+
+test "pcm zero" { pcm.f32_to_pcm_s16(0.0) == 0 }
+test "pcm positive full scale" { pcm.f32_to_pcm_s16(1.0) == 32767 }
+test "pcm negative full scale" { pcm.f32_to_pcm_s16(-1.0) == -32768 }
+
+let pcm_bytes = pcm.encode_pcm_s16le([0.0, 1.0, -1.0])
+test "pcm byte length" { stdbytes.len(pcm_bytes) == 6 }
+
+let wav_bytes = wav.wav_bytes(44100, 1, pcm_bytes, 16)
+let hdr = stdbytes.to_string(stdbytes.slice(wav_bytes, 0, 4))
+let fmt = stdbytes.to_string(stdbytes.slice(wav_bytes, 8, 12))
+test "wav riff" { hdr == "RIFF" }
+test "wav wave" { fmt == "WAVE" }
+test "wav length" { stdbytes.len(wav_bytes) == 44 + 6 }
+
+let s = synth.sine(440.0, 1.0, 8)
+test "sine sample count" { list.len(s) == 8 }

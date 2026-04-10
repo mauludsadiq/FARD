@@ -1,0 +1,11 @@
+import("std/cast") as cast
+
+fn clamp_unit(x) {
+  if x < -1.0 then -1.0 else if x > 1.0 then 1.0 else x
+}
+
+fn time_at(i, sample_rate) {
+  cast.float(i) / cast.float(sample_rate)
+}
+
+export { clamp_unit, time_at }

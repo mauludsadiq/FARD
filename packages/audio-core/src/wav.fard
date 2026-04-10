@@ -1,0 +1,27 @@
+import("../../media-core/src/bytes") as media_bytes
+import("std/bytes") as stdbytes
+
+fn wav_bytes(sample_rate, channels, pcm_bytes, bits_per_sample) {
+  let byte_rate = sample_rate * channels * (bits_per_sample / 8) in
+  let block_align = channels * (bits_per_sample / 8) in
+  let subchunk2 = stdbytes.len(pcm_bytes) in
+  let chunk_size = 36 + subchunk2 in
+  media_bytes.concat_many([
+    media_bytes.ascii_bytes("RIFF"),
+    media_bytes.u32le(chunk_size),
+    media_bytes.ascii_bytes("WAVE"),
+    media_bytes.ascii_bytes("fmt "),
+    media_bytes.u32le(16),
+    media_bytes.u16le(1),
+    media_bytes.u16le(channels),
+    media_bytes.u32le(sample_rate),
+    media_bytes.u32le(byte_rate),
+    media_bytes.u16le(block_align),
+    media_bytes.u16le(bits_per_sample),
+    media_bytes.ascii_bytes("data"),
+    media_bytes.u32le(subchunk2),
+    pcm_bytes
+  ])
+}
+
+export { wav_bytes }
