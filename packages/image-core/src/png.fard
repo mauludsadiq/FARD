@@ -1,0 +1,56 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/bytes") as stdbytes
+import("../../media-core/src/bytes") as bytes
+import("../../image-core/src/crc32") as crc32
+import("../../image-core/src/zlib0") as zlib0
+
+fn be32(n) {
+  stdbytes.of_list([
+    (n / 16777216) % 256,
+    (n / 65536) % 256,
+    (n / 256) % 256,
+    n % 256
+  ])
+}
+
+fn chunk(tag, data) {
+  let tagb = stdbytes.of_str(tag) in
+  let crc_input = bytes.concat(tagb, data) in
+  bytes.concat_many([
+    be32(stdbytes.len(data)),
+    tagb,
+    data,
+    be32(crc32.crc32_bytes(crc_input))
+  ])
+}
+
+fn scanlines(width, height, pixels) {
+  let rows = list.range(0, height) in
+  bytes.concat_many(list.map(rows, fn(y) {
+    let start = y * width in
+    let row = list.take(list.drop(pixels, start), width) in
+    let row_bytes = bytes.concat_many(list.map(row, fn(p) {
+      stdbytes.of_list([rec.get(p, "r"), rec.get(p, "g"), rec.get(p, "b")])
+    })) in
+    bytes.concat(stdbytes.of_list([0]), row_bytes)
+  }))
+}
+
+fn png_bytes(width, height, pixels) {
+  let ihdr = bytes.concat_many([
+    be32(width),
+    be32(height),
+    stdbytes.of_list([8, 2, 0, 0, 0])
+  ]) in
+  let raw = scanlines(width, height, pixels) in
+  let idat = zlib0.zlib_bytes(raw) in
+  bytes.concat_many([
+    stdbytes.of_list([137,80,78,71,13,10,26,10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", idat),
+    chunk("IEND", stdbytes.of_list([]))
+  ])
+}
+
+export { be32, chunk, scanlines, png_bytes }

@@ -1,0 +1,7 @@
+import("std/io") as io
+import("../packages/image-core/src/draw") as draw
+import("../packages/image-core/src/export") as image_export
+
+let raster = draw.gradient(16, 16)
+let _ = io.make_dir("out")
+image_export.write_png("out/gradient_16.png", "gradient_16", raster)

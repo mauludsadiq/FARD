@@ -1,0 +1,11 @@
+import("../../packages/image-core/src/png") as png
+import("../../packages/image-core/src/color") as color
+import("std/bytes") as stdbytes
+
+let pixels = [color.rgb(255, 0, 0)]
+let sig = png.png_bytes(1, 1, pixels)
+
+test "png signature byte 0" { stdbytes.get(sig, 0) == 137 }
+test "png signature text" { stdbytes.to_string(stdbytes.slice(sig, 1, 4)) == "PNG" }
+test "png has ihdr" { stdbytes.to_string(stdbytes.slice(sig, 12, 16)) == "IHDR" }
+test "png nontrivial length" { stdbytes.len(sig) > 32 }

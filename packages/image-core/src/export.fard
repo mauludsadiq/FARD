@@ -3,6 +3,7 @@ import("std/bytes") as stdbytes
 import("std/artifact") as artifact_std
 import("../../media-core/src/artifact") as artifact
 import("../../image-core/src/ppm") as ppm
+import("../../image-core/src/png") as png
 
 fn write_ppm(path, title, raster) {
   let spec = rec.get(raster, "spec") in
@@ -22,4 +23,22 @@ fn write_ppm(path, title, raster) {
   artifact.write_receipt(path, img, meta)
 }
 
-export { write_ppm }
+fn write_png(path, title, raster) {
+  let spec = rec.get(raster, "spec") in
+  let width = rec.get(spec, "width") in
+  let height = rec.get(spec, "height") in
+  let pixels = rec.get(raster, "pixels") in
+  let img = png.png_bytes(width, height, pixels) in
+  let meta = {
+    "artifact_type": "image/png",
+    "encoding": "png_rgb8",
+    "width": width,
+    "height": height,
+    "title": title,
+    "byte_len": stdbytes.len(img)
+  } in
+  let _ = artifact_std.emit(path, stdbytes.to_list(img)) in
+  artifact.write_receipt(path, img, meta)
+}
+
+export { write_ppm, write_png }

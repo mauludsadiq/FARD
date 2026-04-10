@@ -1,0 +1,6 @@
+import("../../packages/image-core/src/crc32") as crc32
+import("std/bytes") as stdbytes
+
+test "crc32 empty is zero" { crc32.crc32_bytes(stdbytes.of_list([])) == 0 }
+test "crc32 bytes width" { stdbytes.len(crc32.crc32_be_bytes(stdbytes.of_list([1,2,3]))) == 4 }
+test "xor byte" { crc32.xor_byte(12, 10) == 6 }

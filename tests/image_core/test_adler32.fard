@@ -1,0 +1,6 @@
+import("../../packages/image-core/src/adler32") as adler32
+import("std/bytes") as stdbytes
+
+test "adler32 empty" { adler32.adler32_int(stdbytes.of_list([])) == 1 }
+test "adler32 bytes width" { stdbytes.len(adler32.adler32_be_bytes(stdbytes.of_list([1,2,3]))) == 4 }
+test "mod65521" { adler32.mod65521(65522) == 1 }

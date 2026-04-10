@@ -1,0 +1,11 @@
+import("../../packages/image-core/src/zlib0") as zlib0
+import("std/bytes") as stdbytes
+
+let src = stdbytes.of_list([1,2,3,4,5])
+let block = zlib0.zlib_stored_block(src)
+let z = zlib0.zlib_bytes(src)
+
+test "zlib stored block starts final byte" { stdbytes.get(block, 0) == 1 }
+test "zlib header cmf" { stdbytes.get(z, 0) == 120 }
+test "zlib header flg" { stdbytes.get(z, 1) == 1 }
+test "zlib total len" { stdbytes.len(z) == stdbytes.len(src) + 2 + 5 + 4 }
