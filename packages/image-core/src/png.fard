@@ -26,15 +26,14 @@ fn chunk(tag, data) {
 }
 
 fn scanlines(width, height, pixels) {
-  let rows = list.range(0, height) in
-  bytes.concat_many(list.map(rows, fn(y) {
-    let start = y * width in
-    let row = list.take(list.drop(pixels, start), width) in
+  let rows = list.chunk(pixels, width) in
+  let parts_rev = list.fold(rows, [], fn(parts, row) {
     let row_bytes = bytes.concat_many(list.map(row, fn(p) {
       stdbytes.of_list([rec.get(p, "r"), rec.get(p, "g"), rec.get(p, "b")])
     })) in
-    bytes.concat(stdbytes.of_list([0]), row_bytes)
-  }))
+    list.concat([[bytes.concat(stdbytes.of_list([0]), row_bytes)], parts])
+  }) in
+  bytes.concat_many(list.reverse(parts_rev))
 }
 
 fn png_bytes(width, height, pixels) {
