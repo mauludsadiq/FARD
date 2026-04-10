@@ -1,0 +1,10 @@
+fn make(index, pts_num, pts_den, raster) {
+  {
+    "index": index,
+    "pts_num": pts_num,
+    "pts_den": pts_den,
+    "raster": raster
+  }
+}
+
+export { make }

@@ -1,0 +1,31 @@
+import("std/io") as io
+import("std/rec") as rec
+import("std/list") as list
+import("std/bytes") as stdbytes
+import("../../media-core/src/artifact") as artifact
+import("../../video-core/src/rawvid") as rawvid
+
+fn write_rawvid(path, title, video) {
+  let spec = rec.get(video, "spec") in
+  let width = rec.get(spec, "width") in
+  let height = rec.get(spec, "height") in
+  let fps_num = rec.get(spec, "fps_num") in
+  let fps_den = rec.get(spec, "fps_den") in
+  let frames = rec.get(video, "frames") in
+  let payload = rawvid.rawvid_bytes(width, height, fps_num, fps_den, frames) in
+  let meta = {
+    "artifact_type": "video/x-fard-rawvid",
+    "encoding": "rawvid_rgb8",
+    "width": width,
+    "height": height,
+    "fps_num": fps_num,
+    "fps_den": fps_den,
+    "frames": list.len(frames),
+    "title": title,
+    "byte_len": stdbytes.len(payload)
+  } in
+  let _ = io.write_file(path, stdbytes.to_string(payload)) in
+  artifact.write_receipt(path, payload, meta)
+}
+
+export { write_rawvid }

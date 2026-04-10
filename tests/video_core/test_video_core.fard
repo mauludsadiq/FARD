@@ -1,0 +1,28 @@
+import("../../packages/video-core/src/frame") as frame
+import("../../packages/video-core/src/rawvid") as rawvid
+import("../../packages/video-core/src/timeline") as timeline
+import("../../packages/image-core/src/color") as color
+import("../../packages/image-core/src/raster") as raster
+import("std/bytes") as stdbytes
+import("std/rec") as rec
+import("std/list") as list
+
+let img = raster.make(2, 1, [color.rgb(255, 0, 0), color.rgb(0, 255, 0)])
+let fr0 = frame.make(0, 0, 24, img)
+let fr1 = frame.make(1, 1, 24, img)
+
+test "frame index" { rec.get(fr0, "index") == 0 }
+test "frame pts num" { rec.get(fr1, "pts_num") == 1 }
+
+let fbytes = rawvid.frame_rgb_bytes(fr0)
+test "frame rgb byte len" { stdbytes.len(fbytes) == 6 }
+
+let rv = rawvid.rawvid_bytes(2, 1, 24, 1, [fr0, fr1])
+test "rawvid magic" { stdbytes.to_string(stdbytes.slice(rv, 0, 8)) == "FARDVID1" }
+test "rawvid byte len" { stdbytes.len(rv) == 28 + 12 }
+
+let vid = timeline.test_pattern_video(3, 2, 24, 1, 4)
+let spec = rec.get(vid, "spec")
+test "timeline width" { rec.get(spec, "width") == 3 }
+test "timeline height" { rec.get(spec, "height") == 2 }
+test "timeline frame count" { list.len(rec.get(vid, "frames")) == 4 }
