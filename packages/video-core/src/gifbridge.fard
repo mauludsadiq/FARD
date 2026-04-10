@@ -1,0 +1,10 @@
+fn gif_stub(video_artifact) {
+  {
+    "artifact_type": "image/gif",
+    "source_artifact_type": video_artifact.artifact_type,
+    "source_path": video_artifact.path,
+    "bridge": "rawvid_to_gif_stub"
+  }
+}
+
+export { gif_stub }

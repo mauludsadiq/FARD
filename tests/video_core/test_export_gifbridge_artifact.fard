@@ -1,0 +1,9 @@
+import("../../packages/video-core/src/export_gifbridge_artifact") as export_gifbridge_artifact
+
+let v = { "artifact_type": "video/x-fard-rawvid", "path": "out/test_pattern.fvid" }
+let g = export_gifbridge_artifact.write_gifbridge_artifact("out/test_pattern.gif.json", v)
+
+test "gif artifact type" { g.artifact_type == "image/gif" }
+test "gif artifact source type" { g.source_artifact_type == "video/x-fard-rawvid" }
+test "gif artifact source path" { g.source_path == "out/test_pattern.fvid" }
+test "gif artifact marker" { g.bridge == "rawvid_to_gif_stub" }

@@ -1,0 +1,12 @@
+import("../packages/video-core/src/export_gifbridge_artifact") as export_gifbridge_artifact
+
+let video_artifact = {
+  "artifact_type": "video/x-fard-rawvid",
+  "title": "test_pattern",
+  "path": "out/test_pattern.fvid"
+}
+
+export_gifbridge_artifact.write_gifbridge_artifact(
+  "out/test_pattern.gif.json",
+  video_artifact
+)

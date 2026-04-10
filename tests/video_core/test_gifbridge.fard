@@ -1,0 +1,9 @@
+import("../../packages/video-core/src/gifbridge") as gifbridge
+
+let v = { "artifact_type": "video/x-fard-rawvid", "path": "out/test_pattern.fvid" }
+let g = gifbridge.gif_stub(v)
+
+test "gifbridge type" { g.artifact_type == "image/gif" }
+test "gifbridge source type" { g.source_artifact_type == "video/x-fard-rawvid" }
+test "gifbridge source path" { g.source_path == "out/test_pattern.fvid" }
+test "gifbridge marker" { g.bridge == "rawvid_to_gif_stub" }

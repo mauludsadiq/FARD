@@ -1,0 +1,12 @@
+import("std/json") as json
+import("std/artifact") as artifact_std
+import("../../video-core/src/gifbridge") as gifbridge
+
+fn write_gifbridge_artifact(path, video_artifact) {
+  let gif = gifbridge.gif_stub(video_artifact) in
+  let body = json.encode(gif) in
+  let _ = artifact_std.emit(path, { "text": body }) in
+  gif
+}
+
+export { write_gifbridge_artifact }
