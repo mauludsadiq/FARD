@@ -1,0 +1,17 @@
+import("std/rec") as rec
+
+fn av_pair(video, audio) {
+  {
+    "video": video,
+    "audio": audio
+  }
+}
+
+fn with_audio(video, wav_artifact) {
+  {
+    "video": video,
+    "audio": wav_artifact
+  }
+}
+
+export { av_pair, with_audio }

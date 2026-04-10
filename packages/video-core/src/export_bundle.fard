@@ -1,0 +1,7 @@
+import("../../video-core/src/avbundle") as avbundle
+
+fn write_avbundle(title, video_artifact, audio_artifact) {
+  avbundle.make(title, video_artifact, audio_artifact)
+}
+
+export { write_avbundle }

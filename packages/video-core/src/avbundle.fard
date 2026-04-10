@@ -1,0 +1,12 @@
+import("std/rec") as rec
+
+fn make(title, video_artifact, audio_artifact) {
+  {
+    "artifact_type": "video/x-fard-avbundle",
+    "title": title,
+    "video": video_artifact,
+    "audio": audio_artifact
+  }
+}
+
+export { make }

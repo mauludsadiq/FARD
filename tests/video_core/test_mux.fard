@@ -1,0 +1,12 @@
+import("../../packages/video-core/src/mux") as mux
+
+let v = { "kind": "video" }
+let a = { "kind": "audio" }
+
+let p = mux.av_pair(v, a)
+test "av_pair video" { p.video.kind == "video" }
+test "av_pair audio" { p.audio.kind == "audio" }
+
+let w = mux.with_audio(v, a)
+test "with_audio video" { w.video.kind == "video" }
+test "with_audio audio" { w.audio.kind == "audio" }

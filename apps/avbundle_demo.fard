@@ -1,0 +1,15 @@
+import("../packages/video-core/src/avbundle") as avbundle
+
+let video_artifact = {
+  "artifact_type": "video/x-fard-rawvid",
+  "title": "test_pattern",
+  "path": "out/test_pattern.fvid"
+}
+
+let audio_artifact = {
+  "artifact_type": "audio/wav",
+  "title": "tone_440",
+  "path": "out/tone_440.wav"
+}
+
+avbundle.make("demo_bundle", video_artifact, audio_artifact)
