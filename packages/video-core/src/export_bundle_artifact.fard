@@ -1,0 +1,12 @@
+import("std/json") as json
+import("std/artifact") as artifact_std
+import("../../video-core/src/avbundle") as avbundle
+
+fn write_avbundle_artifact(path, title, video_artifact, audio_artifact) {
+  let bundle = avbundle.make(title, video_artifact, audio_artifact) in
+  let body = json.encode(bundle) in
+  let _ = artifact_std.emit(path, { "text": body }) in
+  bundle
+}
+
+export { write_avbundle_artifact }

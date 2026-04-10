@@ -1,0 +1,11 @@
+import("../../packages/video-core/src/export_bundle_artifact") as export_bundle_artifact
+
+let v = { "artifact_type": "video/x-fard-rawvid", "title": "clip", "path": "out/test_pattern.fvid" }
+let a = { "artifact_type": "audio/wav", "title": "tone", "path": "out/tone_440.wav" }
+
+let b = export_bundle_artifact.write_avbundle_artifact("out/demo_bundle.avb.json", "bundle", v, a)
+
+test "bundle artifact type" { b.artifact_type == "video/x-fard-avbundle" }
+test "bundle artifact title" { b.title == "bundle" }
+test "bundle artifact video" { b.video.path == "out/test_pattern.fvid" }
+test "bundle artifact audio" { b.audio.path == "out/tone_440.wav" }
