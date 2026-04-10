@@ -1,0 +1,26 @@
+import("std/io") as io
+import("std/rec") as rec
+import("std/str") as str
+import("std/json") as json
+import("std/list") as list
+import("../../packages/media-core/src/meta") as meta
+import("../../packages/media-core/src/hash_contract") as hash_contract
+
+fn receipt_path(path) {
+  path + ".receipt.json"
+}
+
+fn with_digest(payload_bytes, m) {
+  let normalized = meta.normalized_json(m) in
+  let digest = hash_contract.media_digest_hex(payload_bytes, normalized) in
+  rec.set(m, "sha256", digest)
+}
+
+fn write_receipt(path, payload_bytes, m) {
+  let with_hash = with_digest(payload_bytes, m) in
+  let body = json.encode(meta.normalized_record(with_hash)) in
+  let _ = io.write_file(receipt_path(path), body) in
+  with_hash
+}
+
+export { receipt_path, with_digest, write_receipt }

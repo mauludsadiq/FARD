@@ -1,0 +1,21 @@
+import("../../packages/media-core/src/bytes") as bytes
+import("../../packages/media-core/src/meta") as meta
+import("../../packages/media-core/src/hash_contract") as hash_contract
+import("../../packages/media-core/src/artifact") as artifact
+import("std/bytes") as stdbytes
+import("std/json") as json
+
+test "u16le 513" { stdbytes.to_list(bytes.u16le(513)) == [1, 2] }
+test "u32le 16909060" { stdbytes.to_list(bytes.u32le(16909060)) == [4, 3, 2, 1] }
+test "i16le -1" { stdbytes.to_list(bytes.i16le(-1)) == [255, 255] }
+
+let m = {"b": 2, "a": 1}
+test "normalized json sorted" { meta.normalized_json(m) == json.canonicalize(json.encode({a: 1, b: 2})) }
+
+let payload = stdbytes.of_list([1, 2, 3, 4])
+let d1 = hash_contract.media_digest_hex(payload, meta.normalized_json({"x": 1, "y": 2}))
+let d2 = hash_contract.media_digest_hex(payload, meta.normalized_json({"y": 2, "x": 1}))
+test "digest stable under key order" { d1 == d2 }
+
+let rp = artifact.receipt_path("out/demo.bin")
+test "receipt path" { rp == "out/demo.bin.receipt.json" }

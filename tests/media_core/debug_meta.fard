@@ -1,0 +1,3 @@
+import("../../packages/media-core/src/meta") as meta
+
+meta.normalized_json({"b": 2, "a": 1})

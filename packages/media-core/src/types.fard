@@ -1,0 +1,27 @@
+fn audio_spec(sample_rate, channels, sample_format) {
+  {
+    "sample_rate": sample_rate,
+    "channels": channels,
+    "sample_format": sample_format
+  }
+}
+
+fn image_spec(width, height, color_model) {
+  {
+    "width": width,
+    "height": height,
+    "color_model": color_model
+  }
+}
+
+fn video_spec(width, height, fps_num, fps_den, color_model) {
+  {
+    "width": width,
+    "height": height,
+    "fps_num": fps_num,
+    "fps_den": fps_den,
+    "color_model": color_model
+  }
+}
+
+export { audio_spec, image_spec, video_spec }

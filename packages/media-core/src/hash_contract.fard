@@ -1,0 +1,10 @@
+import("std/hash") as hash
+import("std/bytes") as stdbytes
+import("std/bytes") as stdbytes
+import("../../packages/media-core/src/bytes") as bytes
+
+fn media_digest_hex(payload_bytes, normalized_meta_json) {
+  stdbytes.to_hex(hash.sha256(bytes.concat(payload_bytes, stdbytes.from_string(normalized_meta_json))))
+}
+
+export { media_digest_hex }

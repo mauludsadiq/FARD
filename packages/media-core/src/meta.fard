@@ -1,0 +1,15 @@
+import("std/json") as json
+
+fn sorted_keys(m) {
+  []
+}
+
+fn normalized_record(m) {
+  m
+}
+
+fn normalized_json(m) {
+  json.canonicalize(json.encode(m))
+}
+
+export { sorted_keys, normalized_record, normalized_json }
