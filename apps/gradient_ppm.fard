@@ -1,0 +1,5 @@
+import("../packages/image-core/src/draw") as draw
+import("../packages/image-core/src/export") as image_export
+
+let raster = draw.gradient(256, 256)
+image_export.write_ppm("out/gradient.ppm", "gradient", raster)

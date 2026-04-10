@@ -1,6 +1,6 @@
 import("std/list") as list
 import("../../media-core/src/types") as types
-import("../../video-core/src/frame") as frame
+import("./frame") as frame
 import("../../image-core/src/draw") as draw
 
 fn make(width, height, fps_num, fps_den, frames) {

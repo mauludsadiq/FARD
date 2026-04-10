@@ -1,6 +1,6 @@
-import("std/io") as io
 import("std/rec") as rec
 import("std/bytes") as stdbytes
+import("std/artifact") as artifact_std
 import("../../media-core/src/artifact") as artifact
 import("../../image-core/src/ppm") as ppm
 
@@ -18,7 +18,7 @@ fn write_ppm(path, title, raster) {
     "title": title,
     "byte_len": stdbytes.len(img)
   } in
-  let _ = io.write_file(path, stdbytes.to_string(img)) in
+  let _ = artifact_std.emit(path, stdbytes.to_list(img)) in
   artifact.write_receipt(path, img, meta)
 }
 

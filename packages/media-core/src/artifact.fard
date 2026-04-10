@@ -1,10 +1,9 @@
-import("std/io") as io
 import("std/rec") as rec
-import("std/str") as str
 import("std/json") as json
-import("std/list") as list
-import("../../packages/media-core/src/meta") as meta
-import("../../packages/media-core/src/hash_contract") as hash_contract
+import("std/bytes") as stdbytes
+import("std/artifact") as artifact_std
+import("../../media-core/src/meta") as meta
+import("../../media-core/src/hash_contract") as hash_contract
 
 fn receipt_path(path) {
   path + ".receipt.json"
@@ -19,7 +18,7 @@ fn with_digest(payload_bytes, m) {
 fn write_receipt(path, payload_bytes, m) {
   let with_hash = with_digest(payload_bytes, m) in
   let body = json.encode(meta.normalized_record(with_hash)) in
-  let _ = io.write_file(receipt_path(path), body) in
+  let _ = artifact_std.emit(receipt_path(path), { "text": body }) in
   with_hash
 }
 

@@ -1,0 +1,6 @@
+import("../packages/video-core/src/timeline") as timeline
+import("../packages/video-core/src/export") as video_export
+
+# Smaller video: 160x120, 10 frames
+let video = timeline.test_pattern_video(160, 120, 24, 1, 10)
+video_export.write_rawvid("out/test_pattern.fvid", "test_pattern", video)
