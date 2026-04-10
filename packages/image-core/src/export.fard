@@ -1,0 +1,25 @@
+import("std/io") as io
+import("std/rec") as rec
+import("std/bytes") as stdbytes
+import("../../media-core/src/artifact") as artifact
+import("../../image-core/src/ppm") as ppm
+
+fn write_ppm(path, title, raster) {
+  let spec = rec.get(raster, "spec") in
+  let width = rec.get(spec, "width") in
+  let height = rec.get(spec, "height") in
+  let pixels = rec.get(raster, "pixels") in
+  let img = ppm.ppm_bytes(width, height, pixels) in
+  let meta = {
+    "artifact_type": "image/x-portable-pixmap",
+    "encoding": "ppm_p6",
+    "width": width,
+    "height": height,
+    "title": title,
+    "byte_len": stdbytes.len(img)
+  } in
+  let _ = io.write_file(path, stdbytes.to_string(img)) in
+  artifact.write_receipt(path, img, meta)
+}
+
+export { write_ppm }

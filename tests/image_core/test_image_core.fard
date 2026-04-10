@@ -1,0 +1,32 @@
+import("../../packages/image-core/src/color") as color
+import("../../packages/image-core/src/raster") as raster
+import("../../packages/image-core/src/ppm") as ppm
+import("../../packages/image-core/src/draw") as draw
+import("std/bytes") as stdbytes
+import("std/rec") as rec
+import("std/list") as list
+
+test "clamp8 low" { color.clamp8(-1) == 0 }
+test "clamp8 mid" { color.clamp8(128) == 128 }
+test "clamp8 high" { color.clamp8(300) == 255 }
+
+let px = color.rgb(10, 20, 30)
+test "rgb r" { rec.get(px, "r") == 10 }
+test "rgb g" { rec.get(px, "g") == 20 }
+test "rgb b" { rec.get(px, "b") == 30 }
+
+let img = raster.make(2, 1, [color.rgb(255, 0, 0), color.rgb(0, 255, 0)])
+let hdr = ppm.ppm_header(2, 1)
+test "ppm header text" { stdbytes.to_string(hdr) == "P6\n2 1\n255\n" }
+
+let pix = ppm.ppm_pixel_bytes(rec.get(img, "pixels"))
+test "ppm pixel bytes len" { stdbytes.len(pix) == 6 }
+
+let whole = ppm.ppm_bytes(2, 1, rec.get(img, "pixels"))
+test "ppm total len" { stdbytes.len(whole) == stdbytes.len(hdr) + 6 }
+
+let g = draw.gradient(4, 3)
+let spec = rec.get(g, "spec")
+test "gradient width" { rec.get(spec, "width") == 4 }
+test "gradient height" { rec.get(spec, "height") == 3 }
+test "gradient pixel count" { list.len(rec.get(g, "pixels")) == 12 }

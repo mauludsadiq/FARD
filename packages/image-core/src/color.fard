@@ -1,0 +1,13 @@
+fn clamp8(x) {
+  if x < 0 then 0 else if x > 255 then 255 else x
+}
+
+fn rgb(r, g, b) {
+  {
+    "r": clamp8(r),
+    "g": clamp8(g),
+    "b": clamp8(b)
+  }
+}
+
+export { clamp8, rgb }

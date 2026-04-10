@@ -1,0 +1,18 @@
+import("std/list") as list
+import("std/cast") as cast
+import("../../image-core/src/color") as color
+import("../../image-core/src/raster") as raster
+
+fn gradient(width, height) {
+  let total = width * height in
+  raster.make(width, height, list.map(list.range(0, total), fn(i) {
+    let x = i % width in
+    let y = i / width in
+    let r = (255 * x) / (width - 1) in
+    let g = (255 * y) / (height - 1) in
+    let b = 128 in
+    color.rgb(r, g, b)
+  }))
+}
+
+export { gradient }

@@ -1,0 +1,10 @@
+import("../../media-core/src/types") as types
+
+fn make(width, height, pixels) {
+  {
+    "spec": types.image_spec(width, height, "rgb8"),
+    "pixels": pixels
+  }
+}
+
+export { make }
