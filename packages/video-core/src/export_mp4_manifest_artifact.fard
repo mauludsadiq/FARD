@@ -1,0 +1,12 @@
+import("std/json") as json
+import("std/artifact") as artifact_std
+import("../../video-core/src/mp4_manifest") as mp4_manifest
+
+fn write_mp4_manifest_artifact(path, title, video_artifact, audio_artifact) {
+  let manifest = mp4_manifest.make(title, video_artifact, audio_artifact) in
+  let body = json.encode(manifest) in
+  let _ = artifact_std.emit(path, { "text": body }) in
+  manifest
+}
+
+export { write_mp4_manifest_artifact }

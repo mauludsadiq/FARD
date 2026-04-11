@@ -1,0 +1,11 @@
+fn make(title, video_artifact, audio_artifact) {
+  {
+    "artifact_type": "video/mp4-manifest",
+    "title": title,
+    "video": video_artifact,
+    "audio": audio_artifact,
+    "bridge": "rawvid_wav_to_mp4_manifest"
+  }
+}
+
+export { make }

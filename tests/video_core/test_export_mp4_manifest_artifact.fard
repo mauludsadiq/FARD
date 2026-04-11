@@ -1,0 +1,17 @@
+import("../../packages/video-core/src/export_mp4_manifest_artifact") as export_mp4_manifest_artifact
+
+let v = { "artifact_type": "video/x-fard-rawvid", "path": "out/test_pattern.fvid" }
+let a = { "artifact_type": "audio/wav", "path": "out/tone_440.wav" }
+
+let m = export_mp4_manifest_artifact.write_mp4_manifest_artifact(
+  "out/test_pattern.mp4.json",
+  "demo_mp4",
+  v,
+  a
+)
+
+test "mp4 artifact type" { m.artifact_type == "video/mp4-manifest" }
+test "mp4 artifact title" { m.title == "demo_mp4" }
+test "mp4 artifact video" { m.video.path == "out/test_pattern.fvid" }
+test "mp4 artifact audio" { m.audio.path == "out/tone_440.wav" }
+test "mp4 artifact bridge" { m.bridge == "rawvid_wav_to_mp4_manifest" }
