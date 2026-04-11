@@ -2,12 +2,12 @@ import("std/rec") as rec
 
 fn make(title, video_artifact, audio_artifact) {
   {
-    "artifact_type": "video/mp4-manifest",
+    "artifact_type": "video/webm-manifest",
     "title": title,
-    "bridge": "rawvid_wav_to_mp4_manifest",
-    "container": "mp4",
-    "video_codec": "h264",
-    "audio_codec": "aac",
+    "bridge": "rawvid_wav_to_webm_manifest",
+    "container": "webm",
+    "video_codec": "vp9",
+    "audio_codec": "opus",
     "video": video_artifact,
     "audio": audio_artifact,
     "video_artifact_type": rec.get(video_artifact, "artifact_type"),

@@ -1,12 +1,35 @@
 import("../../packages/video-core/src/mp4_manifest") as mp4_manifest
 
-let v = { "artifact_type": "video/x-fard-rawvid", "path": "out/test_pattern.fvid" }
-let a = { "artifact_type": "audio/wav", "path": "out/tone_440.wav" }
+let v = {
+  "artifact_type": "video/x-fard-rawvid",
+  "path": "out/test_pattern.fvid",
+  "title": "test_pattern",
+  "width": 320,
+  "height": 240,
+  "fps_num": 24,
+  "fps_den": 1,
+  "frames": 48
+}
+
+let a = {
+  "artifact_type": "audio/wav",
+  "path": "out/tone_440.wav",
+  "title": "tone_440",
+  "duration_seconds": 2.0
+}
 
 let m = mp4_manifest.make("demo_mp4", v, a)
 
 test "mp4 manifest type" { m.artifact_type == "video/mp4-manifest" }
 test "mp4 manifest title" { m.title == "demo_mp4" }
-test "mp4 manifest video" { m.video.path == "out/test_pattern.fvid" }
-test "mp4 manifest audio" { m.audio.path == "out/tone_440.wav" }
+test "mp4 manifest container" { m.container == "mp4" }
+test "mp4 manifest video codec" { m.video_codec == "h264" }
+test "mp4 manifest audio codec" { m.audio_codec == "aac" }
+test "mp4 manifest width" { m.width == 320 }
+test "mp4 manifest height" { m.height == 240 }
+test "mp4 manifest fps num" { m.fps_num == 24 }
+test "mp4 manifest frame count" { m.frame_count == 48 }
+test "mp4 manifest duration" { m.duration_seconds == 2.0 }
+test "mp4 manifest video path" { m.video_path == "out/test_pattern.fvid" }
+test "mp4 manifest audio path" { m.audio_path == "out/tone_440.wav" }
 test "mp4 manifest bridge" { m.bridge == "rawvid_wav_to_mp4_manifest" }

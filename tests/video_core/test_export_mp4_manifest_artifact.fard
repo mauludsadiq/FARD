@@ -1,7 +1,22 @@
 import("../../packages/video-core/src/export_mp4_manifest_artifact") as export_mp4_manifest_artifact
 
-let v = { "artifact_type": "video/x-fard-rawvid", "path": "out/test_pattern.fvid" }
-let a = { "artifact_type": "audio/wav", "path": "out/tone_440.wav" }
+let v = {
+  "artifact_type": "video/x-fard-rawvid",
+  "path": "out/test_pattern.fvid",
+  "title": "test_pattern",
+  "width": 320,
+  "height": 240,
+  "fps_num": 24,
+  "fps_den": 1,
+  "frames": 48
+}
+
+let a = {
+  "artifact_type": "audio/wav",
+  "path": "out/tone_440.wav",
+  "title": "tone_440",
+  "duration_seconds": 2.0
+}
 
 let m = export_mp4_manifest_artifact.write_mp4_manifest_artifact(
   "out/test_pattern.mp4.json",
@@ -12,6 +27,14 @@ let m = export_mp4_manifest_artifact.write_mp4_manifest_artifact(
 
 test "mp4 artifact type" { m.artifact_type == "video/mp4-manifest" }
 test "mp4 artifact title" { m.title == "demo_mp4" }
-test "mp4 artifact video" { m.video.path == "out/test_pattern.fvid" }
-test "mp4 artifact audio" { m.audio.path == "out/tone_440.wav" }
+test "mp4 artifact container" { m.container == "mp4" }
+test "mp4 artifact video codec" { m.video_codec == "h264" }
+test "mp4 artifact audio codec" { m.audio_codec == "aac" }
+test "mp4 artifact width" { m.width == 320 }
+test "mp4 artifact height" { m.height == 240 }
+test "mp4 artifact fps num" { m.fps_num == 24 }
+test "mp4 artifact frame count" { m.frame_count == 48 }
+test "mp4 artifact duration" { m.duration_seconds == 2.0 }
+test "mp4 artifact video path" { m.video_path == "out/test_pattern.fvid" }
+test "mp4 artifact audio path" { m.audio_path == "out/tone_440.wav" }
 test "mp4 artifact bridge" { m.bridge == "rawvid_wav_to_mp4_manifest" }

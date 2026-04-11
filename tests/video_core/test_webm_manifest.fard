@@ -1,0 +1,35 @@
+import("../../packages/video-core/src/webm_manifest") as webm_manifest
+
+let v = {
+  "artifact_type": "video/x-fard-rawvid",
+  "path": "out/test_pattern.fvid",
+  "title": "test_pattern",
+  "width": 320,
+  "height": 240,
+  "fps_num": 24,
+  "fps_den": 1,
+  "frames": 48
+}
+
+let a = {
+  "artifact_type": "audio/wav",
+  "path": "out/tone_440.wav",
+  "title": "tone_440",
+  "duration_seconds": 2.0
+}
+
+let m = webm_manifest.make("demo_webm", v, a)
+
+test "webm manifest type" { m.artifact_type == "video/webm-manifest" }
+test "webm manifest title" { m.title == "demo_webm" }
+test "webm manifest container" { m.container == "webm" }
+test "webm manifest video codec" { m.video_codec == "vp9" }
+test "webm manifest audio codec" { m.audio_codec == "opus" }
+test "webm manifest width" { m.width == 320 }
+test "webm manifest height" { m.height == 240 }
+test "webm manifest fps num" { m.fps_num == 24 }
+test "webm manifest frame count" { m.frame_count == 48 }
+test "webm manifest duration" { m.duration_seconds == 2.0 }
+test "webm manifest video path" { m.video_path == "out/test_pattern.fvid" }
+test "webm manifest audio path" { m.audio_path == "out/tone_440.wav" }
+test "webm manifest bridge" { m.bridge == "rawvid_wav_to_webm_manifest" }

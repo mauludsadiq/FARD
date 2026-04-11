@@ -1,0 +1,40 @@
+import("../../packages/video-core/src/export_webm_manifest_artifact") as export_webm_manifest_artifact
+
+let v = {
+  "artifact_type": "video/x-fard-rawvid",
+  "path": "out/test_pattern.fvid",
+  "title": "test_pattern",
+  "width": 320,
+  "height": 240,
+  "fps_num": 24,
+  "fps_den": 1,
+  "frames": 48
+}
+
+let a = {
+  "artifact_type": "audio/wav",
+  "path": "out/tone_440.wav",
+  "title": "tone_440",
+  "duration_seconds": 2.0
+}
+
+let m = export_webm_manifest_artifact.write_webm_manifest_artifact(
+  "out/test_pattern.webm.json",
+  "demo_webm",
+  v,
+  a
+)
+
+test "webm artifact type" { m.artifact_type == "video/webm-manifest" }
+test "webm artifact title" { m.title == "demo_webm" }
+test "webm artifact container" { m.container == "webm" }
+test "webm artifact video codec" { m.video_codec == "vp9" }
+test "webm artifact audio codec" { m.audio_codec == "opus" }
+test "webm artifact width" { m.width == 320 }
+test "webm artifact height" { m.height == 240 }
+test "webm artifact fps num" { m.fps_num == 24 }
+test "webm artifact frame count" { m.frame_count == 48 }
+test "webm artifact duration" { m.duration_seconds == 2.0 }
+test "webm artifact video path" { m.video_path == "out/test_pattern.fvid" }
+test "webm artifact audio path" { m.audio_path == "out/tone_440.wav" }
+test "webm artifact bridge" { m.bridge == "rawvid_wav_to_webm_manifest" }
