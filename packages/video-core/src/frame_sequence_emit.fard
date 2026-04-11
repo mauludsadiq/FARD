@@ -1,0 +1,26 @@
+import("std/list") as list
+import("std/str") as str
+import("std/bytes") as stdbytes
+
+fn ppm_p3_text(width, height, frame_bytes) {
+  let xs = stdbytes.to_list(frame_bytes) in
+  let triplets = list.chunk(xs, 3) in
+  let body = str.join(list.map(triplets, fn(rgb) {
+    str.join(list.map(rgb, fn(n) { str.from_int(n) }), " ")
+  }), "\n") in
+  str.concat(
+    "P3\n",
+    str.concat(
+      str.from_int(width),
+      str.concat(
+        " ",
+        str.concat(
+          str.from_int(height),
+          str.concat("\n255\n", str.concat(body, "\n"))
+        )
+      )
+    )
+  )
+}
+
+export { ppm_p3_text }

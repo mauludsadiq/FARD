@@ -1,0 +1,18 @@
+import("../../packages/video-core/src/rawvid") as rawvid
+import("../../packages/video-core/src/frame_sequence_materialize") as frame_sequence_materialize
+import("../../packages/image-core/src/color") as color
+import("../../packages/image-core/src/raster") as raster
+import("../../packages/video-core/src/frame") as frame
+import("std/list") as list
+
+let img = raster.make(2, 1, fn(x, y) {
+  if x == 0 then color.rgb(255, 0, 0) else color.rgb(0, 255, 0)
+})
+let fr0 = frame.make(0, 0, 24, img)
+let fr1 = frame.make(1, 1, 24, img)
+let rv = rawvid.rawvid_bytes(2, 1, 24, 1, [fr0, fr1])
+let paths = frame_sequence_materialize.write_frames(rv, "out/test_frames")
+
+test "frame path 0" { frame_sequence_materialize.frame_path("out/test_frames", 0) == "out/test_frames/frame_000000.ppm" }
+test "frame path 1" { frame_sequence_materialize.frame_path("out/test_frames", 1) == "out/test_frames/frame_000001.ppm" }
+test "materialize count" { list.len(paths) == 2 }

@@ -1,0 +1,33 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("../../video-core/src/rawvid_decode") as rawvid_decode
+import("../../video-core/src/frame_sequence_emit") as frame_sequence_emit
+
+fn frame_path(frames_dir, index) {
+  let pad = if index < 10 then "00000"
+    else if index < 100 then "0000"
+    else if index < 1000 then "000"
+    else if index < 10000 then "00"
+    else if index < 100000 then "0"
+    else "" in
+  str.concat(frames_dir, str.concat("/frame_", str.concat(pad, str.concat(str.from_int(index), ".ppm"))))
+}
+
+fn write_one(rawvid_bytes, h, frames_dir, i) {
+  let fb = rawvid_decode.frame_bytes(rawvid_bytes, i) in
+  let ppm = frame_sequence_emit.ppm_p3_text(h.width, h.height, fb) in
+  let path = frame_path(frames_dir, i) in
+  let _ = io.write_file(path, ppm) in
+  path
+}
+
+fn write_frames(rawvid_bytes, frames_dir) {
+  let h = rawvid_decode.header(rawvid_bytes) in
+  let _ = io.make_dir(frames_dir) in
+  list.map(list.range(0, h.frames), fn(i) {
+    write_one(rawvid_bytes, h, frames_dir, i)
+  })
+}
+
+export { frame_path, write_one, write_frames }

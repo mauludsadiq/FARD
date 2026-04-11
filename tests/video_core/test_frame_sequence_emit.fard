@@ -1,0 +1,10 @@
+import("../../packages/video-core/src/frame_sequence_emit") as frame_sequence_emit
+import("std/str") as str
+import("std/bytes") as stdbytes
+
+let fb = stdbytes.of_list([255, 0, 0, 0, 255, 0])
+let ppm = frame_sequence_emit.ppm_p3_text(2, 1, fb)
+
+test "ppm p3 magic" { str.starts_with(ppm, "P3\n2 1\n255\n") }
+test "ppm p3 has red" { str.contains(ppm, "255 0 0") }
+test "ppm p3 has green" { str.contains(ppm, "0 255 0") }

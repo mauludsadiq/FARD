@@ -1,0 +1,16 @@
+import("std/io") as io
+import("std/str") as str
+import("../../video-core/src/frame_sequence_materialize") as frame_sequence_materialize
+import("../../video-core/src/transcode_exec") as transcode_exec
+
+fn rawvid_frames_to_webm(rawvid_bytes, wav_path, frames_dir, output_path) {
+  let _ = frame_sequence_materialize.write_frames(rawvid_bytes, frames_dir) in
+  transcode_exec.transcode_webm(str.concat(frames_dir, "/frame_%06d.ppm"), wav_path, output_path)
+}
+
+fn rawvid_frames_to_mp4(rawvid_bytes, wav_path, frames_dir, output_path) {
+  let _ = frame_sequence_materialize.write_frames(rawvid_bytes, frames_dir) in
+  transcode_exec.transcode_mp4(str.concat(frames_dir, "/frame_%06d.ppm"), wav_path, output_path)
+}
+
+export { rawvid_frames_to_webm, rawvid_frames_to_mp4 }

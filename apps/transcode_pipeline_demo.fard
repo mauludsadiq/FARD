@@ -1,0 +1,22 @@
+import("../packages/video-core/src/timeline") as timeline
+import("../packages/video-core/src/rawvid") as rawvid
+import("../packages/video-core/src/transcode_pipeline") as transcode_pipeline
+import("std/rec") as rec
+
+let video = timeline.test_pattern_video(2, 1, 24, 1, 2)
+let spec = rec.get(video, "spec")
+let frames = rec.get(video, "frames")
+let rv = rawvid.rawvid_bytes(
+  rec.get(spec, "width"),
+  rec.get(spec, "height"),
+  rec.get(spec, "fps_num"),
+  rec.get(spec, "fps_den"),
+  frames
+)
+
+transcode_pipeline.rawvid_frames_to_mp4(
+  rv,
+  "out/tone_440.wav",
+  "out/demo_frames_mp4",
+  "out/demo_test_pattern.mp4"
+)

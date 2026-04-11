@@ -1,0 +1,29 @@
+import("../../packages/video-core/src/rawvid") as rawvid
+import("../../packages/video-core/src/transcode_pipeline") as transcode_pipeline
+import("../../packages/image-core/src/color") as color
+import("../../packages/image-core/src/raster") as raster
+import("../../packages/video-core/src/frame") as frame
+
+let img = raster.make(2, 1, fn(x, y) {
+  if x == 0 then color.rgb(255, 0, 0) else color.rgb(0, 255, 0)
+})
+let fr0 = frame.make(0, 0, 24, img)
+let fr1 = frame.make(1, 1, 24, img)
+let rv = rawvid.rawvid_bytes(2, 1, 24, 1, [fr0, fr1])
+
+let webm = transcode_pipeline.rawvid_frames_to_webm(
+  rv,
+  "out/tone_440.wav",
+  "out/test_frames_webm",
+  "out/test_pattern.webm"
+)
+
+let mp4 = transcode_pipeline.rawvid_frames_to_mp4(
+  rv,
+  "out/tone_440.wav",
+  "out/test_frames_mp4",
+  "out/test_pattern.mp4"
+)
+
+test "webm pipeline returns code" { webm.code >= 0 }
+test "mp4 pipeline returns code" { mp4.code >= 0 }
