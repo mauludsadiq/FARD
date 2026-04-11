@@ -1,0 +1,34 @@
+import("std/bytes") as stdbytes
+
+fn u32le_at(bs, off) {
+  stdbytes.get(bs, off)
+  + 256 * stdbytes.get(bs, off + 1)
+  + 65536 * stdbytes.get(bs, off + 2)
+  + 16777216 * stdbytes.get(bs, off + 3)
+}
+
+fn header(rawvid_bytes) {
+  {
+    "width": u32le_at(rawvid_bytes, 8),
+    "height": u32le_at(rawvid_bytes, 12),
+    "fps_num": u32le_at(rawvid_bytes, 16),
+    "fps_den": u32le_at(rawvid_bytes, 20),
+    "frames": u32le_at(rawvid_bytes, 24)
+  }
+}
+
+fn frame_byte_len(h) {
+  h.width * h.height * 3
+}
+
+fn frame_offset(h, index) {
+  28 + index * frame_byte_len(h)
+}
+
+fn frame_bytes(rawvid_bytes, index) {
+  let h = header(rawvid_bytes) in
+  let off = frame_offset(h, index) in
+  stdbytes.slice(rawvid_bytes, off, off + frame_byte_len(h))
+}
+
+export { u32le_at, header, frame_byte_len, frame_offset, frame_bytes }

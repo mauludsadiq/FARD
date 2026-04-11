@@ -1,0 +1,12 @@
+import("std/json") as json
+import("std/artifact") as artifact_std
+import("../../video-core/src/frame_sequence_contract") as frame_sequence_contract
+
+fn write_frame_sequence_contract_artifact(path, rawvid_artifact, frames_dir, pattern) {
+  let c = frame_sequence_contract.make(rawvid_artifact, frames_dir, pattern) in
+  let body = json.encode(c) in
+  let _ = artifact_std.emit(path, { "text": body }) in
+  c
+}
+
+export { write_frame_sequence_contract_artifact }

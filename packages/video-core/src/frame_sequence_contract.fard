@@ -1,0 +1,12 @@
+fn make(rawvid_artifact, frames_dir, pattern) {
+  {
+    "artifact_type": "video/x-fard-frame-sequence-contract",
+    "source_artifact_type": rawvid_artifact.artifact_type,
+    "source_path": rawvid_artifact.path,
+    "frames_dir": frames_dir,
+    "pattern": pattern,
+    "bridge_state": "decode_to_frames_contract"
+  }
+}
+
+export { make }

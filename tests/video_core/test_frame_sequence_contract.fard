@@ -1,0 +1,15 @@
+import("../../packages/video-core/src/frame_sequence_contract") as frame_sequence_contract
+
+let rawvid_artifact = {
+  "artifact_type": "video/x-fard-rawvid",
+  "path": "out/test_pattern.fvid"
+}
+
+let c = frame_sequence_contract.make(rawvid_artifact, "out/frames", "frame_%06d.ppm")
+
+test "frame seq type" { c.artifact_type == "video/x-fard-frame-sequence-contract" }
+test "frame seq source type" { c.source_artifact_type == "video/x-fard-rawvid" }
+test "frame seq source path" { c.source_path == "out/test_pattern.fvid" }
+test "frame seq dir" { c.frames_dir == "out/frames" }
+test "frame seq pattern" { c.pattern == "frame_%06d.ppm" }
+test "frame seq state" { c.bridge_state == "decode_to_frames_contract" }

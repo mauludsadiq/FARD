@@ -1,0 +1,14 @@
+import("../packages/video-core/src/export_frame_sequence_contract_artifact") as export_frame_sequence_contract_artifact
+
+let rawvid_artifact = {
+  "artifact_type": "video/x-fard-rawvid",
+  "title": "test_pattern",
+  "path": "out/test_pattern.fvid"
+}
+
+export_frame_sequence_contract_artifact.write_frame_sequence_contract_artifact(
+  "out/test_pattern.frames.contract.json",
+  rawvid_artifact,
+  "out/frames",
+  "frame_%06d.ppm"
+)

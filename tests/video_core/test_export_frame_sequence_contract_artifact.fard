@@ -1,0 +1,19 @@
+import("../../packages/video-core/src/export_frame_sequence_contract_artifact") as export_frame_sequence_contract_artifact
+
+let rawvid_artifact = {
+  "artifact_type": "video/x-fard-rawvid",
+  "path": "out/test_pattern.fvid"
+}
+
+let c = export_frame_sequence_contract_artifact.write_frame_sequence_contract_artifact(
+  "out/test_pattern.frames.contract.json",
+  rawvid_artifact,
+  "out/frames",
+  "frame_%06d.ppm"
+)
+
+test "frame seq artifact type" { c.artifact_type == "video/x-fard-frame-sequence-contract" }
+test "frame seq artifact source path" { c.source_path == "out/test_pattern.fvid" }
+test "frame seq artifact dir" { c.frames_dir == "out/frames" }
+test "frame seq artifact pattern" { c.pattern == "frame_%06d.ppm" }
+test "frame seq artifact state" { c.bridge_state == "decode_to_frames_contract" }
