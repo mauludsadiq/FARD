@@ -1,0 +1,38 @@
+fn make(kind, input_artifact, output_artifact_type, container, video_codec, audio_codec) {
+  {
+    "artifact_type": "video/x-fard-transcode-contract",
+    "kind": kind,
+    "input_artifact": input_artifact,
+    "input_artifact_type": input_artifact.artifact_type,
+    "input_path": input_artifact.path,
+    "output_artifact_type": output_artifact_type,
+    "container": container,
+    "video_codec": video_codec,
+    "audio_codec": audio_codec,
+    "bridge_state": "contract_only"
+  }
+}
+
+fn rawvid_wav_to_webm(input_artifact) {
+  make(
+    "rawvid_wav_to_webm",
+    input_artifact,
+    "video/webm",
+    "webm",
+    "vp9",
+    "opus"
+  )
+}
+
+fn rawvid_wav_to_mp4(input_artifact) {
+  make(
+    "rawvid_wav_to_mp4",
+    input_artifact,
+    "video/mp4",
+    "mp4",
+    "h264",
+    "aac"
+  )
+}
+
+export { make, rawvid_wav_to_webm, rawvid_wav_to_mp4 }

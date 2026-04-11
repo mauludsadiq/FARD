@@ -1,0 +1,24 @@
+import("../../packages/video-core/src/export_transcode_contract_artifact") as export_transcode_contract_artifact
+
+let in_artifact = {
+  "artifact_type": "video/x-fard-avbundle",
+  "path": "out/demo_bundle.avb.json"
+}
+
+let w = export_transcode_contract_artifact.write_webm_contract_artifact(
+  "out/demo_bundle.webm.contract.json",
+  in_artifact
+)
+
+let m = export_transcode_contract_artifact.write_mp4_contract_artifact(
+  "out/demo_bundle.mp4.contract.json",
+  in_artifact
+)
+
+test "webm export contract type" { w.artifact_type == "video/x-fard-transcode-contract" }
+test "webm export contract kind" { w.kind == "rawvid_wav_to_webm" }
+test "webm export contract output type" { w.output_artifact_type == "video/webm" }
+
+test "mp4 export contract type" { m.artifact_type == "video/x-fard-transcode-contract" }
+test "mp4 export contract kind" { m.kind == "rawvid_wav_to_mp4" }
+test "mp4 export contract output type" { m.output_artifact_type == "video/mp4" }

@@ -1,0 +1,12 @@
+import("../packages/video-core/src/export_transcode_contract_artifact") as export_transcode_contract_artifact
+
+let input_artifact = {
+  "artifact_type": "video/x-fard-avbundle",
+  "title": "demo_bundle",
+  "path": "out/demo_bundle.avb.json"
+}
+
+export_transcode_contract_artifact.write_webm_contract_artifact(
+  "out/demo_bundle.webm.contract.json",
+  input_artifact
+)

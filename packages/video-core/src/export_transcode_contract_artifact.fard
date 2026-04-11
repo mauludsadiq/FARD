@@ -1,0 +1,19 @@
+import("std/json") as json
+import("std/artifact") as artifact_std
+import("../../video-core/src/transcode_contract") as transcode_contract
+
+fn write_webm_contract_artifact(path, input_artifact) {
+  let c = transcode_contract.rawvid_wav_to_webm(input_artifact) in
+  let body = json.encode(c) in
+  let _ = artifact_std.emit(path, { "text": body }) in
+  c
+}
+
+fn write_mp4_contract_artifact(path, input_artifact) {
+  let c = transcode_contract.rawvid_wav_to_mp4(input_artifact) in
+  let body = json.encode(c) in
+  let _ = artifact_std.emit(path, { "text": body }) in
+  c
+}
+
+export { write_webm_contract_artifact, write_mp4_contract_artifact }
