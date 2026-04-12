@@ -1,6 +1,12 @@
 import("../../media-core/src/types") as types
+import("std/list") as list
 
-fn make(width, height, pixels) {
+fn make(width, height, pixel_fn) {
+  let pixels = list.map(list.range(0, width * height), fn(i) {
+    let x = i % width in
+    let y = i / width in
+    pixel_fn(x, y)
+  }) in
   {
     "spec": types.image_spec(width, height, "rgb8"),
     "pixels": pixels

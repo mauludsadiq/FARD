@@ -1,0 +1,40 @@
+import("../../packages/pdf_v0/src/model") as model
+import("../../packages/pdf_v0/src/highlight") as highlight
+import("std/list") as list
+import("std/rec") as rec
+
+test "one match found" {
+  let bbox0 = model.make_bbox(10.0, 20.0, 80.0, 32.0) in
+  let bbox1 = model.make_bbox(90.0, 20.0, 160.0, 32.0) in
+  let spans = [
+    { page: 1, text: "Total Amount", bbox: bbox0 },
+    { page: 1, text: "Other Field", bbox: bbox1 }
+  ] in
+  let matches = highlight.find_matches(spans, "Total") in
+  list.len(matches) == 1
+}
+
+test "overlay count matches" {
+  let bbox0 = model.make_bbox(10.0, 20.0, 80.0, 32.0) in
+  let bbox1 = model.make_bbox(90.0, 20.0, 160.0, 32.0) in
+  let spans = [
+    { page: 1, text: "Total Amount", bbox: bbox0 },
+    { page: 1, text: "Other Field", bbox: bbox1 }
+  ] in
+  let matches = highlight.find_matches(spans, "Total") in
+  let overlays = highlight.make_overlay(matches) in
+  list.len(overlays) == 1
+}
+
+test "overlay type is highlight_rect" {
+  let bbox0 = model.make_bbox(10.0, 20.0, 80.0, 32.0) in
+  let bbox1 = model.make_bbox(90.0, 20.0, 160.0, 32.0) in
+  let spans = [
+    { page: 1, text: "Total Amount", bbox: bbox0 },
+    { page: 1, text: "Other Field", bbox: bbox1 }
+  ] in
+  let matches = highlight.find_matches(spans, "Total") in
+  let overlays = highlight.make_overlay(matches) in
+  let item = list.get(overlays, 0) in
+  rec.get(item, "type") == "highlight_rect"
+}

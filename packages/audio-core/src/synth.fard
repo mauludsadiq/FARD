@@ -1,7 +1,7 @@
 import("std/list") as list
 import("std/math") as math
 import("std/cast") as cast
-import("../../packages/audio-core/src/sample") as sample
+import("./sample") as sample
 
 fn sine(freq, duration_s, sample_rate) {
   let count = cast.int(math.floor(duration_s * cast.float(sample_rate))) in

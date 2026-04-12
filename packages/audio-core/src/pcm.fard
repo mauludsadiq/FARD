@@ -1,19 +1,15 @@
 import("std/list") as list
 import("std/math") as math
 import("std/cast") as cast
-import("../../packages/audio-core/src/sample") as sample
+import("./sample") as sample
 import("../../media-core/src/bytes") as media_bytes
 
-fn f32_to_pcm_s16(x) {
-  let y = sample.clamp_unit(x) in
-  let scaled = if y >= 0.0 then y * 32767.0 else y * 32768.0 in
-  cast.int(math.round(scaled))
-}
-
 fn encode_pcm_s16le(samples) {
-  media_bytes.concat_many(list.map(samples, fn(s) {
-    media_bytes.i16le(f32_to_pcm_s16(s))
-  }))
+  let scaled = list.map(samples, fn(s) {
+    let clamped = sample.clamp_unit(s) in
+    cast.int(math.floor(clamped * 32767.0))
+  }) in
+  media_bytes.concat_many(list.map(scaled, media_bytes.i16le))
 }
 
-export { f32_to_pcm_s16, encode_pcm_s16le }
+export { encode_pcm_s16le }

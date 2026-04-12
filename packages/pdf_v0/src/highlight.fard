@@ -1,0 +1,27 @@
+import("./model") as model
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+
+{
+  find_matches: fn(spans, query) {
+    list.fold(spans, [], fn(acc, s) {
+      let txt = rec.get(s, "text") in
+      let page = rec.get(s, "page") in
+      let bbox = rec.get(s, "bbox") in
+      let mid = str.concat("m_", str.from(list.len(acc))) in
+
+      if str.contains(txt, query)
+      then list.append(acc, model.make_match(page, mid, txt, [], bbox))
+      else acc
+    })
+  },
+
+  make_overlay: fn(matches) {
+    list.map(matches, fn(m) {
+      let page = rec.get(m, "page") in
+      let bbox = rec.get(m, "bbox") in
+      model.make_overlay_item(page, "highlight_rect", bbox, [255, 235, 59])
+    })
+  }
+}

@@ -1,0 +1,27 @@
+import("../../packages/pdf_v0/src/model") as model
+import("../../packages/pdf_v0/src/highlight") as highlight
+import("../../packages/pdf_v0/src/write_pdf") as pdf
+import("std/io") as io
+import("std/json") as json
+
+let bbox0 = model.make_bbox(10.0, 20.0, 80.0, 32.0) in
+let bbox1 = model.make_bbox(90.0, 20.0, 160.0, 32.0) in
+let spans = [
+  { page: 1, text: "Total Amount", bbox: bbox0 },
+  { page: 1, text: "Other Field", bbox: bbox1 }
+] in
+let matches = highlight.find_matches(spans, "Total") in
+let overlay_items = highlight.make_overlay(matches) in
+let matches_doc = model.make_matches_doc("Total", matches) in
+let overlay_doc = model.make_overlay_plan(overlay_items) in
+let pdf_str = pdf.build_pdf(overlay_items) in
+let _ = io.make_dir("out/pdf_v0") in
+let _ = io.write_file("out/pdf_v0/matches.json", json.encode(matches_doc)) in
+let _ = io.write_file("out/pdf_v0/overlay_plan.json", json.encode(overlay_doc)) in
+let _ = io.write_file("out/pdf_v0/highlighted.pdf", pdf_str) in
+{
+  ok: true,
+  matches_path: "out/pdf_v0/matches.json",
+  overlay_path: "out/pdf_v0/overlay_plan.json",
+  pdf_path: "out/pdf_v0/highlighted.pdf"
+}

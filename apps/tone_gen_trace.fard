@@ -1,0 +1,15 @@
+import("std/io") as io
+
+io.write_file("out/trace1.txt", "step 1 - io works")
+
+let synth_import = "importing synth"
+io.write_file("out/trace2.txt", synth_import)
+
+import("../packages/audio-core/src/synth") as synth
+
+io.write_file("out/trace3.txt", "synth imported")
+
+let sample_rate = 44100
+let samples = synth.sine(440.0, 0.1, sample_rate)
+
+io.write_file("out/trace4.txt", "samples generated")

@@ -1,0 +1,55 @@
+import("std/str") as str
+import("std/list") as list
+import("std/rec") as rec
+
+{
+  build_pdf: fn(rects) {
+    let content = list.fold(rects, "", fn(acc, r) {
+      let x0 = rec.get(r, "x0") in
+      let y0 = rec.get(r, "y0") in
+      let x1 = rec.get(r, "x1") in
+      let y1 = rec.get(r, "y1") in
+      let w = x1 - x0 in
+      let h = y1 - y0 in
+      str.concat(
+        acc,
+        str.concat(
+          "1 1 0 rg\n",
+          str.concat(
+            str.concat(
+              str.concat(
+                str.concat(str.from(x0), " "),
+                str.concat(str.from(y0), " ")
+              ),
+              str.concat(str.from(w), " ")
+            ),
+            str.concat(str.from(h), " re f\n")
+          )
+        )
+      )
+    }) in
+    str.concat(
+`%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Resources << /ProcSet [/PDF] >> /Contents 4 0 R >> endobj
+4 0 obj << /Length `,
+      str.concat(
+        str.from(str.len(content)),
+        str.concat(
+` >> stream
+`,
+          str.concat(
+            content,
+`
+endstream
+endobj
+
+trailer << /Root 1 0 R >>
+%%EOF`
+          )
+        )
+      )
+    )
+  }
+}

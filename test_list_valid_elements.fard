@@ -1,0 +1,26 @@
+import("std/io") as io
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+import("./packages/collapse-data/src/pubchem") as pubchem
+import("./packages/collapse-data/src/polarizability") as polar
+import("./packages/collapse-data/src/merge") as merge
+
+fn main() {
+  let pub0 = pubchem.load_pubchem("data/pubchem_periodic_table.csv") in
+  let pol0 = polar.load_polarizability("data/polarizability_2020.csv") in
+  let pubs = pubchem.normalize_pubchem(pub0) in
+  let pols = polar.normalize_polarizability(pol0) in
+  let merged = merge.merge_pubchem_and_polar(pubs, pols) in
+  let valid = list.filter(merged, fn(row) {
+    rec.get(row, "IonizationEnergy") != null &&
+    rec.get(row, "Electronegativity") != null &&
+    rec.get(row, "alpha_au") != null
+  }) in
+  let lines = list.map(valid, fn(row) {
+    "${rec.get(row, "AtomicNumber")} ${rec.get(row, "Symbol")} ${rec.get(row, "Name")}"
+  }) in
+  io.write_file("out/valid_elements.txt", str.join(lines, "\n"))
+}
+
+main()

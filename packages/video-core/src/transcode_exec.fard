@@ -1,0 +1,39 @@
+import("std/process") as process
+import("std/str") as str
+import("std/rec") as rec
+
+fn run_ffmpeg(args) {
+  let r = process.spawn("/opt/homebrew/bin/ffmpeg", args, "") in
+  {
+    "ok": r.code == 0,
+    "code": r.code,
+    "stdout": str.trim(r.stdout),
+    "stderr": str.trim(r.stderr)
+  }
+}
+
+fn transcode_webm(input_pattern, input_audio, output_path) {
+  run_ffmpeg([
+    "-y",
+    "-framerate", "24",
+    "-i", input_pattern,
+    "-i", input_audio,
+    "-c:v", "libvpx-vp9",
+    "-c:a", "libopus",
+    output_path
+  ])
+}
+
+fn transcode_mp4(input_pattern, input_audio, output_path) {
+  run_ffmpeg([
+    "-y",
+    "-framerate", "24",
+    "-i", input_pattern,
+    "-i", input_audio,
+    "-c:v", "libx264",
+    "-c:a", "aac",
+    output_path
+  ])
+}
+
+export { run_ffmpeg, transcode_webm, transcode_mp4 }

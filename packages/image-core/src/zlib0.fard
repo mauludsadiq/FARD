@@ -1,3 +1,4 @@
+import("std/list") as list
 import("std/bytes") as stdbytes
 import("../../media-core/src/bytes") as bytes
 import("../../image-core/src/adler32") as adler32
@@ -6,23 +7,37 @@ fn u16le_bytes(n) {
   bytes.u16le(n)
 }
 
-fn zlib_stored_block(bs) {
+fn stored_block(flag, bs) {
   let n = stdbytes.len(bs) in
   let nlen = 65535 - n in
   bytes.concat_many([
-    stdbytes.of_list([1]),
+    stdbytes.of_list([flag]),
     u16le_bytes(n),
     u16le_bytes(nlen),
     bs
   ])
 }
 
+fn zlib_blocks(bs) {
+  let chunks = list.chunk(stdbytes.to_list(bs), 65535) in
+  let last = list.len(chunks) - 1 in
+  let parts_rev = list.fold(chunks, { "i": 0, "parts": [] }, fn(s, chunk) {
+    let part = stdbytes.of_list(chunk) in
+    let flag = if s.i == last then 1 else 0 in
+    {
+      "i": s.i + 1,
+      "parts": list.concat([[stored_block(flag, part)], s.parts])
+    }
+  }) in
+  bytes.concat_many(list.reverse(parts_rev.parts))
+}
+
 fn zlib_bytes(bs) {
   bytes.concat_many([
     stdbytes.of_list([120, 1]),
-    zlib_stored_block(bs),
+    zlib_blocks(bs),
     adler32.adler32_be_bytes(bs)
   ])
 }
 
-export { u16le_bytes, zlib_stored_block, zlib_bytes }
+export { u16le_bytes, stored_block, zlib_blocks, zlib_bytes }

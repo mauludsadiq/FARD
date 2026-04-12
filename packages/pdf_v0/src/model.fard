@@ -1,0 +1,44 @@
+import("std/rec") as rec
+
+{
+  make_bbox: fn(x0, y0, x1, y1) {
+    { x0: x0, y0: y0, x1: x1, y1: y1 }
+  },
+
+  make_match: fn(page, match_id, text, span_ids, bbox) {
+    {
+      page: page,
+      match_id: match_id,
+      text: text,
+      span_ids: span_ids,
+      bbox: bbox
+    }
+  },
+
+  make_overlay_item: fn(page, kind, bbox, fill_rgb) {
+    {
+      page: page,
+      type: kind,
+      x0: rec.get(bbox, "x0"),
+      y0: rec.get(bbox, "y0"),
+      x1: rec.get(bbox, "x1"),
+      y1: rec.get(bbox, "y1"),
+      fill_rgb: fill_rgb,
+      opacity_mode: "opaque_flattened"
+    }
+  },
+
+  make_matches_doc: fn(query, matches) {
+    {
+      query: query,
+      matches: matches
+    }
+  },
+
+  make_overlay_plan: fn(items) {
+    {
+      overlay_version: "v0",
+      items: items
+    }
+  }
+}

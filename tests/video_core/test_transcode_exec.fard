@@ -1,0 +1,6 @@
+import("../../packages/video-core/src/transcode_exec") as transcode_exec
+
+let r = transcode_exec.run_ffmpeg(["-version"])
+
+test "ffmpeg exec ok" { r.ok == true }
+test "ffmpeg exec code" { r.code == 0 }

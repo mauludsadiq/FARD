@@ -1,0 +1,3 @@
+import("../../packages/video-core/src/frame_sequence_materialize") as frame_sequence_materialize
+
+frame_sequence_materialize.frame_path("out/test_frames_dbg2", 0)

@@ -1,3 +1,5 @@
+import("../../image-core/src/draw") as draw
+
 fn make(index, pts_num, pts_den, raster) {
   {
     "index": index,
@@ -7,4 +9,9 @@ fn make(index, pts_num, pts_den, raster) {
   }
 }
 
-export { make }
+fn test_pattern(width, height, index) {
+  let raster = draw.gradient(width, height) in
+  make(index, index, 1, raster)
+}
+
+export { make, test_pattern }
