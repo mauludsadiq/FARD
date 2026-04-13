@@ -1,0 +1,33 @@
+import("../../packages/ws-core/src/frame") as frame
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+// Encode a small text frame (unmasked for decode test)
+let payload = stdbytes.of_str("Hi")
+let f = frame.encode(1, payload, false)
+
+test "frame first byte FIN+text"  { stdbytes.get(f, 0) == 129 }  // 0x81
+test "frame length byte"          { stdbytes.get(f, 1) == 2 }
+test "frame payload byte 0"       { stdbytes.get(f, 2) == 72 }   // 'H'
+test "frame payload byte 1"       { stdbytes.get(f, 3) == 105 }  // 'i'
+
+let d = frame.decode(f, 0)
+test "decode op"                  { d.op == 1 }
+test "decode fin"                 { d.fin == 1 }
+test "decode payload"             { stdbytes.to_string(d.payload) == "Hi" }
+test "decode next_off"            { d.next_off == 4 }
+
+// Binary frame
+let bf = frame.encode(2, stdbytes.of_list([1,2,3]), false)
+test "binary op byte"             { stdbytes.get(bf, 0) == 130 }  // 0x82
+
+// Close frame
+let cf = frame.encode(8, stdbytes.of_list([]), false)
+test "close op byte"              { stdbytes.get(cf, 0) == 136 }  // 0x88
+
+// 126-byte payload triggers 16-bit length encoding
+let big = stdbytes.of_list(list.map(list.range(0, 126), fn(i) { 65 }))
+let bf2 = frame.encode(2, big, false)
+test "extended length marker"     { stdbytes.get(bf2, 1) == 126 }
+test "extended length value"      { stdbytes.get(bf2, 2) == 0 }
+test "extended length value2"     { stdbytes.get(bf2, 3) == 126 }

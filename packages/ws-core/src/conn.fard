@@ -1,0 +1,54 @@
+import("std/net") as net
+import("std/bytes") as stdbytes
+import("std/str") as str
+import("./frame") as frame
+import("./handshake") as handshake
+
+fn connect(host, port, path) {
+  let c = net.connect(host, port) in
+  if c.err != null
+  then { "err": c.err }
+  else
+    let conn_id = c.ok in
+    let key = "dGhlIHNhbXBsZSBub25jZQ==" in  // fixed key for determinism
+    let req = handshake.upgrade_request(host, path, key) in
+    let _ = net.send(conn_id, stdbytes.of_str(req)) in
+    let resp = net.recv(conn_id, 4096) in
+    let split = handshake.split_http(resp.ok) in
+    if handshake.handshake_ok(split.http)
+    then { "ok": conn_id }
+    else { "err": str.concat("handshake failed: ", split.http) }
+}
+
+fn send_text(conn_id, text) {
+  let f = frame.encode(1, stdbytes.of_str(text), true) in
+  net.send(conn_id, f)
+}
+
+fn send_binary(conn_id, bs) {
+  let f = frame.encode(2, bs, true) in
+  net.send(conn_id, f)
+}
+
+fn recv(conn_id) {
+  let bs = net.recv(conn_id, 65536) in
+  if bs.err != null
+  then { "err": bs.err }
+  else
+    let f = frame.decode(bs.ok, 0) in
+    if f.op == 8
+    then { "closed": true }
+    else if f.op == 9
+    then
+      // auto pong
+      let _ = net.send(conn_id, frame.encode(10, f.payload, true)) in
+      { "ok": stdbytes.to_string(f.payload), "op": f.op }
+    else { "ok": stdbytes.to_string(f.payload), "op": f.op }
+}
+
+fn close(conn_id) {
+  let _ = net.send(conn_id, frame.encode(8, stdbytes.of_list([]), true)) in
+  net.close_conn(conn_id)
+}
+
+export { connect, send_text, send_binary, recv, close }

@@ -1,0 +1,73 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+
+// Encode a WebSocket frame (RFC 6455)
+// op: 1=text, 2=binary, 8=close, 9=ping, 10=pong
+fn encode(op, payload, mask) {
+  let plen = stdbytes.len(payload) in
+  let byte0 = bits.bor(128, bits.band(op, 15)) in  // FIN=1, opcode
+  let mask_bit = if mask then 128 else 0 in
+  let header = if plen < 126
+    then stdbytes.of_list([byte0, bits.bor(mask_bit, plen)])
+    else if plen < 65536
+    then stdbytes.of_list([byte0, bits.bor(mask_bit, 126),
+           bits.band(bits.bshr(plen, 8), 255), bits.band(plen, 255)])
+    else stdbytes.of_list([byte0, bits.bor(mask_bit, 127),
+           0, 0, 0, 0,
+           bits.band(bits.bshr(plen, 24), 255),
+           bits.band(bits.bshr(plen, 16), 255),
+           bits.band(bits.bshr(plen, 8), 255),
+           bits.band(plen, 255)]) in
+  if mask
+  then
+    // Client frames must be masked with a random 4-byte key
+    let key = [0, 0, 0, 0] in  // deterministic zero mask for FARD
+    let masked = stdbytes.of_list(list.map(
+      list.range(0, plen),
+      fn(i) { bits.bxor(stdbytes.get(payload, i), list.get(key, i % 4)) }
+    )) in
+    stdbytes.concat([header, stdbytes.concat([stdbytes.of_list(key), masked])])
+  else
+    stdbytes.concat([header, payload])
+}
+
+// Decode a WebSocket frame from bytes
+// Returns { op, payload, fin, next_off }
+fn decode(bs, off) {
+  let byte0 = stdbytes.get(bs, off) in
+  let byte1 = stdbytes.get(bs, off + 1) in
+  let fin    = bits.band(bits.bshr(byte0, 7), 1) in
+  let op     = bits.band(byte0, 15) in
+  let masked = bits.band(bits.bshr(byte1, 7), 1) in
+  let plen7  = bits.band(byte1, 127) in
+  let plen_off_len =
+    if plen7 < 126 then { "len": plen7, "off": 2 }
+    else if plen7 == 126 then {
+      "len": bits.bor(bits.bshl(stdbytes.get(bs, off+2), 8), stdbytes.get(bs, off+3)),
+      "off": 4
+    }
+    else {
+      "len": bits.bor(
+        bits.bshl(stdbytes.get(bs, off+6), 24),
+        bits.bor(bits.bshl(stdbytes.get(bs, off+7), 16),
+        bits.bor(bits.bshl(stdbytes.get(bs, off+8), 8),
+                 stdbytes.get(bs, off+9)))),
+      "off": 10
+    } in
+  let plen   = plen_off_len.len in
+  let hoff   = off + plen_off_len.off in
+  let mask_key = if masked == 1
+    then [stdbytes.get(bs, hoff), stdbytes.get(bs, hoff+1),
+          stdbytes.get(bs, hoff+2), stdbytes.get(bs, hoff+3)]
+    else [0,0,0,0] in
+  let data_off = hoff + (if masked == 1 then 4 else 0) in
+  let payload = if masked == 1
+    then stdbytes.of_list(list.map(list.range(0, plen), fn(i) {
+      bits.bxor(stdbytes.get(bs, data_off + i), list.get(mask_key, i % 4))
+    }))
+    else stdbytes.slice(bs, data_off, data_off + plen) in
+  { "op": op, "fin": fin, "payload": payload, "next_off": data_off + plen }
+}
+
+export { encode, decode }

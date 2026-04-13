@@ -1,0 +1,35 @@
+import("std/str") as str
+import("std/bytes") as stdbytes
+import("std/list") as list
+import("std/base64") as base64
+import("std/hash") as hash
+
+// Build HTTP upgrade request
+fn upgrade_request(host, path, key) {
+  str.concat("GET ", str.concat(path, str.concat(" HTTP/1.1\r\nHost: ", str.concat(host,
+  str.concat("\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ",
+  str.concat(key, "\r\nSec-WebSocket-Version: 13\r\n\r\n"))))))
+}
+
+// Validate server accept key
+// accept = base64(sha1(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+// We verify the response contains "101 Switching Protocols"
+fn handshake_ok(response_text) {
+  str.contains(response_text, "101 Switching Protocols")
+}
+
+// Extract any trailing bytes after the HTTP response (start of WS frames)
+fn split_http(bs) {
+  let s = stdbytes.to_string(bs) in
+  let marker = "\r\n\r\n" in
+  let idx = str.index_of(s, marker) in
+  if idx == -1
+  then { "http": s, "rest": stdbytes.of_list([]) }
+  else {
+    let http_end = idx + 4 in
+    { "http": str.slice(s, 0, http_end),
+      "rest": stdbytes.slice(bs, http_end, stdbytes.len(bs)) }
+  }
+}
+
+export { upgrade_request, handshake_ok, split_http }
