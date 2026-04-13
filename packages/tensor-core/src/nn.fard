@@ -1,0 +1,67 @@
+import("std/linalg") as la
+import("std/list") as list
+import("std/cast") as cast
+import("std/rec") as rec
+import("./tensor") as tensor
+import("./ops") as ops
+
+// Linear layer: y = x @ W^T + b
+// W: [out_features, in_features], b: [out_features]
+fn linear(in_features, out_features, init_scale) {
+  // Xavier-style init using deterministic values
+  let n = in_features * out_features in
+  let scale = init_scale in
+  let w_data = list.map(list.range(0, n), fn(i) {
+    let row  = i / in_features in
+    let col  = i % in_features in
+    // deterministic pseudo-varied init: different magnitude and sign per position
+    let h    = (row * 7 + col * 13 + row * col * 3) % 17 in
+    let sign = if h % 2 == 0 then 1.0 else -1.0 in
+    let mag  = cast.float(h % 8 + 1) / 8.0 in
+    scale * sign * mag
+  }) in
+  let b_data = list.map(list.range(0, out_features), fn(_) { 0.0 }) in
+  { "w": tensor.require_grad(tensor.make(w_data, [out_features, in_features])),
+    "b": tensor.require_grad(tensor.make(b_data, [out_features])),
+    "in_features": in_features,
+    "out_features": out_features }
+}
+
+// Forward pass through a linear layer
+// x: [batch, in_features] -> out: [batch, out_features]
+fn linear_forward(layer, x) {
+  // x @ W^T: matmul x [batch, in] with W^T [in, out]
+  let wt = tensor.make(
+    list.fold(
+      list.map(list.range(0, layer.in_features), fn(j) {
+        list.map(list.range(0, layer.out_features), fn(i) {
+          list.get(layer.w.data, i * layer.in_features + j)
+        })
+      }),
+      [], fn(acc, row) { list.concat([acc, row]) }
+    ),
+    [layer.in_features, layer.out_features]
+  ) in
+  let mm = ops.matmul(x, wt) in
+  ops.add_bias(mm.out, layer.b)
+}
+
+// SGD update: param = param - lr * grad
+fn sgd_step(param, lr) {
+  let new_data = list.map(list.range(0, list.len(param.data)), fn(i) {
+    list.get(param.data, i) - lr * list.get(param.grad, i)
+  }) in
+  tensor.make(new_data, param.shape)
+}
+
+// Zero gradients
+fn zero_grad(param) {
+  rec.set(param, "grad", list.map(list.range(0, tensor.numel(param)), fn(_) { 0.0 }))
+}
+
+// Accumulate gradient into parameter
+fn accum_grad(param, grad) {
+  rec.set(param, "grad", la.vec_add(param.grad, grad))
+}
+
+export { linear, linear_forward, sgd_step, zero_grad, accum_grad }

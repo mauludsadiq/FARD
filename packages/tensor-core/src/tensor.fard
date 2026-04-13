@@ -1,0 +1,43 @@
+import("std/linalg") as la
+import("std/list") as list
+import("std/rec") as rec
+
+// A tensor is a record: { data: List(Float), shape: List(Int), grad: List(Float), requires_grad: Bool }
+// shape: [rows, cols] for 2D, [n] for 1D
+// grad: same shape as data, accumulated during backward pass
+
+fn make(data, shape) {
+  let n = list.fold(shape, 1, fn(acc, s) { acc * s }) in
+  { "data": data,
+    "shape": shape,
+    "grad": list.map(list.range(0, n), fn(_) { 0.0 }),
+    "requires_grad": false }
+}
+
+fn require_grad(t) {
+  rec.set(t, "requires_grad", true)
+}
+
+fn zeros(shape) {
+  let n = list.fold(shape, 1, fn(acc, s) { acc * s }) in
+  make(list.map(list.range(0, n), fn(_) { 0.0 }), shape)
+}
+
+fn ones(shape) {
+  let n = list.fold(shape, 1, fn(acc, s) { acc * s }) in
+  make(list.map(list.range(0, n), fn(_) { 1.0 }), shape)
+}
+
+fn from_list(data, shape) {
+  make(data, shape)
+}
+
+fn rows(t) { list.get(t.shape, 0) }
+fn cols(t) { list.get(t.shape, 1) }
+fn numel(t) { list.fold(t.shape, 1, fn(acc, s) { acc * s }) }
+
+fn add_grad(t, dgrad) {
+  rec.set(t, "grad", la.vec_add(t.grad, dgrad))
+}
+
+export { make, require_grad, zeros, ones, from_list, rows, cols, numel, add_grad }

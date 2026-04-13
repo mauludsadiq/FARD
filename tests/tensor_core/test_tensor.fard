@@ -1,0 +1,73 @@
+import("../../packages/tensor-core/src/tensor") as tensor
+import("../../packages/tensor-core/src/ops") as ops
+import("../../packages/tensor-core/src/nn") as nn
+import("std/list") as list
+import("std/math") as math
+
+// tensor construction
+let t = tensor.make([1.0, 2.0, 3.0, 4.0], [2, 2])
+test "tensor data"      { list.get(t.data, 0) == 1.0 }
+test "tensor shape"     { list.get(t.shape, 0) == 2 }
+test "tensor numel"     { tensor.numel(t) == 4 }
+test "tensor grad zero" { list.get(t.grad, 0) == 0.0 }
+
+// elementwise add
+let a = tensor.make([1.0, 2.0], [1, 2])
+let b = tensor.make([3.0, 4.0], [1, 2])
+let add_op = ops.add(a, b)
+test "add forward"      { list.get(add_op.out.data, 0) == 4.0 }
+test "add forward 1"    { list.get(add_op.out.data, 1) == 6.0 }
+let grad_ones = tensor.make([1.0, 1.0], [1, 2])
+let add_grads = add_op.backward(grad_ones)
+test "add grad_a"       { list.get(add_grads.grad_a, 0) == 1.0 }
+test "add grad_b"       { list.get(add_grads.grad_b, 1) == 1.0 }
+
+// elementwise mul
+let mul_op = ops.mul(a, b)
+test "mul forward"      { list.get(mul_op.out.data, 0) == 3.0 }
+let mul_grads = mul_op.backward(grad_ones)
+test "mul grad_a"       { list.get(mul_grads.grad_a, 0) == 3.0 }
+test "mul grad_b"       { list.get(mul_grads.grad_b, 0) == 1.0 }
+
+// relu
+let rx = tensor.make([-1.0, 0.0, 2.0], [1, 3])
+let relu_op = ops.relu(rx)
+test "relu forward neg"  { list.get(relu_op.out.data, 0) == 0.0 }
+test "relu forward zero" { list.get(relu_op.out.data, 1) == 0.0 }
+test "relu forward pos"  { list.get(relu_op.out.data, 2) == 2.0 }
+let relu_grad = relu_op.backward(tensor.make([1.0, 1.0, 1.0], [1, 3]))
+test "relu grad neg"     { list.get(relu_grad.grad, 0) == 0.0 }
+test "relu grad pos"     { list.get(relu_grad.grad, 2) == 1.0 }
+
+// matmul
+let m1 = tensor.make([1.0, 2.0, 3.0, 4.0], [2, 2])
+let m2 = tensor.make([1.0, 0.0, 0.0, 1.0], [2, 2])
+let mm_op = ops.matmul(m1, m2)
+test "matmul identity"  { list.get(mm_op.out.data, 0) == 1.0 }
+test "matmul identity1" { list.get(mm_op.out.data, 3) == 4.0 }
+
+// softmax sums to 1
+let sv = tensor.make([1.0, 2.0, 3.0], [1, 3])
+let sm_op = ops.softmax(sv)
+let sm_sum = list.fold(sm_op.out.data, 0.0, fn(acc, x) { acc + x })
+test "softmax sum"      { math.abs(sm_sum - 1.0) < 0.0001 }
+test "softmax monotone" { list.get(sm_op.out.data, 2) > list.get(sm_op.out.data, 0) }
+
+// cross entropy
+let pred   = tensor.make([0.7, 0.2, 0.1], [1, 3])
+let target = tensor.make([1.0, 0.0, 0.0], [1, 3])
+let ce_op  = ops.cross_entropy(pred, target)
+test "cross_entropy positive" { list.get(ce_op.out.data, 0) > 0.0 }
+test "cross_entropy finite"   { list.get(ce_op.out.data, 0) < 10.0 }
+
+// linear layer
+let layer = nn.linear(2, 3, 0.1)
+test "linear w shape r" { list.get(layer.w.shape, 0) == 3 }
+test "linear w shape c" { list.get(layer.w.shape, 1) == 2 }
+test "linear b shape"   { list.get(layer.b.shape, 0) == 3 }
+
+// linear forward
+let x = tensor.make([1.0, 0.0], [1, 2])
+let lf = nn.linear_forward(layer, x)
+test "linear forward shape r" { list.get(lf.out.shape, 0) == 1 }
+test "linear forward shape c" { list.get(lf.out.shape, 1) == 3 }

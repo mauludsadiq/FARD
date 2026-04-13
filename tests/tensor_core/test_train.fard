@@ -1,0 +1,68 @@
+import("../../packages/tensor-core/src/tensor") as tensor
+import("../../packages/tensor-core/src/ops") as ops
+import("../../packages/tensor-core/src/nn") as nn
+import("../../packages/tensor-core/src/autograd") as autograd
+import("std/list") as list
+import("std/math") as math
+
+// XOR dataset — the classic non-linearly-separable problem
+// inputs: [0,0] [0,1] [1,0] [1,1]
+// targets: [1,0] [0,1] [0,1] [1,0]  (one-hot: class 0=false, class 1=true)
+
+let x0 = tensor.make([0.0, 0.0], [1, 2])
+let x1 = tensor.make([0.0, 1.0], [1, 2])
+let x2 = tensor.make([1.0, 0.0], [1, 2])
+let x3 = tensor.make([1.0, 1.0], [1, 2])
+
+let t0 = tensor.make([1.0, 0.0], [1, 2])
+let t1 = tensor.make([0.0, 1.0], [1, 2])
+let t2 = tensor.make([0.0, 1.0], [1, 2])
+let t3 = tensor.make([1.0, 0.0], [1, 2])
+
+let inputs  = [x0, x1, x2, x3]
+let targets = [t0, t1, t2, t3]
+
+// 2-layer MLP: 2 -> 4 -> 2
+let layer1_init = nn.linear(2, 8, 0.5)
+let layer2_init = nn.linear(8, 2, 0.5)
+
+// Train for 200 steps
+let trained = while { "l1": layer1_init, "l2": layer2_init, "step": 0, "loss": 999.0 }
+  fn(s) { s.step < 800 }
+  fn(s) {
+    let result = list.fold(list.range(0, 4), { "l1": s.l1, "l2": s.l2, "total_loss": 0.0 }, fn(acc, i) {
+      let x = list.get(inputs, i) in
+      let t = list.get(targets, i) in
+      let r = autograd.mlp_forward_backward(acc.l1, acc.l2, x, t, 0.1) in
+      { "l1": r.layer1, "l2": r.layer2, "total_loss": acc.total_loss + r.loss }
+    }) in
+    { "l1": result.l1, "l2": result.l2, "step": s.step + 1, "loss": result.total_loss / 4.0 }
+  }
+
+let final_loss = trained.value.loss
+let final_l1   = trained.value.l1
+let final_l2   = trained.value.l2
+
+test "loss decreased"     { final_loss < 0.5 }
+test "loss is finite"     { final_loss < 10.0 }
+test "loss is positive"   { final_loss > 0.0 }
+
+// Check predictions — forward pass only
+fn predict(l1, l2, x) {
+  let h1 = nn.linear_forward(l1, x) in
+  let h1a = ops.relu(h1.out) in
+  let h2 = nn.linear_forward(l2, h1a.out) in
+  let sm = ops.softmax(h2.out) in
+  sm.out.data
+}
+
+let pred0 = predict(final_l1, final_l2, x0)
+let pred1 = predict(final_l1, final_l2, x1)
+let pred2 = predict(final_l1, final_l2, x2)
+let pred3 = predict(final_l1, final_l2, x3)
+
+// XOR: 0 XOR 0 = 0 (class 0 wins), 0 XOR 1 = 1 (class 1 wins)
+test "pred 0,0 -> class 0" { list.get(pred0, 0) > list.get(pred0, 1) }
+test "pred 0,1 -> class 1" { list.get(pred1, 1) > list.get(pred1, 0) }
+test "pred 1,0 -> class 1" { list.get(pred2, 1) > list.get(pred2, 0) }
+test "pred 1,1 -> class 0" { list.get(pred3, 0) > list.get(pred3, 1) }

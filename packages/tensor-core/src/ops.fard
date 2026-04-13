@@ -1,0 +1,193 @@
+import("std/list") as list
+import("std/math") as math
+import("./tensor") as tensor
+
+fn mat_to_rows(data, rows, cols) {
+  list.map(list.range(0, rows), fn(i) {
+    list.map(list.range(0, cols), fn(j) {
+      list.get(data, i * cols + j)
+    })
+  })
+}
+
+fn rows_to_flat(mat) {
+  list.fold(mat, [], fn(acc, row) { list.concat([acc, row]) })
+}
+
+fn vec_add(a, b) {
+  list.map(list.range(0, list.len(a)), fn(i) {
+    list.get(a, i) + list.get(b, i)
+  })
+}
+
+fn vec_mul(a, b) {
+  list.map(list.range(0, list.len(a)), fn(i) {
+    list.get(a, i) * list.get(b, i)
+  })
+}
+
+fn vec_scale(v, s) {
+  list.map(v, fn(x) { x * s })
+}
+
+fn mat_mul(a_mat, b_mat) {
+  let m = list.len(a_mat) in
+  let k = list.len(list.get(a_mat, 0)) in
+  let n = list.len(list.get(b_mat, 0)) in
+  list.map(list.range(0, m), fn(i) {
+    list.map(list.range(0, n), fn(j) {
+      list.fold(list.range(0, k), 0.0, fn(acc, p) {
+        acc + list.get(list.get(a_mat, i), p) * list.get(list.get(b_mat, p), j)
+      })
+    })
+  })
+}
+
+fn transpose(mat) {
+  let rows = list.len(mat) in
+  let cols = list.len(list.get(mat, 0)) in
+  list.map(list.range(0, cols), fn(j) {
+    list.map(list.range(0, rows), fn(i) {
+      list.get(list.get(mat, i), j)
+    })
+  })
+}
+
+fn mat_row_sum(mat) {
+  list.map(mat, fn(row) {
+    list.fold(row, 0.0, fn(acc, x) { acc + x })
+  })
+}
+
+// sum columns: mat [m,n] -> [n]  (sum each column across rows)
+fn mat_col_sum(mat) {
+  let m = list.len(mat) in
+  let n = list.len(list.get(mat, 0)) in
+  list.map(list.range(0, n), fn(j) {
+    list.fold(list.range(0, m), 0.0, fn(acc, i) {
+      acc + list.get(list.get(mat, i), j)
+    })
+  })
+}
+
+// elementwise add
+fn add(a, b) {
+  let out = tensor.make(vec_add(a.data, b.data), a.shape) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      { "grad_a": grad_out.data, "grad_b": grad_out.data }
+    }
+  }
+}
+
+// elementwise mul
+fn mul(a, b) {
+  let out = tensor.make(vec_mul(a.data, b.data), a.shape) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      { "grad_a": vec_mul(grad_out.data, b.data),
+        "grad_b": vec_mul(grad_out.data, a.data) }
+    }
+  }
+}
+
+// matmul
+fn matmul(a, b) {
+  let m = tensor.rows(a) in
+  let k = tensor.cols(a) in
+  let n = tensor.cols(b) in
+  let a_mat = mat_to_rows(a.data, m, k) in
+  let b_mat = mat_to_rows(b.data, k, n) in
+  let c_mat = mat_mul(a_mat, b_mat) in
+  let out   = tensor.make(rows_to_flat(c_mat), [m, n]) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      let go_mat = mat_to_rows(grad_out.data, m, n) in
+      let ga = rows_to_flat(mat_mul(go_mat, transpose(b_mat))) in
+      let gb = rows_to_flat(mat_mul(transpose(a_mat), go_mat)) in
+      { "grad_a": ga, "grad_b": gb }
+    }
+  }
+}
+
+// relu
+fn relu(a) {
+  let out_data = list.map(a.data, fn(x) { if x > 0.0 then x else 0.0 }) in
+  let out = tensor.make(out_data, a.shape) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      let grad = list.map(list.range(0, list.len(a.data)), fn(i) {
+        if list.get(a.data, i) > 0.0
+        then list.get(grad_out.data, i)
+        else 0.0
+      }) in
+      { "grad": grad }
+    }
+  }
+}
+
+// softmax
+fn softmax_vec(v) {
+  let max_v = list.fold(v, list.get(v, 0), fn(acc, x) { if x > acc then x else acc }) in
+  let exps  = list.map(v, fn(x) { math.exp(x - max_v) }) in
+  let total = list.fold(exps, 0.0, fn(acc, x) { acc + x }) in
+  list.map(exps, fn(x) { x / total })
+}
+
+fn softmax(a) {
+  let sm  = softmax_vec(a.data) in
+  let out = tensor.make(sm, a.shape) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      let s   = out.data in
+      let dot = list.fold(list.range(0, list.len(s)), 0.0, fn(acc, i) {
+        acc + list.get(grad_out.data, i) * list.get(s, i)
+      }) in
+      let grad = list.map(list.range(0, list.len(s)), fn(i) {
+        list.get(s, i) * (list.get(grad_out.data, i) - dot)
+      }) in
+      { "grad": grad }
+    }
+  }
+}
+
+// cross entropy
+fn cross_entropy(pred, target) {
+  let eps  = 0.0000001 in
+  let loss = list.fold(list.range(0, list.len(pred.data)), 0.0, fn(acc, i) {
+    acc - list.get(target.data, i) * math.log(list.get(pred.data, i) + eps)
+  }) in
+  let out = tensor.make([loss], [1]) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      let scale = list.get(grad_out.data, 0) in
+      let grad  = list.map(list.range(0, list.len(pred.data)), fn(i) {
+        let p = list.get(pred.data, i) in
+        let t = list.get(target.data, i) in
+        scale * (-(t / (p + 0.0000001)))
+      }) in
+      { "grad": grad }
+    }
+  }
+}
+
+// add bias: a [m,n] + bias [n]
+fn add_bias(a, bias) {
+  let m = tensor.rows(a) in
+  let n = tensor.cols(a) in
+  let out_data = list.map(list.range(0, m * n), fn(i) {
+    list.get(a.data, i) + list.get(bias.data, i % n)
+  }) in
+  let out = tensor.make(out_data, [m, n]) in
+  { "out": out,
+    "backward": fn(grad_out) {
+      let go_mat    = mat_to_rows(grad_out.data, m, n) in
+      let grad_bias = mat_col_sum(go_mat) in
+      { "grad_a": grad_out.data, "grad_bias": grad_bias }
+    }
+  }
+}
+
+export { add, mul, matmul, relu, softmax, softmax_vec, cross_entropy, add_bias,
+         mat_to_rows, rows_to_flat, vec_add, vec_mul, vec_scale,
+         mat_mul, transpose, mat_row_sum }

@@ -1,0 +1,80 @@
+import("std/list") as list
+import("std/type") as type
+import("std/cast") as cast
+import("./tensor") as tensor
+import("./ops") as ops
+import("./nn") as nn
+
+fn to_float_list(xs) {
+  list.map(xs, fn(x) {
+    if type.of(x) == "int" then cast.float(x) else x
+  })
+}
+
+fn mlp_forward_backward(layer1, layer2, input, target, lr) {
+  let k1 = layer1.in_features in
+  let n1 = layer1.out_features in
+  let n2 = layer2.out_features in
+
+  // Build W^T tensors for matmul
+  let w1t = tensor.make(
+    ops.rows_to_flat(ops.transpose(ops.mat_to_rows(layer1.w.data, n1, k1))),
+    [k1, n1]) in
+  let w2t = tensor.make(
+    ops.rows_to_flat(ops.transpose(ops.mat_to_rows(layer2.w.data, n2, n1))),
+    [n1, n2]) in
+
+  // Forward
+  let mm1   = ops.matmul(input, w1t) in   // [1,k1] @ [k1,n1] -> [1,n1]
+  let ab1   = ops.add_bias(mm1.out, layer1.b) in
+  let r1    = ops.relu(ab1.out) in
+  let mm2   = ops.matmul(r1.out, w2t) in  // [1,n1] @ [n1,n2] -> [1,n2]
+  let ab2   = ops.add_bias(mm2.out, layer2.b) in
+  let sm    = ops.softmax(ab2.out) in
+  let ce    = ops.cross_entropy(sm.out, target) in
+  let loss  = list.get(ce.out.data, 0) in
+
+  // Backward through loss -> softmax -> add_bias2
+  let g1    = tensor.make([1.0], [1]) in
+  let g_ce  = ce.backward(g1) in
+  let g_sm  = sm.backward(tensor.make(g_ce.grad, sm.out.shape)) in
+  let g_ab2 = ab2.backward(tensor.make(g_sm.grad, ab2.out.shape)) in
+
+  // grad_bias2: sum over batch rows
+  let db2   = to_float_list(g_ab2.grad_bias) in
+
+  // Backward through matmul2
+  // mm2: input=[1,n1] @ w2t=[n1,n2]
+  // grad_a = grad_out @ w2t^T = [1,n2] @ [n2,n1] -> [1,n1]  (grad for r1)
+  // grad_b = input^T @ grad_out = [n1,1] @ [1,n2] -> [n1,n2]  (grad for w2t)
+  // but we want dW2 (shape [n2,n1]) = grad_b^T
+  let g_mm2 = mm2.backward(tensor.make(g_ab2.grad_a, mm2.out.shape)) in
+  let dW2t  = ops.mat_to_rows(g_mm2.grad_b, n1, n2) in
+  let dW2   = ops.rows_to_flat(ops.transpose(dW2t)) in  // [n2, n1]
+
+  // Backward through relu1 -> add_bias1
+  let g_r1  = r1.backward(tensor.make(g_mm2.grad_a, r1.out.shape)) in
+  let g_ab1 = ab1.backward(tensor.make(g_r1.grad, ab1.out.shape)) in
+  let db1   = to_float_list(g_ab1.grad_bias) in
+
+  // Backward through matmul1
+  let g_mm1 = mm1.backward(tensor.make(g_ab1.grad_a, mm1.out.shape)) in
+  let dW1t  = ops.mat_to_rows(g_mm1.grad_b, k1, n1) in
+  let dW1   = ops.rows_to_flat(ops.transpose(dW1t)) in  // [n1, k1]
+
+  // SGD: param -= lr * grad
+  let new_w1 = ops.vec_add(layer1.w.data, ops.vec_scale(dW1, -lr)) in
+  let new_b1 = ops.vec_add(layer1.b.data, ops.vec_scale(db1, -lr)) in
+  let new_w2 = ops.vec_add(layer2.w.data, ops.vec_scale(dW2, -lr)) in
+  let new_b2 = ops.vec_add(layer2.b.data, ops.vec_scale(db2, -lr)) in
+
+  { "loss": loss,
+    "layer1": { "w": tensor.make(new_w1, layer1.w.shape),
+                "b": tensor.make(new_b1, layer1.b.shape),
+                "in_features": k1, "out_features": n1 },
+    "layer2": { "w": tensor.make(new_w2, layer2.w.shape),
+                "b": tensor.make(new_b2, layer2.b.shape),
+                "in_features": n1, "out_features": n2 } }
+}
+
+export { mlp_forward_backward }

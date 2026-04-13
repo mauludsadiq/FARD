@@ -1,0 +1,5 @@
+{
+  "name": "tensor-core",
+  "version": "0.1.0",
+  "entry": "src/autograd.fard"
+}
