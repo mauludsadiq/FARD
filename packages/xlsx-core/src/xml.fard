@@ -1,0 +1,29 @@
+import("std/str") as str
+import("std/list") as list
+import("std/rec") as rec
+
+fn escape(s) {
+  let s1 = str.replace(s, "&", "&amp;") in
+  let s2 = str.replace(s1, "<", "&lt;") in
+  let s3 = str.replace(s2, ">", "&gt;") in
+  let s4 = str.replace(s3, "\"", "&quot;") in
+  str.replace(s4, "'", "&apos;")
+}
+
+fn attr(name, value) {
+  str.concat(" ", str.concat(name, str.concat("=\"", str.concat(escape(value), "\""))))
+}
+
+fn tag(name, attrs, content) {
+  str.concat("<", str.concat(name, str.concat(attrs, str.concat(">", str.concat(content, str.concat("</", str.concat(name, ">")))))))
+}
+
+fn self_closing(name, attrs) {
+  str.concat("<", str.concat(name, str.concat(attrs, "/>")))
+}
+
+fn declaration() {
+  "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+}
+
+export { escape, attr, tag, self_closing, declaration }

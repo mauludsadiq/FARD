@@ -1,0 +1,40 @@
+import("std/bytes") as stdbytes
+import("std/list") as list
+import("std/str") as str
+import("std/artifact") as artifact_std
+import("./sheet") as sheet
+import("./workbook") as workbook
+import("./zip") as zip
+
+// sheets: list of { name, rows } where rows is list of list of values
+fn build_xlsx(sheets) {
+  let sheet_names = list.map(sheets, fn(s) { s.name }) in
+  let sheet_count = list.len(sheets) in
+
+  let sheet_files = list.map(list.range(0, sheet_count), fn(i) {
+    let s = list.get(sheets, i) in
+    { "name": str.concat("xl/worksheets/sheet", str.concat(str.from(i + 1), ".xml")),
+      "data": stdbytes.of_str(sheet.sheet_xml(s.rows)) }
+  }) in
+
+  let files = list.concat([
+    [{ "name": "[Content_Types].xml",
+       "data": stdbytes.of_str(workbook.content_types_xml(sheet_count)) }],
+    [{ "name": "_rels/.rels",
+       "data": stdbytes.of_str(workbook.root_rels_xml()) }],
+    [{ "name": "xl/workbook.xml",
+       "data": stdbytes.of_str(workbook.workbook_xml(sheet_names)) }],
+    [{ "name": "xl/_rels/workbook.xml.rels",
+       "data": stdbytes.of_str(workbook.rels_xml(sheet_count)) }],
+    sheet_files
+  ]) in
+
+  zip.build(files)
+}
+
+fn write_xlsx(path, sheets) {
+  let data = build_xlsx(sheets) in
+  artifact_std.emit(path, stdbytes.to_list(data))
+}
+
+export { build_xlsx, write_xlsx }

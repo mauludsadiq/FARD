@@ -1,0 +1,62 @@
+import("std/str") as str
+import("std/list") as list
+import("./xml") as xml
+
+fn workbook_xml(sheet_names) {
+  let sheets = list.map(list.range(0, list.len(sheet_names)), fn(i) {
+    let name = list.get(sheet_names, i) in
+    xml.self_closing("sheet", str.concat(
+      xml.attr("name", name),
+      str.concat(xml.attr("sheetId", str.from(i + 1)),
+      xml.attr("r:id", str.concat("rId", str.from(i + 1))))))
+  }) in
+  str.concat(xml.declaration(),
+    xml.tag("workbook",
+      " xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"",
+      xml.tag("sheets", "", str.join(sheets, ""))))
+}
+
+fn rels_xml(sheet_count) {
+  let rels = list.map(list.range(0, sheet_count), fn(i) {
+    xml.self_closing("Relationship", str.concat(
+      xml.attr("Id", str.concat("rId", str.from(i + 1))),
+      str.concat(
+        xml.attr("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"),
+        xml.attr("Target", str.concat("worksheets/sheet", str.concat(str.from(i + 1), ".xml"))))))
+  }) in
+  str.concat(xml.declaration(),
+    xml.tag("Relationships",
+      " xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"",
+      str.join(rels, "")))
+}
+
+fn content_types_xml(sheet_count) {
+  let sheet_types = list.map(list.range(0, sheet_count), fn(i) {
+    xml.self_closing("Override", str.concat(
+      xml.attr("PartName", str.concat("/xl/worksheets/sheet", str.concat(str.from(i + 1), ".xml"))),
+      xml.attr("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")))
+  }) in
+  str.concat(xml.declaration(),
+    xml.tag("Types",
+      " xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"",
+      str.concat(
+        xml.self_closing("Default", str.concat(xml.attr("Extension", "rels"), xml.attr("ContentType", "application/vnd.ms-office.activeX+xml"))),
+        str.concat(
+          xml.self_closing("Override", str.concat(
+            xml.attr("PartName", "/xl/workbook.xml"),
+            xml.attr("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"))),
+          str.join(sheet_types, "")))))
+}
+
+fn root_rels_xml() {
+  str.concat(xml.declaration(),
+    xml.tag("Relationships",
+      " xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"",
+      xml.self_closing("Relationship", str.concat(
+        xml.attr("Id", "rId1"),
+        str.concat(
+          xml.attr("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"),
+          xml.attr("Target", "xl/workbook.xml"))))))
+}
+
+export { workbook_xml, rels_xml, content_types_xml, root_rels_xml }

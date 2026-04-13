@@ -1,0 +1,56 @@
+import("std/list") as list
+import("std/str") as str
+import("std/rec") as rec
+import("std/cast") as cast
+import("std/type") as type
+import("./xml") as xml
+
+// Convert column index (0-based) to Excel letter: 0->A, 25->Z, 26->AA
+fn col_letter(n) {
+  let result = while { "n": n, "s": "" }
+    fn(s) { s.n >= 0 }
+    fn(s) {
+      let rem = s.n % 26 in
+      let ch  = str.slice("ABCDEFGHIJKLMNOPQRSTUVWXYZ", rem, rem + 1) in
+      { "n": s.n / 26 - 1, "s": str.concat(ch, s.s) }
+    } in
+  result.value.s
+}
+
+fn cell_ref(col, row) {
+  str.concat(col_letter(col), str.from(row + 1))
+}
+
+fn cell_value(v) {
+  if type.of(v) == "int" || type.of(v) == "float"
+  then xml.tag("v", "", str.from(v))
+  else xml.tag("v", "", xml.escape(str.from(v)))
+}
+
+fn cell_xml(v, col, row) {
+  let ref = cell_ref(col, row) in
+  if type.of(v) == "int" || type.of(v) == "float"
+  then xml.tag("c", xml.attr("r", ref), cell_value(v))
+  else xml.tag("c", str.concat(xml.attr("r", ref), xml.attr("t", "inlineStr")),
+         xml.tag("is", "", xml.tag("t", "", xml.escape(str.from(v)))))
+}
+
+fn row_xml(row_data, row_idx) {
+  let cells = list.map(list.range(0, list.len(row_data)), fn(col) {
+    cell_xml(list.get(row_data, col), col, row_idx)
+  }) in
+  xml.tag("row", xml.attr("r", str.from(row_idx + 1)), str.join(cells, ""))
+}
+
+fn sheet_xml(rows) {
+  let row_xmls = list.map(list.range(0, list.len(rows)), fn(i) {
+    row_xml(list.get(rows, i), i)
+  }) in
+  str.concat(
+    xml.declaration(),
+    xml.tag("worksheet",
+      " xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"",
+      xml.tag("sheetData", "", str.join(row_xmls, ""))))
+}
+
+export { col_letter, cell_ref, cell_xml, row_xml, sheet_xml }

@@ -1,0 +1,44 @@
+import("../../packages/xlsx-core/src/xml") as xml
+import("../../packages/xlsx-core/src/sheet") as sheet
+import("../../packages/xlsx-core/src/zip") as zip
+import("../../packages/xlsx-core/src/write") as write
+import("std/bytes") as stdbytes
+import("std/str") as str
+import("std/list") as list
+
+// XML helpers
+test "escape ampersand"     { xml.escape("a&b") == "a&amp;b" }
+test "escape lt"            { xml.escape("<x>") == "&lt;x&gt;" }
+test "attr"                 { xml.attr("k", "v") == " k=\"v\"" }
+test "tag"                  { xml.tag("r", "", "hi") == "<r>hi</r>" }
+test "self_closing"         { xml.self_closing("br", "") == "<br/>" }
+
+// Sheet helpers
+test "col_letter A"         { sheet.col_letter(0) == "A" }
+test "col_letter Z"         { sheet.col_letter(25) == "Z" }
+test "col_letter AA"        { sheet.col_letter(26) == "AA" }
+test "cell_ref A1"          { sheet.cell_ref(0, 0) == "A1" }
+test "cell_ref B2"          { sheet.cell_ref(1, 1) == "B2" }
+
+let rows = [["Name", "Score"], ["Alice", 95], ["Bob", 87]]
+let sx = sheet.sheet_xml(rows)
+test "sheet xml has worksheet"  { str.contains(sx, "<worksheet") }
+test "sheet xml has sheetData"  { str.contains(sx, "<sheetData") }
+test "sheet xml has Alice"      { str.contains(sx, "Alice") }
+test "sheet xml has 95"         { str.contains(sx, "95") }
+
+// ZIP
+let files = [
+  { "name": "hello.txt", "data": stdbytes.of_str("hello") }
+]
+let z = zip.build(files)
+test "zip signature"        { stdbytes.get(z, 0) == 80 }
+test "zip signature2"       { stdbytes.get(z, 1) == 75 }
+test "zip signature3"       { stdbytes.get(z, 2) == 3 }
+test "zip signature4"       { stdbytes.get(z, 3) == 4 }
+test "zip nontrivial"       { stdbytes.len(z) > 50 }
+
+// Full build
+let xlsx = write.build_xlsx([{ "name": "Sheet1", "rows": rows }])
+test "xlsx is bytes"        { stdbytes.len(xlsx) > 100 }
+test "xlsx zip sig"         { stdbytes.get(xlsx, 0) == 80 }
