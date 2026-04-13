@@ -1,0 +1,67 @@
+import("std/list") as list
+import("std/math") as math
+import("std/cast") as cast
+import("std/type") as type
+
+fn clamp_sample(v) {
+  if v > 32767.0 then 32767.0 else if v < -32768.0 then -32768.0 else v
+}
+
+fn gain(samples, factor) {
+  list.map(samples, fn(s) {
+    let t = type.of(s) in
+    if t == "float"
+    then clamp_sample(s * factor)
+    else
+      let v = cast.float(s) * factor in
+      cast.int(clamp_sample(v))
+  })
+}
+
+fn trim(samples, sample_rate, start_ms, end_ms) {
+  let start = cast.int(math.floor(cast.float(start_ms * sample_rate) / 1000.0)) in
+  let end   = cast.int(math.floor(cast.float(end_ms   * sample_rate) / 1000.0)) in
+  list.take(list.drop(samples, start), end - start)
+}
+
+fn mix(a, b) {
+  let la = list.len(a) in
+  let lb = list.len(b) in
+  let n  = if la > lb then la else lb in
+  list.map(list.range(0, n), fn(i) {
+    let sa = if i < la then list.get(a, i) else 0 in
+    let sb = if i < lb then list.get(b, i) else 0 in
+    sa + sb
+  })
+}
+
+fn fade_in(samples, fade_samples) {
+  list.map(list.range(0, list.len(samples)), fn(i) {
+    let s = list.get(samples, i) in
+    if i >= fade_samples then s
+    else s * cast.float(i) / cast.float(fade_samples)
+  })
+}
+
+fn fade_out(samples, fade_samples) {
+  let n = list.len(samples) in
+  list.map(list.range(0, n), fn(i) {
+    let s    = list.get(samples, i) in
+    let dist = n - i in
+    if dist >= fade_samples then s
+    else s * cast.float(dist) / cast.float(fade_samples)
+  })
+}
+
+fn mono_to_stereo(samples) {
+  list.flat_map(samples, fn(s) { [s, s] })
+}
+
+fn stereo_to_mono(samples) {
+  let n = list.len(samples) / 2 in
+  list.map(list.range(0, n), fn(i) {
+    (list.get(samples, i * 2) + list.get(samples, i * 2 + 1)) / 2
+  })
+}
+
+export { gain, trim, mix, fade_in, fade_out, mono_to_stereo, stereo_to_mono }

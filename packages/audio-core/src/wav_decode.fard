@@ -1,0 +1,76 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+
+fn u16le_at(bs, off) {
+  stdbytes.get(bs, off) + bits.bshl(stdbytes.get(bs, off + 1), 8)
+}
+
+fn u32le_at(bs, off) {
+  stdbytes.get(bs, off)
+  + bits.bshl(stdbytes.get(bs, off + 1), 8)
+  + bits.bshl(stdbytes.get(bs, off + 2), 16)
+  + bits.bshl(stdbytes.get(bs, off + 3), 24)
+}
+
+fn i16le_at(bs, off) {
+  let u = u16le_at(bs, off) in
+  if u >= 32768 then u - 65536 else u
+}
+
+fn find_chunk(bs, tag, start) {
+  let total = stdbytes.len(bs) in
+  let result = while { "off": start, "found": -1 }
+    fn(s) { s.off < total - 8 && s.found == -1 }
+    fn(s) {
+      let t  = stdbytes.to_string(stdbytes.slice(bs, s.off, s.off + 4)) in
+      let sz = u32le_at(bs, s.off + 4) in
+      if t == tag
+      then { "off": s.off, "found": s.off }
+      else { "off": s.off + 8 + sz, "found": -1 }
+    } in
+  result.value.found
+}
+
+fn decode(bs) {
+  if stdbytes.len(bs) < 12
+  then { "err": "too short" }
+  else
+    let riff_tag = stdbytes.to_string(stdbytes.slice(bs, 0, 4)) in
+    let wave_tag = stdbytes.to_string(stdbytes.slice(bs, 8, 12)) in
+    if riff_tag != "RIFF" || wave_tag != "WAVE"
+    then { "err": "not a WAV file" }
+    else
+      let fmt_off = find_chunk(bs, "fmt ", 12) in
+      if fmt_off == -1
+      then { "err": "no fmt chunk" }
+      else
+        let channels        = u16le_at(bs, fmt_off + 10) in
+        let sample_rate     = u32le_at(bs, fmt_off + 12) in
+        let bits_per_sample = u16le_at(bs, fmt_off + 22) in
+        let data_off        = find_chunk(bs, "data", 12) in
+        if data_off == -1
+        then { "err": "no data chunk" }
+        else
+          let data_size        = u32le_at(bs, data_off + 4) in
+          let samples_start    = data_off + 8 in
+          let bytes_per_sample = bits_per_sample / 8 in
+          let n_samples        = data_size / bytes_per_sample in
+          let samples = list.map(list.range(0, n_samples), fn(i) {
+            let off = samples_start + i * bytes_per_sample in
+            if bits_per_sample == 16
+            then i16le_at(bs, off)
+            else stdbytes.get(bs, off) - 128
+          }) in
+          { "ok": {
+              "header": {
+                "channels": channels,
+                "sample_rate": sample_rate,
+                "bits_per_sample": bits_per_sample
+              },
+              "samples": samples
+            }
+          }
+}
+
+export { u16le_at, u32le_at, i16le_at, find_chunk, decode }

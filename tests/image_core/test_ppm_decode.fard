@@ -1,0 +1,24 @@
+import("../../packages/image-core/src/ppm") as ppm
+import("../../packages/image-core/src/color") as color
+import("../../packages/image-core/src/ppm_decode") as ppm_decode
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+// Encode then decode
+let pixels = [color.rgb(255, 0, 0), color.rgb(0, 255, 0), color.rgb(0, 0, 255), color.rgb(128, 128, 128)]
+let encoded = ppm.ppm_bytes(2, 2, pixels)
+let decoded = ppm_decode.decode(encoded)
+
+test "decode ok"        { decoded.ok != null }
+test "width"            { decoded.ok.width == 2 }
+test "height"           { decoded.ok.height == 2 }
+test "pixel count"      { list.len(decoded.ok.pixels) == 4 }
+test "pixel 0 r"        { list.get(decoded.ok.pixels, 0).r == 255 }
+test "pixel 0 g"        { list.get(decoded.ok.pixels, 0).g == 0 }
+test "pixel 1 g"        { list.get(decoded.ok.pixels, 1).g == 255 }
+test "pixel 2 b"        { list.get(decoded.ok.pixels, 2).b == 255 }
+test "pixel 3 r"        { list.get(decoded.ok.pixels, 3).r == 128 }
+
+// Bad file
+let bad = ppm_decode.decode(stdbytes.of_str("P3\n1 1\n255\n"))
+test "bad magic err"    { bad.err != null }

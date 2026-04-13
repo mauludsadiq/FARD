@@ -1,0 +1,138 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+import("std/str") as str
+import("./crc32") as crc32
+import("./adler32") as adler32
+
+fn be32_at(bs, off) {
+  bits.bshl(stdbytes.get(bs, off), 24)
+  + bits.bshl(stdbytes.get(bs, off + 1), 16)
+  + bits.bshl(stdbytes.get(bs, off + 2), 8)
+  + stdbytes.get(bs, off + 3)
+}
+
+fn valid_signature(bs) {
+  stdbytes.get(bs, 0) == 137 &&
+  stdbytes.get(bs, 1) == 80  &&
+  stdbytes.get(bs, 2) == 78  &&
+  stdbytes.get(bs, 3) == 71  &&
+  stdbytes.get(bs, 4) == 13  &&
+  stdbytes.get(bs, 5) == 10  &&
+  stdbytes.get(bs, 6) == 26  &&
+  stdbytes.get(bs, 7) == 10
+}
+
+// Parse all chunks
+fn parse_chunks(bs) {
+  let total = stdbytes.len(bs) in
+  let result = while { "off": 8, "chunks": [] }
+    fn(s) { s.off < total - 4 }
+    fn(s) {
+      let len  = be32_at(bs, s.off) in
+      let tag  = stdbytes.to_string(stdbytes.slice(bs, s.off + 4, s.off + 8)) in
+      let body = stdbytes.slice(bs, s.off + 8, s.off + 8 + len) in
+      let next = s.off + 12 + len in
+      { "off": next,
+        "chunks": list.concat([s.chunks, [{ "tag": tag, "body": body }]]) }
+    } in
+  result.value.chunks
+}
+
+fn parse_ihdr(body) {
+  {
+    "width":             be32_at(body, 0),
+    "height":            be32_at(body, 4),
+    "bit_depth":         stdbytes.get(body, 8),
+    "colour_type":       stdbytes.get(body, 9),
+    "compression":       stdbytes.get(body, 10),
+    "filter_method":     stdbytes.get(body, 11),
+    "interlace_method":  stdbytes.get(body, 12)
+  }
+}
+
+// Zlib stored-block decompressor (matches zlib0 encoder)
+fn zlib_decompress(bs) {
+  // skip CMF + FLG (2 bytes)
+  let result = while { "off": 2, "out": stdbytes.of_list([]), "done": false }
+    fn(s) { s.done == false && s.off < stdbytes.len(bs) - 4 }
+    fn(s) {
+      let flag = stdbytes.get(bs, s.off) in
+      let len  = stdbytes.get(bs, s.off + 1) + bits.bshl(stdbytes.get(bs, s.off + 2), 8) in
+      let data = stdbytes.slice(bs, s.off + 5, s.off + 5 + len) in
+      { "off": s.off + 5 + len,
+        "out": stdbytes.concat([s.out, data]),
+        "done": bits.band(flag, 1) == 1 }
+    } in
+  result.value.out
+}
+
+// Unfilter a single scanline (filter type 0 = None only for now)
+fn unfilter_row(filter_type, row_bytes, prev_row, width) {
+  if filter_type == 0
+  then row_bytes
+  else if filter_type == 1
+  // Sub filter: each byte += left byte
+  then
+    stdbytes.of_list(list.map(list.range(0, stdbytes.len(row_bytes)), fn(i) {
+      let left = if i < 3 then 0 else stdbytes.get(row_bytes, i - 3) in
+      bits.band(stdbytes.get(row_bytes, i) + left, 255)
+    }))
+  else if filter_type == 2
+  // Up filter: each byte += byte above
+  then
+    stdbytes.of_list(list.map(list.range(0, stdbytes.len(row_bytes)), fn(i) {
+      let up = if stdbytes.len(prev_row) == 0 then 0 else stdbytes.get(prev_row, i) in
+      bits.band(stdbytes.get(row_bytes, i) + up, 255)
+    }))
+  else row_bytes
+}
+
+// Decode pixel data from uncompressed scanline bytes
+fn decode_pixels(raw, width, height) {
+  let row_bytes = width * 3 in
+  let rows = list.map(list.range(0, height), fn(y) {
+    let row_off     = y * (row_bytes + 1) in
+    let filter_type = stdbytes.get(raw, row_off) in
+    let row_data    = stdbytes.slice(raw, row_off + 1, row_off + 1 + row_bytes) in
+    let prev_off    = if y == 0 then -1 else (y - 1) * (row_bytes + 1) in
+    let prev_row    = if y == 0
+      then stdbytes.of_list([])
+      else stdbytes.slice(raw, prev_off + 1, prev_off + 1 + row_bytes) in
+    unfilter_row(filter_type, row_data, prev_row, width)
+  }) in
+  list.flat_map(rows, fn(row) {
+    list.map(list.range(0, width), fn(x) {
+      let off = x * 3 in
+      { "r": stdbytes.get(row, off),
+        "g": stdbytes.get(row, off + 1),
+        "b": stdbytes.get(row, off + 2) }
+    })
+  })
+}
+
+fn decode(bs) {
+  if valid_signature(bs) == false
+  then { "err": "invalid PNG signature" }
+  else
+    let chunks = parse_chunks(bs) in
+    let ihdr_chunk = list.find(chunks, fn(c) { c.tag == "IHDR" }) in
+    let idat_chunk = list.find(chunks, fn(c) { c.tag == "IDAT" }) in
+    if ihdr_chunk.some == null
+    then { "err": "missing IHDR" }
+    else if idat_chunk.some == null
+    then { "err": "missing IDAT" }
+    else
+      let ihdr   = parse_ihdr(ihdr_chunk.some.body) in
+      let raw    = zlib_decompress(idat_chunk.some.body) in
+      let pixels = decode_pixels(raw, ihdr.width, ihdr.height) in
+      { "ok": {
+          "width":  ihdr.width,
+          "height": ihdr.height,
+          "pixels": pixels
+        }
+      }
+}
+
+export { be32_at, valid_signature, parse_chunks, parse_ihdr,
+         zlib_decompress, unfilter_row, decode_pixels, decode }

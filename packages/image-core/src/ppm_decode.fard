@@ -1,0 +1,80 @@
+import("std/bytes") as stdbytes
+import("std/str") as str
+import("std/int") as int
+import("std/list") as list
+
+// Parse P6 binary PPM
+// Format: "P6\n{width} {height}\n{maxval}\n" followed by raw RGB bytes
+
+fn read_token(bs, off) {
+  let total = stdbytes.len(bs) in
+  // skip whitespace and comments
+  let start = while { "off": off }
+    fn(s) {
+      s.off < total &&
+      (stdbytes.get(bs, s.off) == 32  ||  // space
+       stdbytes.get(bs, s.off) == 10  ||  // newline
+       stdbytes.get(bs, s.off) == 13  ||  // cr
+       stdbytes.get(bs, s.off) == 9   ||  // tab
+       stdbytes.get(bs, s.off) == 35)     // # comment
+    }
+    fn(s) {
+      // skip comment line
+      if stdbytes.get(bs, s.off) == 35
+      then
+        let end = while { "p": s.off }
+          fn(p) { p.p < total && stdbytes.get(bs, p.p) != 10 }
+          fn(p) { { "p": p.p + 1 } } in
+        { "off": end.value.p }
+      else { "off": s.off + 1 }
+    } in
+  let s = start.value.off in
+  // read until whitespace
+  let end = while { "off": s }
+    fn(e) {
+      e.off < total &&
+      stdbytes.get(bs, e.off) != 32 &&
+      stdbytes.get(bs, e.off) != 10 &&
+      stdbytes.get(bs, e.off) != 13 &&
+      stdbytes.get(bs, e.off) != 9
+    }
+    fn(e) { { "off": e.off + 1 } } in
+  { "token": stdbytes.to_string(stdbytes.slice(bs, s, end.value.off)),
+    "next_off": end.value.off }
+}
+
+fn parse_int_token(bs, off) {
+  let t = read_token(bs, off) in
+  { "value": str.from(t.token), "next_off": t.next_off }
+}
+
+fn decode(bs) {
+  let magic_r = read_token(bs, 0) in
+  if magic_r.token != "P6"
+  then { "err": "not a P6 PPM file" }
+  else
+    let width_r  = read_token(bs, magic_r.next_off) in
+    let height_r = read_token(bs, width_r.next_off) in
+    let maxval_r = read_token(bs, height_r.next_off) in
+    let width    = int.parse(width_r.token).v in
+    let height   = int.parse(height_r.token).v in
+    let maxval   = int.parse(maxval_r.token).v in
+    // pixel data starts after the maxval token + one whitespace byte
+    let data_off = maxval_r.next_off + 1 in
+    let n_pixels = width * height in
+    let pixels   = list.map(list.range(0, n_pixels), fn(i) {
+      let off = data_off + i * 3 in
+      { "r": stdbytes.get(bs, off),
+        "g": stdbytes.get(bs, off + 1),
+        "b": stdbytes.get(bs, off + 2) }
+    }) in
+    { "ok": {
+        "width": width,
+        "height": height,
+        "maxval": maxval,
+        "pixels": pixels
+      }
+    }
+}
+
+export { read_token, decode }

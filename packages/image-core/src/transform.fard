@@ -1,0 +1,102 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/cast") as cast
+import("std/math") as math
+import("./color") as color
+import("./raster") as raster
+
+// Nearest-neighbour resize
+fn resize(src, new_width, new_height) {
+  let spec    = rec.get(src, "spec") in
+  let pixels  = rec.get(src, "pixels") in
+  let src_w   = rec.get(spec, "width") in
+  let src_h   = rec.get(spec, "height") in
+  raster.make(new_width, new_height, fn(x, y) {
+    let sx = (x * src_w) / new_width in
+    let sy = (y * src_h) / new_height in
+    list.get(pixels, sy * src_w + sx)
+  })
+}
+
+// Crop — extract sub-rectangle
+fn crop(src, x0, y0, w, h) {
+  let spec   = rec.get(src, "spec") in
+  let pixels = rec.get(src, "pixels") in
+  let src_w  = rec.get(spec, "width") in
+  raster.make(w, h, fn(x, y) {
+    list.get(pixels, (y0 + y) * src_w + (x0 + x))
+  })
+}
+
+// Flip horizontal
+fn flip_h(src) {
+  let spec   = rec.get(src, "spec") in
+  let pixels = rec.get(src, "pixels") in
+  let w      = rec.get(spec, "width") in
+  let h      = rec.get(spec, "height") in
+  raster.make(w, h, fn(x, y) {
+    list.get(pixels, y * w + (w - 1 - x))
+  })
+}
+
+// Flip vertical
+fn flip_v(src) {
+  let spec   = rec.get(src, "spec") in
+  let pixels = rec.get(src, "pixels") in
+  let w      = rec.get(spec, "width") in
+  let h      = rec.get(spec, "height") in
+  raster.make(w, h, fn(x, y) {
+    list.get(pixels, (h - 1 - y) * w + x)
+  })
+}
+
+// Composite — overlay src on dst at position (dx, dy)
+// Pixels outside src bounds taken from dst
+fn composite(dst, src, dx, dy) {
+  let dst_spec = rec.get(dst, "spec") in
+  let src_spec = rec.get(src, "spec") in
+  let dst_pixels = rec.get(dst, "pixels") in
+  let src_pixels = rec.get(src, "pixels") in
+  let dst_w = rec.get(dst_spec, "width") in
+  let dst_h = rec.get(dst_spec, "height") in
+  let src_w = rec.get(src_spec, "width") in
+  let src_h = rec.get(src_spec, "height") in
+  raster.make(dst_w, dst_h, fn(x, y) {
+    let sx = x - dx in
+    let sy = y - dy in
+    if sx >= 0 && sy >= 0 && sx < src_w && sy < src_h
+    then list.get(src_pixels, sy * src_w + sx)
+    else list.get(dst_pixels, y * dst_w + x)
+  })
+}
+
+// Brightness — scale each channel by factor (1.0 = unchanged)
+fn brightness(src, factor) {
+  let spec   = rec.get(src, "spec") in
+  let pixels = rec.get(src, "pixels") in
+  let w      = rec.get(spec, "width") in
+  let h      = rec.get(spec, "height") in
+  raster.make(w, h, fn(x, y) {
+    let p = list.get(pixels, y * w + x) in
+    color.rgb(
+      cast.int(cast.float(p.r) * factor),
+      cast.int(cast.float(p.g) * factor),
+      cast.int(cast.float(p.b) * factor)
+    )
+  })
+}
+
+// Grayscale
+fn grayscale(src) {
+  let spec   = rec.get(src, "spec") in
+  let pixels = rec.get(src, "pixels") in
+  let w      = rec.get(spec, "width") in
+  let h      = rec.get(spec, "height") in
+  raster.make(w, h, fn(x, y) {
+    let p   = list.get(pixels, y * w + x) in
+    let lum = cast.int(cast.float(p.r) * 0.299 + cast.float(p.g) * 0.587 + cast.float(p.b) * 0.114) in
+    color.rgb(lum, lum, lum)
+  })
+}
+
+export { resize, crop, flip_h, flip_v, composite, brightness, grayscale }

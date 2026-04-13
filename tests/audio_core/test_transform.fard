@@ -1,0 +1,42 @@
+import("../../packages/audio-core/src/synth") as synth
+import("../../packages/audio-core/src/transform") as transform
+import("std/list") as list
+import("std/math") as math
+import("std/cast") as cast
+
+let samples = synth.sine(440.0, 0.1, 44100)
+let n = list.len(samples)
+
+// gain
+let louder = transform.gain(samples, 2.0)
+test "gain count"         { list.len(louder) == n }
+test "gain louder"        { math.abs(list.get(louder, 100)) >= math.abs(list.get(samples, 100)) }
+
+// trim — 50ms at 44100 = floor(50*44100/1000) = 2205
+let trimmed = transform.trim(samples, 44100, 0, 50)
+test "trim count"         { list.len(trimmed) == 2205 }
+
+// mix
+let silence = list.map(list.range(0, n), fn(i) { 0.0 })
+let mixed   = transform.mix(samples, silence)
+test "mix count"          { list.len(mixed) == n }
+test "mix with silence"   { list.get(mixed, 100) == list.get(samples, 100) }
+
+// fade_in
+let faded_in = transform.fade_in(samples, 100)
+test "fade_in first"      { math.abs(list.get(faded_in, 0)) == 0.0 }
+test "fade_in after"      { list.get(faded_in, 200) == list.get(samples, 200) }
+
+// fade_out
+let faded_out = transform.fade_out(samples, 100)
+test "fade_out last"      { math.abs(list.get(faded_out, n - 1)) < math.abs(list.get(samples, n - 1)) }
+
+// mono_to_stereo
+let stereo = transform.mono_to_stereo(list.take(samples, 10))
+test "stereo count"       { list.len(stereo) == 20 }
+test "stereo interleave"  { list.get(stereo, 0) == list.get(stereo, 1) }
+
+// stereo_to_mono
+let mono = transform.stereo_to_mono(stereo)
+test "mono count"         { list.len(mono) == 10 }
+test "mono value"         { list.get(mono, 0) == list.get(samples, 0) }

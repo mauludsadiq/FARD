@@ -1,0 +1,37 @@
+import("../../packages/image-core/src/png") as png
+import("../../packages/image-core/src/png_decode") as png_decode
+import("../../packages/image-core/src/color") as color
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+// Encode then decode a small image
+let pixels = [color.rgb(255, 0, 0), color.rgb(0, 255, 0), color.rgb(0, 0, 255), color.rgb(128, 128, 128)]
+let encoded = png.png_bytes(2, 2, pixels)
+let decoded = png_decode.decode(encoded)
+
+test "decode ok"        { decoded.ok != null }
+test "width"            { decoded.ok.width == 2 }
+test "height"           { decoded.ok.height == 2 }
+test "pixel count"      { list.len(decoded.ok.pixels) == 4 }
+test "pixel 0 r"        { list.get(decoded.ok.pixels, 0).r == 255 }
+test "pixel 0 g"        { list.get(decoded.ok.pixels, 0).g == 0 }
+test "pixel 1 g"        { list.get(decoded.ok.pixels, 1).g == 255 }
+test "pixel 2 b"        { list.get(decoded.ok.pixels, 2).b == 255 }
+test "pixel 3 r"        { list.get(decoded.ok.pixels, 3).r == 128 }
+
+// Bad file
+let bad = png_decode.decode(stdbytes.of_list([0,1,2,3,4,5,6,7]))
+test "bad sig err"      { bad.err != null }
+
+// Chunk parsing
+let chunks = png_decode.parse_chunks(encoded)
+test "has IHDR"         { list.get(chunks, 0).tag == "IHDR" }
+test "has IDAT"         { list.get(chunks, 1).tag == "IDAT" }
+test "has IEND"         { list.get(chunks, 2).tag == "IEND" }
+
+// IHDR fields
+let ihdr = png_decode.parse_ihdr(list.get(chunks, 0).body)
+test "ihdr width"       { ihdr.width == 2 }
+test "ihdr height"      { ihdr.height == 2 }
+test "ihdr bit_depth"   { ihdr.bit_depth == 8 }
+test "ihdr colour_type" { ihdr.colour_type == 2 }

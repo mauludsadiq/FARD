@@ -1,0 +1,47 @@
+import("../../packages/image-core/src/color") as color
+import("../../packages/image-core/src/raster") as raster
+import("../../packages/image-core/src/draw") as draw
+import("../../packages/image-core/src/transform") as transform
+import("std/list") as list
+import("std/rec") as rec
+
+let img = draw.gradient(4, 4)
+let spec = rec.get(img, "spec")
+
+// resize
+let small = transform.resize(img, 2, 2)
+test "resize width"     { rec.get(rec.get(small, "spec"), "width") == 2 }
+test "resize height"    { rec.get(rec.get(small, "spec"), "height") == 2 }
+test "resize pixels"    { list.len(rec.get(small, "pixels")) == 4 }
+
+// crop
+let cropped = transform.crop(img, 1, 1, 2, 2)
+test "crop width"       { rec.get(rec.get(cropped, "spec"), "width") == 2 }
+test "crop height"      { rec.get(rec.get(cropped, "spec"), "height") == 2 }
+
+// flip_h
+let flipped = transform.flip_h(img)
+let orig_px = rec.get(img, "pixels")
+let flip_px = rec.get(flipped, "pixels")
+test "flip_h pixel 0"   { list.get(flip_px, 0).r == list.get(orig_px, 3).r }
+
+// grayscale
+let gray = transform.grayscale(img)
+let gpx  = rec.get(gray, "pixels")
+let gp0  = list.get(gpx, 5)
+test "grayscale r=g=b"  { gp0.r == gp0.g && gp0.g == gp0.b }
+
+// brightness
+let bright = transform.brightness(img, 0.5)
+let bp     = rec.get(bright, "pixels")
+let orig0  = list.get(orig_px, 15)
+let brgt0  = list.get(bp, 15)
+test "brightness darker" { brgt0.r <= orig0.r }
+
+// composite
+let base    = raster.make(4, 4, fn(x, y) { color.rgb(0, 0, 0) })
+let overlay = raster.make(2, 2, fn(x, y) { color.rgb(255, 0, 0) })
+let comp    = transform.composite(base, overlay, 1, 1)
+let comp_px = rec.get(comp, "pixels")
+test "composite overlap"  { list.get(comp_px, 5).r == 255 }
+test "composite outside"  { list.get(comp_px, 0).r == 0 }
