@@ -1,0 +1,37 @@
+import("std/str") as str
+
+{
+  patch_pdf: fn(pdf_text, x0, y0, x1, y1) {
+    let w = x1 - x0 in
+    let h = y1 - y0 in
+    let overlay = str.concat(
+      "q\n1 1 0 rg\n",
+      str.concat(
+        str.concat(
+          str.concat(
+            str.concat(str.from(x0), " "),
+            str.concat(str.from(y0), " ")
+          ),
+          str.concat(str.from(w), " ")
+        ),
+        str.concat(str.from(h), " re f\nQ\n")
+      )
+    ) in
+    let patched = str.replace(pdf_text, "/Contents 4 0 R", "/Contents [4 0 R 5 0 R]") in
+    let marker = "\ntrailer << /Root 1 0 R >>\n%%EOF" in
+    let injected = str.concat(
+      "\n5 0 obj\n<< /Length ",
+      str.concat(
+        str.from(str.len(overlay)),
+        str.concat(
+          " >>\nstream\n",
+          str.concat(
+            overlay,
+            "\nendstream\nendobj\ntrailer << /Root 1 0 R >>\n%%EOF"
+          )
+        )
+      )
+    ) in
+    str.replace(patched, marker, injected)
+  }
+}

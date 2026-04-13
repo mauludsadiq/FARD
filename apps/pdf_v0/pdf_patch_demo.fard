@@ -1,0 +1,12 @@
+import("../../packages/pdf_patch/src/patch_pdf") as patch
+import("std/io") as io
+import("std/str") as str
+import("std/rec") as rec
+
+let pdf_in = rec.get(io.read_file("input.pdf"), "ok") in
+let pdf_out = patch.patch_pdf(pdf_in, 10.0, 20.0, 80.0, 32.0) in
+let _ = io.write_file("out/pdf_v0/patched.pdf", pdf_out) in
+{
+  ok: true,
+  out: "out/pdf_v0/patched.pdf"
+}
