@@ -1,0 +1,33 @@
+import("../../packages/parquet-core/src/thrift") as thrift
+import("../../packages/parquet-core/src/schema") as schema
+import("../../packages/parquet-core/src/encode") as encode
+import("../../packages/parquet-core/src/write") as write
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+test "uvarint 0"        { stdbytes.to_list(thrift.uvarint(0)) == [0] }
+test "uvarint 1"        { stdbytes.to_list(thrift.uvarint(1)) == [1] }
+test "uvarint 128"      { stdbytes.len(thrift.uvarint(128)) == 2 }
+test "zigzag 0"         { thrift.zigzag(0) == 0 }
+test "zigzag -1"        { thrift.zigzag(-1) == 1 }
+test "stop byte"        { stdbytes.get(thrift.stop(), 0) == 0 }
+test "i32 field tag"    { stdbytes.get(thrift.i32_field(1, 42), 0) == 21 }
+
+let records = [{ "name": "Alice", "score": 95 }, { "name": "Bob", "score": 87 }]
+let cols = schema.infer_columns(records)
+test "col count"        { list.len(cols) == 2 }
+test "col 0 type name"  { list.get(cols, 0).type_name == "BYTE_ARRAY" }
+test "col 1 type name"  { list.get(cols, 1).type_name == "INT64" }
+
+let enc_int = encode.encode_plain(42)
+test "int plain len"    { stdbytes.len(enc_int) == 8 }
+test "int plain byte0"  { stdbytes.get(enc_int, 0) == 42 }
+
+let enc_str = encode.encode_plain("hi")
+test "str plain len"    { stdbytes.len(enc_str) == 6 }
+test "str plain len0"   { stdbytes.get(enc_str, 0) == 2 }
+
+let pq = write.build_parquet(records)
+test "parquet magic start" { stdbytes.to_string(stdbytes.slice(pq, 0, 4)) == "PAR1" }
+test "parquet magic end"   { stdbytes.to_string(stdbytes.slice(pq, stdbytes.len(pq) - 4, stdbytes.len(pq))) == "PAR1" }
+test "parquet nontrivial"  { stdbytes.len(pq) > 50 }

@@ -1,0 +1,58 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+import("std/str") as str
+
+fn uvarint(n) {
+  let result = while { "n": n, "bytes": [] }
+    fn(s) { s.n > 0 }
+    fn(s) {
+      let b    = bits.band(s.n, 127) in
+      let rest = bits.bshr(s.n, 7) in
+      let byte = if rest > 0 then bits.bor(b, 128) else b in
+      { "n": rest, "bytes": list.concat([s.bytes, [byte]]) }
+    } in
+  if list.len(result.value.bytes) == 0
+  then stdbytes.of_list([0])
+  else stdbytes.of_list(result.value.bytes)
+}
+
+fn zigzag(n) {
+  if n >= 0 then n * 2 else bits.bxor(n * 2, -1)
+}
+
+fn varint(n) { uvarint(zigzag(n)) }
+
+fn field_header(delta, type_id) {
+  stdbytes.of_list([bits.bor(bits.bshl(delta, 4), type_id)])
+}
+
+fn bool_field(delta, value) {
+  stdbytes.of_list([bits.bor(bits.bshl(delta, 4), if value then 1 else 2)])
+}
+
+fn i32_field(delta, n) {
+  stdbytes.concat([field_header(delta, 5), varint(n)])
+}
+
+fn i64_field(delta, n) {
+  stdbytes.concat([field_header(delta, 6), varint(n)])
+}
+
+fn binary_field(delta, bs) {
+  stdbytes.concat([field_header(delta, 8), stdbytes.concat([uvarint(stdbytes.len(bs)), bs])])
+}
+
+fn string_field(delta, s) {
+  binary_field(delta, stdbytes.of_str(s))
+}
+
+fn stop() { stdbytes.of_list([0]) }
+
+fn list_header(elem_type, count) {
+  if count < 15
+  then stdbytes.of_list([bits.bor(bits.bshl(count, 4), elem_type)])
+  else stdbytes.concat([stdbytes.of_list([bits.bor(240, elem_type)]), uvarint(count)])
+}
+
+export { uvarint, zigzag, varint, field_header, bool_field, i32_field, i64_field, binary_field, string_field, stop, list_header }

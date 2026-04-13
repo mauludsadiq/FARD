@@ -1,0 +1,53 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/type") as type
+import("std/bytes") as stdbytes
+import("./thrift") as thrift
+
+fn parquet_type(v) {
+  let t = type.of(v) in
+  if t == "bool"  then 0
+  else if t == "int"   then 2
+  else if t == "float" then 4
+  else 5
+}
+
+fn parquet_type_name(v) {
+  let t = type.of(v) in
+  if t == "bool"  then "BOOLEAN"
+  else if t == "int"   then "INT64"
+  else if t == "float" then "DOUBLE"
+  else "BYTE_ARRAY"
+}
+
+fn infer_columns(records) {
+  if list.len(records) == 0 then []
+  else
+    let first = list.get(records, 0) in
+    let keys  = rec.keys(first) in
+    list.map(keys, fn(k) {
+      { "name": k,
+        "type": parquet_type(rec.get(first, k)),
+        "type_name": parquet_type_name(rec.get(first, k)) }
+    })
+}
+
+fn schema_element(col) {
+  stdbytes.concat([
+    thrift.i32_field(1, col.type),
+    thrift.i32_field(3, 1),
+    thrift.string_field(4, col.name),
+    thrift.stop()
+  ])
+}
+
+fn root_schema_element(n_cols) {
+  stdbytes.concat([
+    thrift.i32_field(3, 1),
+    thrift.string_field(4, "schema"),
+    thrift.i32_field(5, n_cols),
+    thrift.stop()
+  ])
+}
+
+export { parquet_type, parquet_type_name, infer_columns, schema_element, root_schema_element }

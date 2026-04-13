@@ -1,0 +1,128 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+import("std/rec") as rec
+import("std/artifact") as artifact_std
+import("./thrift") as thrift
+import("./schema") as schema
+import("./encode") as encode
+
+fn le32(n) {
+  stdbytes.of_list([
+    bits.band(n, 255),
+    bits.band(bits.bshr(n, 8), 255),
+    bits.band(bits.bshr(n, 16), 255),
+    bits.band(bits.bshr(n, 24), 255)
+  ])
+}
+
+fn data_page_header(num_values) {
+  stdbytes.concat([
+    thrift.i32_field(1, num_values),
+    thrift.i32_field(2, 0),
+    thrift.i32_field(3, 0),
+    thrift.i32_field(4, 0),
+    thrift.stop()
+  ])
+}
+
+fn page_header(data_size, num_values) {
+  let dph = data_page_header(num_values) in
+  stdbytes.concat([
+    thrift.i32_field(1, 0),
+    thrift.i32_field(2, data_size),
+    thrift.i32_field(3, data_size),
+    thrift.field_header(4, 12),
+    dph,
+    thrift.stop()
+  ])
+}
+
+fn column_chunk_meta(col, file_offset, data_size, num_values) {
+  stdbytes.concat([
+    thrift.i32_field(1, col.type),
+    thrift.i32_field(2, 0),
+    thrift.string_field(3, ""),
+    thrift.i64_field(4, file_offset),
+    thrift.i64_field(5, data_size),
+    thrift.i64_field(6, data_size),
+    thrift.i64_field(7, num_values),
+    thrift.stop()
+  ])
+}
+
+fn file_metadata(columns, row_count, col_chunks) {
+  let n_cols = list.len(columns) in
+  let root_elem  = schema.root_schema_element(n_cols) in
+  let col_elems  = stdbytes.concat(list.map(columns, fn(c) { schema.schema_element(c) })) in
+  let rg_col_chunks = stdbytes.concat(list.map(
+    list.range(0, n_cols),
+    fn(i) {
+      let c  = list.get(columns, i) in
+      let cc = list.get(col_chunks, i) in
+      stdbytes.concat([
+        thrift.field_header(1, 12),
+        column_chunk_meta(c, cc.offset, cc.size, row_count),
+        thrift.stop()
+      ])
+    }
+  )) in
+  let row_group = stdbytes.concat([
+    thrift.field_header(1, 15),
+    thrift.list_header(12, n_cols),
+    rg_col_chunks,
+    thrift.i64_field(2, row_count),
+    thrift.i64_field(3, row_count),
+    thrift.stop()
+  ]) in
+  stdbytes.concat([
+    thrift.i32_field(1, 2),
+    thrift.field_header(2, 15),
+    thrift.list_header(12, n_cols + 1),
+    root_elem,
+    col_elems,
+    thrift.i64_field(3, row_count),
+    thrift.field_header(4, 15),
+    thrift.list_header(12, 1),
+    row_group,
+    thrift.stop()
+  ])
+}
+
+fn build_parquet(records) {
+  let magic   = stdbytes.of_str("PAR1") in
+  let columns = schema.infer_columns(records) in
+  let n_cols  = list.len(columns) in
+  let n_rows  = list.len(records) in
+  let col_keys = list.map(columns, fn(c) { c.name }) in
+  let col_data = list.map(col_keys, fn(k) {
+    encode.encode_column(list.map(records, fn(r) { rec.get(r, k) }))
+  }) in
+  let pages = list.fold(
+    list.range(0, n_cols),
+    { "parts": [], "chunks": [], "off": 4 },
+    fn(s, i) {
+      let data = list.get(col_data, i) in
+      let ph   = page_header(stdbytes.len(data), n_rows) in
+      let page = stdbytes.concat([ph, data]) in
+      let sz   = stdbytes.len(page) in
+      { "parts":  list.concat([s.parts, [page]]),
+        "chunks": list.concat([s.chunks, [{ "offset": s.off, "size": sz }]]),
+        "off":    s.off + sz }
+    }
+  ) in
+  let data_bytes = stdbytes.concat(pages.parts) in
+  let meta       = file_metadata(columns, n_rows, pages.chunks) in
+  let meta_len   = stdbytes.len(meta) in
+  stdbytes.concat([magic,
+    stdbytes.concat([data_bytes,
+    stdbytes.concat([meta,
+    stdbytes.concat([le32(meta_len), magic])])])])
+}
+
+fn write_parquet(path, records) {
+  let data = build_parquet(records) in
+  artifact_std.emit(path, stdbytes.to_list(data))
+}
+
+export { build_parquet, write_parquet }
