@@ -3894,6 +3894,10 @@ enum Builtin {
     FfiCallStr,
     FfiCallChecked,  // ffi.call_str(handle_id, symbol, args) -> {ok: text} | {err: text}
     NetServe,   // net.serve(port, handler) -> never (blocking)
+    NetConnect, // net.connect(host, port) -> {ok: conn_id} | {err: text}
+    NetSend,    // net.send(conn_id, bytes) -> {ok: null} | {err: text}
+    NetRecv,    // net.recv(conn_id, max_bytes) -> {ok: bytes} | {err: text}
+    NetClose,   // net.close(conn_id) -> null
     NetRespond, // net.respond(req, status, headers, body) -> null (internal)
     CryptoEd25519Sign,     // crypto.ed25519_sign(sk_hex, msg_hex) -> sig_hex
     CryptoEd25519PublicKey,// crypto.ed25519_public_key(sk_hex) -> pk_hex
@@ -7984,6 +7988,82 @@ fn call_builtin(
             Ok(Val::Unit)
         }
         Builtin::NetRespond => {
+            Ok(Val::Unit)
+        }
+
+        Builtin::NetConnect => {
+            if args.len() != 2 { bail!("ERROR_BADARG net.connect expects 2 args: host, port"); }
+            let host = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG net.connect: host must be text") };
+            let port = match &args[1] { Val::Int(n) => *n as u16, _ => bail!("ERROR_BADARG net.connect: port must be int") };
+            let addr = format!("{}:{}", host, port);
+            match std::net::TcpStream::connect(&addr) {
+                Ok(stream) => {
+                    static CONN_MAP: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u64, std::sync::Arc<std::sync::Mutex<std::net::TcpStream>>>>> = std::sync::OnceLock::new();
+                    let map = CONN_MAP.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+                    let id = {
+                        let mut m = map.lock().unwrap();
+                        let id = m.len() as u64 + 1;
+                        m.insert(id, std::sync::Arc::new(std::sync::Mutex::new(stream)));
+                        id
+                    };
+                    let mut r = BTreeMap::new();
+                    r.insert("ok".to_string(), Val::Int(id as i64));
+                    Ok(Val::Record(r))
+                }
+                Err(e) => {
+                    let mut r = BTreeMap::new();
+                    r.insert("err".to_string(), Val::Text(e.to_string()));
+                    Ok(Val::Record(r))
+                }
+            }
+        }
+
+        Builtin::NetSend => {
+            if args.len() != 2 { bail!("ERROR_BADARG net.send expects 2 args: conn_id, bytes"); }
+            let id = match &args[0] { Val::Int(n) => *n as u64, _ => bail!("ERROR_BADARG net.send: conn_id must be int") };
+            let bytes = match &args[1] { Val::Bytes(b) => b.clone(), Val::List(l) => l.iter().map(|v| match v { Val::Int(n) => *n as u8, _ => 0 }).collect(), _ => bail!("ERROR_BADARG net.send: bytes must be bytes or list") };
+            static CONN_MAP2: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u64, std::sync::Arc<std::sync::Mutex<std::net::TcpStream>>>>> = std::sync::OnceLock::new();
+            let map = CONN_MAP2.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            let stream_arc = { let m = map.lock().unwrap(); m.get(&id).cloned() };
+            match stream_arc {
+                Some(arc) => {
+                    let mut s = arc.lock().unwrap();
+                    match std::io::Write::write_all(&mut *s, &bytes) {
+                        Ok(_) => { let mut r = BTreeMap::new(); r.insert("ok".to_string(), Val::Unit); Ok(Val::Record(r)) }
+                        Err(e) => { let mut r = BTreeMap::new(); r.insert("err".to_string(), Val::Text(e.to_string())); Ok(Val::Record(r)) }
+                    }
+                }
+                None => { let mut r = BTreeMap::new(); r.insert("err".to_string(), Val::Text(format!("no connection with id {}", id))); Ok(Val::Record(r)) }
+            }
+        }
+
+        Builtin::NetRecv => {
+            if args.len() != 2 { bail!("ERROR_BADARG net.recv expects 2 args: conn_id, max_bytes"); }
+            let id = match &args[0] { Val::Int(n) => *n as u64, _ => bail!("ERROR_BADARG net.recv: conn_id must be int") };
+            let max = match &args[1] { Val::Int(n) => *n as usize, _ => bail!("ERROR_BADARG net.recv: max_bytes must be int") };
+            static CONN_MAP3: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u64, std::sync::Arc<std::sync::Mutex<std::net::TcpStream>>>>> = std::sync::OnceLock::new();
+            let map = CONN_MAP3.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            let stream_arc = { let m = map.lock().unwrap(); m.get(&id).cloned() };
+            match stream_arc {
+                Some(arc) => {
+                    let mut s = arc.lock().unwrap();
+                    let mut buf = vec![0u8; max];
+                    match std::io::Read::read(&mut *s, &mut buf) {
+                        Ok(n) => { buf.truncate(n); let mut r = BTreeMap::new(); r.insert("ok".to_string(), Val::Bytes(buf)); Ok(Val::Record(r)) }
+                        Err(e) => { let mut r = BTreeMap::new(); r.insert("err".to_string(), Val::Text(e.to_string())); Ok(Val::Record(r)) }
+                    }
+                }
+                None => { let mut r = BTreeMap::new(); r.insert("err".to_string(), Val::Text(format!("no connection with id {}", id))); Ok(Val::Record(r)) }
+            }
+        }
+
+        Builtin::NetClose => {
+            if args.len() != 1 { bail!("ERROR_BADARG net.close_conn expects 1 arg: conn_id"); }
+            let id = match &args[0] { Val::Int(n) => *n as u64, _ => bail!("ERROR_BADARG net.close_conn: conn_id must be int") };
+            static CONN_MAP4: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u64, std::sync::Arc<std::sync::Mutex<std::net::TcpStream>>>>> = std::sync::OnceLock::new();
+            let map = CONN_MAP4.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+            let mut m = map.lock().unwrap();
+            m.remove(&id);
             Ok(Val::Unit)
         }
 
@@ -12456,6 +12536,10 @@ Ok(m)
             "std/net" => {
                 let mut m = BTreeMap::new();
                 m.insert("serve".to_string(), Val::Builtin(Builtin::NetServe));
+                m.insert("connect".to_string(), Val::Builtin(Builtin::NetConnect));
+                m.insert("send".to_string(),    Val::Builtin(Builtin::NetSend));
+                m.insert("recv".to_string(),     Val::Builtin(Builtin::NetRecv));
+                m.insert("close_conn".to_string(), Val::Builtin(Builtin::NetClose));
                 Ok(m)
             }
             "std/record" => { self.builtin_std("std/rec") }

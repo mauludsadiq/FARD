@@ -1,0 +1,71 @@
+import("../../packages/wasm-core/src/decode") as decode
+import("../../packages/wasm-core/src/encode") as encode
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+// LEB128 encode/decode roundtrip
+test "leb128_u 0"     { stdbytes.to_list(encode.leb128_u(0)) == [0] }
+test "leb128_u 1"     { stdbytes.to_list(encode.leb128_u(1)) == [1] }
+test "leb128_u 128"   { stdbytes.len(encode.leb128_u(128)) == 2 }
+let r = decode.leb128_u(encode.leb128_u(300), 0)
+test "leb128_u rt"    { r.value == 300 }
+
+test "leb128_s 0"     { stdbytes.to_list(encode.leb128_s(0)) == [0] }
+test "leb128_s -1"    { stdbytes.to_list(encode.leb128_s(-1)) == [127] }
+let rs = decode.leb128_s(encode.leb128_s(-300), 0)
+test "leb128_s rt"    { rs.value == -300 }
+
+// Build a minimal WASM module: (func (param i32 i32) (result i32) local.get 0 local.get 1 i32.add)
+let type_body = encode.vec([
+  encode.functype([encode.valtype_i32(), encode.valtype_i32()], [encode.valtype_i32()])
+])
+let type_sec  = encode.section(1, type_body)
+
+let func_body = encode.vec([encode.leb128_u(0)])
+let func_sec  = encode.section(3, func_body)
+
+let export_name = stdbytes.of_str("add")
+let export_body = encode.vec([
+  stdbytes.concat([
+    encode.leb128_u(stdbytes.len(export_name)),
+    stdbytes.concat([export_name, stdbytes.concat([stdbytes.of_list([0]), encode.leb128_u(0)])])
+  ])
+])
+let export_sec = encode.section(7, export_body)
+
+// Code: no locals, local.get 0, local.get 1, i32.add, end
+let code_instrs = stdbytes.concat([
+  encode.local_get(0),
+  encode.local_get(1),
+  encode.i32_add(),
+  encode.end_op()
+])
+let fn_body = stdbytes.concat([encode.leb128_u(0), code_instrs])
+let code_body = encode.vec([
+  stdbytes.concat([encode.leb128_u(stdbytes.len(fn_body)), fn_body])
+])
+let code_sec = encode.section(10, code_body)
+
+let wasm = encode.build_module(type_sec, func_sec, export_sec, code_sec)
+
+test "wasm magic"     { stdbytes.get(wasm, 0) == 0 }
+test "wasm magic1"    { stdbytes.get(wasm, 1) == 97 }
+test "wasm magic2"    { stdbytes.get(wasm, 2) == 115 }
+test "wasm magic3"    { stdbytes.get(wasm, 3) == 109 }
+test "wasm valid"     { decode.valid_magic(wasm) }
+test "wasm version"   { decode.valid_version(wasm) }
+
+let parsed = decode.parse(wasm)
+test "parse ok"       { parsed.ok != null }
+
+let sections = parsed.ok.sections
+test "section count"  { list.len(sections) == 4 }
+test "type section"   { list.get(sections, 0).name == "type" }
+test "export section" { list.get(sections, 2).name == "export" }
+test "code section"   { list.get(sections, 3).name == "code" }
+
+let exports = decode.parse_export_section(list.get(sections, 2).body)
+test "export count"   { list.len(exports) == 1 }
+test "export name"    { list.get(exports, 0).name == "add" }
+test "export kind"    { list.get(exports, 0).kind == 0 }
+test "export index"   { list.get(exports, 0).index == 0 }

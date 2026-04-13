@@ -1,0 +1,155 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+import("std/str") as str
+
+// WASM binary format decoder
+// Magic: 0x00 0x61 0x73 0x6D
+// Version: 0x01 0x00 0x00 0x00
+
+fn magic() { [0, 97, 115, 109] }
+fn version() { [1, 0, 0, 0] }
+
+fn valid_magic(bs) {
+  stdbytes.get(bs, 0) == 0 &&
+  stdbytes.get(bs, 1) == 97 &&
+  stdbytes.get(bs, 2) == 115 &&
+  stdbytes.get(bs, 3) == 109
+}
+
+fn valid_version(bs) {
+  stdbytes.get(bs, 4) == 1 &&
+  stdbytes.get(bs, 5) == 0 &&
+  stdbytes.get(bs, 6) == 0 &&
+  stdbytes.get(bs, 7) == 0
+}
+
+// LEB128 unsigned decode
+fn leb128_u(bs, off) {
+  let result = while { "off": off, "shift": 0, "acc": 0, "done": false }
+    fn(s) { s.done == false }
+    fn(s) {
+      let b = stdbytes.get(bs, s.off) in
+      let acc2 = bits.bor(s.acc, bits.bshl(bits.band(b, 127), s.shift)) in
+      { "off": s.off + 1, "shift": s.shift + 7, "acc": acc2,
+        "done": bits.band(b, 128) == 0 }
+    } in
+  { "value": result.value.acc, "next_off": result.value.off }
+}
+
+// LEB128 signed decode
+fn leb128_s(bs, off) {
+  let result = while { "off": off, "shift": 0, "acc": 0, "done": false }
+    fn(s) { s.done == false }
+    fn(s) {
+      let b = stdbytes.get(bs, s.off) in
+      let acc2 = bits.bor(s.acc, bits.bshl(bits.band(b, 127), s.shift)) in
+      { "off": s.off + 1, "shift": s.shift + 7, "acc": acc2,
+        "done": bits.band(b, 128) == 0 }
+    } in
+  let raw    = result.value.acc in
+  let shift  = result.value.shift in
+  let signed = if bits.band(raw, bits.bshl(1, shift - 1)) != 0
+    then bits.bor(raw, bits.bnot(bits.bshl(1, shift) - 1))
+    else raw in
+  { "value": signed, "next_off": result.value.off }
+}
+
+// Section IDs
+fn section_name(id) {
+  if id == 0  then "custom"
+  else if id == 1  then "type"
+  else if id == 2  then "import"
+  else if id == 3  then "function"
+  else if id == 4  then "table"
+  else if id == 5  then "memory"
+  else if id == 6  then "global"
+  else if id == 7  then "export"
+  else if id == 8  then "start"
+  else if id == 9  then "element"
+  else if id == 10 then "code"
+  else if id == 11 then "data"
+  else "unknown"
+}
+
+// Parse all sections from a WASM binary
+fn parse_sections(bs) {
+  let total = stdbytes.len(bs) in
+  let result = while { "off": 8, "sections": [] }
+    fn(s) { s.off < total }
+    fn(s) {
+      let id_r  = leb128_u(bs, s.off) in
+      let len_r = leb128_u(bs, id_r.next_off) in
+      let body  = stdbytes.slice(bs, len_r.next_off, len_r.next_off + len_r.value) in
+      let sec   = { "id": id_r.value,
+                    "name": section_name(id_r.value),
+                    "size": len_r.value,
+                    "body": body } in
+      { "off": len_r.next_off + len_r.value,
+        "sections": list.concat([s.sections, [sec]]) }
+    } in
+  result.value.sections
+}
+
+// Parse type section — list of func types
+fn parse_type_section(body) {
+  let count_r = leb128_u(body, 0) in
+  let count   = count_r.value in
+  let result  = while { "off": count_r.next_off, "types": [], "i": 0 }
+    fn(s) { s.i < count }
+    fn(s) {
+      // 0x60 = func type
+      let tag = stdbytes.get(body, s.off) in
+      let param_count_r = leb128_u(body, s.off + 1) in
+      let params = list.map(list.range(0, param_count_r.value), fn(j) {
+        stdbytes.get(body, param_count_r.next_off + j)
+      }) in
+      let ret_off = param_count_r.next_off + param_count_r.value in
+      let ret_count_r = leb128_u(body, ret_off) in
+      let rets = list.map(list.range(0, ret_count_r.value), fn(j) {
+        stdbytes.get(body, ret_count_r.next_off + j)
+      }) in
+      let next = ret_count_r.next_off + ret_count_r.value in
+      { "off": next,
+        "types": list.concat([s.types, [{ "params": params, "results": rets }]]),
+        "i": s.i + 1 }
+    } in
+  result.value.types
+}
+
+// Parse export section
+fn parse_export_section(body) {
+  let count_r = leb128_u(body, 0) in
+  let count   = count_r.value in
+  let result  = while { "off": count_r.next_off, "exports": [], "i": 0 }
+    fn(s) { s.i < count }
+    fn(s) {
+      let name_len_r = leb128_u(body, s.off) in
+      let name = stdbytes.to_string(stdbytes.slice(body, name_len_r.next_off,
+                   name_len_r.next_off + name_len_r.value)) in
+      let kind_off = name_len_r.next_off + name_len_r.value in
+      let kind = stdbytes.get(body, kind_off) in
+      let idx_r = leb128_u(body, kind_off + 1) in
+      { "off": idx_r.next_off,
+        "exports": list.concat([s.exports, [{
+          "name": name,
+          "kind": kind,
+          "index": idx_r.value
+        }]]),
+        "i": s.i + 1 }
+    } in
+  result.value.exports
+}
+
+fn parse(bs) {
+  if valid_magic(bs) == false
+  then { "err": "invalid WASM magic" }
+  else if valid_version(bs) == false
+  then { "err": "invalid WASM version" }
+  else
+    let sections = parse_sections(bs) in
+    { "ok": { "sections": sections } }
+}
+
+export { magic, version, valid_magic, valid_version, leb128_u, leb128_s,
+         section_name, parse_sections, parse_type_section, parse_export_section, parse }

@@ -1,0 +1,146 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("./decode") as decode
+
+// Minimal WASM interpreter for pure numeric functions
+// Supports: i32.const, i64.const, i32.add, i32.sub, i32.mul,
+//           local.get, local.set, end, return
+
+fn valtype_name(b) {
+  if b == 127 then "i32"
+  else if b == 126 then "i64"
+  else if b == 125 then "f32"
+  else if b == 124 then "f64"
+  else "unknown"
+}
+
+// Execute a code body with given local values
+// Returns the top of stack value
+fn exec_body(body, locals) {
+  let state = while {
+    "off": 0,
+    "stack": [],
+    "locals": locals,
+    "done": false
+  }
+    fn(s) { s.done == false && s.off < stdbytes.len(body) }
+    fn(s) {
+      let op = stdbytes.get(body, s.off) in
+      // i32.const
+      if op == 65
+      then
+        let v_r = decode.leb128_s(body, s.off + 1) in
+        { "off": v_r.next_off, "stack": list.concat([s.stack, [v_r.value]]),
+          "locals": s.locals, "done": false }
+      // i64.const
+      else if op == 66
+      then
+        let v_r = decode.leb128_s(body, s.off + 1) in
+        { "off": v_r.next_off, "stack": list.concat([s.stack, [v_r.value]]),
+          "locals": s.locals, "done": false }
+      // local.get
+      else if op == 32
+      then
+        let idx_r = decode.leb128_u(body, s.off + 1) in
+        let v = list.get(s.locals, idx_r.value) in
+        { "off": idx_r.next_off, "stack": list.concat([s.stack, [v]]),
+          "locals": s.locals, "done": false }
+      // local.set
+      else if op == 33
+      then
+        let idx_r = decode.leb128_u(body, s.off + 1) in
+        let top   = list.last(s.stack) in
+        let new_locals = list.map(list.range(0, list.len(s.locals)), fn(i) {
+          if i == idx_r.value then top else list.get(s.locals, i)
+        }) in
+        { "off": idx_r.next_off,
+          "stack": list.take(s.stack, list.len(s.stack) - 1),
+          "locals": new_locals, "done": false }
+      // i32.add
+      else if op == 106
+      then
+        let n = list.len(s.stack) in
+        let a = list.get(s.stack, n - 2) in
+        let b = list.get(s.stack, n - 1) in
+        { "off": s.off + 1,
+          "stack": list.concat([list.take(s.stack, n - 2), [a + b]]),
+          "locals": s.locals, "done": false }
+      // i32.sub
+      else if op == 107
+      then
+        let n = list.len(s.stack) in
+        let a = list.get(s.stack, n - 2) in
+        let b = list.get(s.stack, n - 1) in
+        { "off": s.off + 1,
+          "stack": list.concat([list.take(s.stack, n - 2), [a - b]]),
+          "locals": s.locals, "done": false }
+      // i32.mul
+      else if op == 108
+      then
+        let n = list.len(s.stack) in
+        let a = list.get(s.stack, n - 2) in
+        let b = list.get(s.stack, n - 1) in
+        { "off": s.off + 1,
+          "stack": list.concat([list.take(s.stack, n - 2), [a * b]]),
+          "locals": s.locals, "done": false }
+      // return
+      else if op == 15
+      then { "off": s.off + 1, "stack": s.stack, "locals": s.locals, "done": true }
+      // end
+      else if op == 11
+      then { "off": s.off + 1, "stack": s.stack, "locals": s.locals, "done": true }
+      else
+        { "off": s.off + 1, "stack": s.stack, "locals": s.locals, "done": false }
+    } in
+  let final_stack = state.value.stack in
+  if list.len(final_stack) == 0 then null
+  else list.last(final_stack)
+}
+
+// Parse code section and extract function bodies
+fn parse_code_section(body) {
+  let count_r = decode.leb128_u(body, 0) in
+  let count   = count_r.value in
+  let result  = while { "off": count_r.next_off, "fns": [], "i": 0 }
+    fn(s) { s.i < count }
+    fn(s) {
+      let size_r   = decode.leb128_u(body, s.off) in
+      let fn_body  = stdbytes.slice(body, size_r.next_off,
+                       size_r.next_off + size_r.value) in
+      // locals count
+      let lc_r     = decode.leb128_u(fn_body, 0) in
+      let code_off = lc_r.next_off + lc_r.value * 2 in
+      let code     = stdbytes.slice(fn_body, code_off, stdbytes.len(fn_body)) in
+      { "off": size_r.next_off + size_r.value,
+        "fns": list.concat([s.fns, [code]]),
+        "i": s.i + 1 }
+    } in
+  result.value.fns
+}
+
+// Call a function by export name with args
+fn call(wasm_bytes, fn_name, args) {
+  let parsed = decode.parse(wasm_bytes) in
+  if parsed.err != null
+  then { "err": parsed.err }
+  else
+    let sections  = parsed.ok.sections in
+    let export_sec = list.find(sections, fn(s) { s.name == "export" }) in
+    let code_sec   = list.find(sections, fn(s) { s.name == "code" }) in
+    if export_sec.some == null || code_sec.some == null
+    then { "err": "missing export or code section" }
+    else
+      let exports   = decode.parse_export_section(export_sec.some.body) in
+      let fn_export = list.find(exports, fn(e) { e.name == fn_name && e.kind == 0 }) in
+      if fn_export.some == null
+      then { "err": str.concat("function not found: ", fn_name) }
+      else
+        let fn_idx  = fn_export.some.index in
+        let fn_bodies = parse_code_section(code_sec.some.body) in
+        let fn_body   = list.get(fn_bodies, fn_idx) in
+        { "ok": exec_body(fn_body, args) }
+}
+
+export { exec_body, parse_code_section, call }

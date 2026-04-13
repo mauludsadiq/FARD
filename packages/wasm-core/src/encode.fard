@@ -1,0 +1,83 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+
+// LEB128 unsigned encode
+fn leb128_u(n) {
+  let result = while { "n": n, "bytes": [] }
+    fn(s) { s.n > 0 }
+    fn(s) {
+      let b    = bits.band(s.n, 127) in
+      let rest = bits.bshr(s.n, 7) in
+      let byte = if rest > 0 then bits.bor(b, 128) else b in
+      { "n": rest, "bytes": list.concat([s.bytes, [byte]]) }
+    } in
+  if list.len(result.value.bytes) == 0
+  then stdbytes.of_list([0])
+  else stdbytes.of_list(result.value.bytes)
+}
+
+// LEB128 signed encode
+fn leb128_s(n) {
+  let result = while { "n": n, "bytes": [], "done": false }
+    fn(s) { s.done == false }
+    fn(s) {
+      let b    = bits.band(s.n, 127) in
+      let rest = bits.bshr(s.n, 7) in  // arithmetic right shift
+      let done = (rest == 0 && bits.band(b, 64) == 0) ||
+                 (rest == -1 && bits.band(b, 64) != 0) in
+      let byte = if done == false then bits.bor(b, 128) else b in
+      { "n": rest, "bytes": list.concat([s.bytes, [byte]]), "done": done }
+    } in
+  stdbytes.of_list(result.value.bytes)
+}
+
+fn section(id, body) {
+  stdbytes.concat([leb128_u(id), stdbytes.concat([leb128_u(stdbytes.len(body)), body])])
+}
+
+fn vec(items) {
+  stdbytes.concat([leb128_u(list.len(items)), stdbytes.concat(items)])
+}
+
+// Value types: i32=0x7F i64=0x7E f32=0x7D f64=0x7C
+fn valtype_i32() { stdbytes.of_list([127]) }
+fn valtype_i64() { stdbytes.of_list([126]) }
+fn valtype_f32() { stdbytes.of_list([125]) }
+fn valtype_f64() { stdbytes.of_list([124]) }
+
+// Func type: 0x60 params results
+fn functype(params, results) {
+  stdbytes.concat([
+    stdbytes.of_list([96]),
+    vec(params),
+    vec(results)
+  ])
+}
+
+// Instructions
+fn i32_const(n) { stdbytes.concat([stdbytes.of_list([65]), leb128_s(n)]) }
+fn i64_const(n) { stdbytes.concat([stdbytes.of_list([66]), leb128_s(n)]) }
+fn i32_add()    { stdbytes.of_list([106]) }
+fn i32_sub()    { stdbytes.of_list([107]) }
+fn i32_mul()    { stdbytes.of_list([108]) }
+fn local_get(i) { stdbytes.concat([stdbytes.of_list([32]), leb128_u(i)]) }
+fn local_set(i) { stdbytes.concat([stdbytes.of_list([33]), leb128_u(i)]) }
+fn end_op()     { stdbytes.of_list([11]) }
+fn return_op()  { stdbytes.of_list([15]) }
+
+// Build a minimal WASM module with one function
+fn build_module(type_sec, func_sec, export_sec, code_sec) {
+  stdbytes.concat([
+    stdbytes.of_list([0, 97, 115, 109, 1, 0, 0, 0]),  // magic + version
+    type_sec,
+    func_sec,
+    export_sec,
+    code_sec
+  ])
+}
+
+export { leb128_u, leb128_s, section, vec, functype,
+         valtype_i32, valtype_i64, valtype_f32, valtype_f64,
+         i32_const, i64_const, i32_add, i32_sub, i32_mul,
+         local_get, local_set, end_op, return_op, build_module }
