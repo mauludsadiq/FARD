@@ -1,0 +1,77 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+import("std/str") as str
+import("std/type") as type
+import("std/cast") as cast
+import("std/rec") as rec
+
+// Avro uses variable-length zigzag encoding for integers
+fn zigzag(n) {
+  if n >= 0
+  then n * 2
+  else bits.bxor(n * 2, -1)
+}
+
+fn varint(n) {
+  let z = zigzag(n) in
+  let result = while { "n": z, "bytes": [] }
+    fn(s) { s.n > 0 }
+    fn(s) {
+      let b = bits.band(s.n, 127) in
+      let rest = bits.bshr(s.n, 7) in
+      let byte = if rest > 0 then bits.bor(b, 128) else b in
+      { "n": rest, "bytes": list.concat([s.bytes, [byte]]) }
+    } in
+  if list.len(result.value.bytes) == 0
+  then stdbytes.of_list([0])
+  else stdbytes.of_list(result.value.bytes)
+}
+
+fn encode_string(s) {
+  let bs = stdbytes.of_str(s) in
+  stdbytes.concat([varint(stdbytes.len(bs)), bs])
+}
+
+fn encode_long(n) {
+  varint(n)
+}
+
+fn encode_double(f) {
+  // IEEE 754 double as 8 bytes little-endian
+  // Use cast to get bit pattern
+  let n = cast.int(f) in
+  stdbytes.of_list([
+    bits.band(n, 255),
+    bits.band(bits.bshr(n, 8), 255),
+    bits.band(bits.bshr(n, 16), 255),
+    bits.band(bits.bshr(n, 24), 255),
+    0, 0, 0, 0
+  ])
+}
+
+fn encode_boolean(b) {
+  if b then stdbytes.of_list([1]) else stdbytes.of_list([0])
+}
+
+fn encode_null() {
+  stdbytes.of_list([])
+}
+
+fn encode_value(v) {
+  let t = type.of(v) in
+  if t == "int"   then encode_long(v)
+  else if t == "float"  then encode_double(v)
+  else if t == "bool"   then encode_boolean(v)
+  else if t == "text"   then encode_string(v)
+  else if t == "null"   then encode_null()
+  else encode_string(str.from(v))
+}
+
+fn encode_record(record, fields) {
+  stdbytes.concat(list.map(fields, fn(f) {
+    encode_value(rec.get(record, f.name))
+  }))
+}
+
+export { zigzag, varint, encode_string, encode_long, encode_double, encode_boolean, encode_null, encode_value, encode_record }

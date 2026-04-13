@@ -1,0 +1,49 @@
+import("std/bytes") as stdbytes
+import("std/list") as list
+import("std/str") as str
+import("std/json") as json
+import("./encode") as encode
+import("./schema") as schema
+
+// Avro Object Container File format
+// Magic + sync marker + schema + blocks
+
+fn sync_marker() {
+  // Fixed 16-byte sync marker for determinism
+  stdbytes.of_list([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15])
+}
+
+fn file_header(schema_json) {
+  let magic = stdbytes.concat([stdbytes.of_str("Obj"), stdbytes.of_list([1])]) in
+  // Meta: avro.schema -> schema_json bytes
+  let meta_count = encode.varint(1) in
+  let key_bytes  = encode.encode_string("avro.schema") in
+  let val_bytes  = encode.encode_string(schema_json) in
+  stdbytes.concat([magic, stdbytes.concat([meta_count,
+    stdbytes.concat([key_bytes, stdbytes.concat([val_bytes,
+    stdbytes.concat([encode.varint(0), sync_marker()])])])])])
+}
+
+fn encode_block(records, fields) {
+  let count  = list.len(records) in
+  let bodies = stdbytes.concat(list.map(records, fn(r) {
+    encode.encode_record(r, fields)
+  })) in
+  let size = stdbytes.len(bodies) in
+  stdbytes.concat([
+    encode.varint(count),
+    encode.varint(size),
+    bodies,
+    sync_marker()
+  ])
+}
+
+fn write_ocf(records) {
+  let sch      = schema.infer(records) in
+  let sch_json = json.encode(sch) in
+  let header   = file_header(sch_json) in
+  let block    = encode_block(records, sch.fields) in
+  stdbytes.concat([header, block])
+}
+
+export { sync_marker, file_header, encode_block, write_ocf }

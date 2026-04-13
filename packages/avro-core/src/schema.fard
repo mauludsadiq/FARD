@@ -1,0 +1,33 @@
+import("std/type") as type
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+
+// Canonical Avro type names
+fn type_of(v) {
+  let t = type.of(v) in
+  if t == "int"    then "long"
+  else if t == "float"  then "double"
+  else if t == "bool"   then "boolean"
+  else if t == "text"   then "string"
+  else if t == "null"   then "null"
+  else if t == "list"   then "array"
+  else if t == "record" then "record"
+  else "bytes"
+}
+
+// Infer schema from a list of records (use first record as template)
+fn infer(records) {
+  if list.len(records) == 0
+  then { "type": "record", "name": "Row", "fields": [] }
+  else
+    let first = list.get(records, 0) in
+    let keys  = rec.keys(first) in
+    { "type": "record",
+      "name": "Row",
+      "fields": list.map(keys, fn(k) {
+        { "name": k, "type": type_of(rec.get(first, k)) }
+      }) }
+}
+
+export { type_of, infer }

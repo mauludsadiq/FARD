@@ -1,0 +1,59 @@
+import("../../packages/avro-core/src/encode") as encode
+import("../../packages/avro-core/src/decode") as decode
+import("../../packages/avro-core/src/schema") as schema
+import("../../packages/avro-core/src/container") as container
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+// Zigzag
+test "zigzag 0"     { encode.zigzag(0) == 0 }
+test "zigzag -1"    { encode.zigzag(-1) == 1 }
+test "zigzag 1"     { encode.zigzag(1) == 2 }
+test "zigzag -2"    { encode.zigzag(-2) == 3 }
+
+// Varint
+test "varint 0"     { stdbytes.to_list(encode.varint(0)) == [0] }
+test "varint 1"     { stdbytes.to_list(encode.varint(1)) == [2] }
+test "varint -1"    { stdbytes.to_list(encode.varint(-1)) == [1] }
+test "varint 64"    { stdbytes.len(encode.varint(64)) == 2 }
+
+// String encode/decode roundtrip
+let s_enc = encode.encode_string("hello")
+let s_dec = decode.decode_string(s_enc, 0)
+test "string roundtrip"     { s_dec.value == "hello" }
+test "string next_off"      { s_dec.next_off == stdbytes.len(s_enc) }
+
+// Long encode/decode roundtrip
+let l_enc = encode.encode_long(42)
+let l_dec = decode.decode_long(l_enc, 0)
+test "long roundtrip"       { l_dec.value == 42 }
+
+let l_enc2 = encode.encode_long(-100)
+let l_dec2 = decode.decode_long(l_enc2, 0)
+test "long neg roundtrip"   { l_dec2.value == -100 }
+
+// Boolean
+test "bool true"    { stdbytes.get(encode.encode_boolean(true), 0) == 1 }
+test "bool false"   { stdbytes.get(encode.encode_boolean(false), 0) == 0 }
+
+// Schema inference
+let records = [{ "name": "Alice", "age": 30 }, { "name": "Bob", "age": 25 }]
+let sch = schema.infer(records)
+test "schema type"          { sch.type == "record" }
+test "schema field count"   { list.len(sch.fields) == 2 }
+test "schema field 0 name"  { list.get(sch.fields, 0).name == "age" }
+
+// Record encode/decode roundtrip
+let fields = [{ "name": "name", "type": "string" }, { "name": "age", "type": "long" }]
+let row_enc = encode.encode_record({ "name": "Alice", "age": 30 }, fields)
+let row_dec = decode.decode_record(row_enc, 0, fields)
+test "record name"          { row_dec.value.name == "Alice" }
+test "record age"           { row_dec.value.age == 30 }
+
+// OCF
+let ocf = container.write_ocf(records)
+test "ocf magic"            { stdbytes.get(ocf, 0) == 79 }  // 'O'
+test "ocf magic2"           { stdbytes.get(ocf, 1) == 98 }  // 'b'
+test "ocf magic3"           { stdbytes.get(ocf, 2) == 106 } // 'j'
+test "ocf version"          { stdbytes.get(ocf, 3) == 1 }
+test "ocf nontrivial"       { stdbytes.len(ocf) > 50 }

@@ -1,0 +1,53 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+import("std/list") as list
+import("std/str") as str
+import("std/rec") as rec
+
+// Decode zigzag varint from bytes at offset
+// Returns { value, next_off }
+fn decode_varint(bs, off) {
+  let result = while { "off": off, "shift": 0, "acc": 0, "done": false }
+    fn(s) { s.done == false }
+    fn(s) {
+      let b = stdbytes.get(bs, s.off) in
+      let acc2 = bits.bor(s.acc, bits.bshl(bits.band(b, 127), s.shift)) in
+      let done = bits.band(b, 128) == 0 in
+      { "off": s.off + 1, "shift": s.shift + 7, "acc": acc2, "done": done }
+    } in
+  let z = result.value.acc in
+  // un-zigzag
+  let n = if bits.band(z, 1) == 1
+    then bits.bnot(bits.bshr(z, 1))
+    else bits.bshr(z, 1) in
+  { "value": n, "next_off": result.value.off }
+}
+
+fn decode_string(bs, off) {
+  let len_r = decode_varint(bs, off) in
+  let len   = len_r.value in
+  let start = len_r.next_off in
+  { "value": stdbytes.to_string(stdbytes.slice(bs, start, start + len)),
+    "next_off": start + len }
+}
+
+fn decode_long(bs, off) {
+  decode_varint(bs, off)
+}
+
+fn decode_boolean(bs, off) {
+  { "value": stdbytes.get(bs, off) != 0, "next_off": off + 1 }
+}
+
+fn decode_record(bs, off, fields) {
+  let result = list.fold(fields, { "off": off, "rec": {} }, fn(s, f) {
+    let r = if f.type == "string" then decode_string(bs, s.off)
+            else if f.type == "long" then decode_long(bs, s.off)
+            else if f.type == "boolean" then decode_boolean(bs, s.off)
+            else decode_string(bs, s.off) in
+    { "off": r.next_off, "rec": rec.set(s.rec, f.name, r.value) }
+  }) in
+  { "value": result.rec, "next_off": result.off }
+}
+
+export { decode_varint, decode_string, decode_long, decode_boolean, decode_record }
