@@ -1,0 +1,56 @@
+import("std/type") as type
+import("std/rec") as rec
+import("std/list") as list
+
+// expr formats:
+//   { "col": "field_name" }         -> field lookup
+//   { "lit": value }                -> literal value
+//   { "op": "==", "left": e, "right": e } -> binary op
+//   a non-record, non-text value    -> literal
+//   a text string                   -> field lookup (shorthand)
+
+fn eval(row, expr) {
+  let t = type.of(expr) in
+  if t == "text"
+  then rec.getOr(row, expr, null)
+  else if t == "record"
+  then
+    if rec.has(expr, "lit")
+    then rec.get(expr, "lit")
+    else if rec.has(expr, "col")
+    then rec.getOr(row, rec.get(expr, "col"), null)
+    else if rec.has(expr, "op")
+    then
+      let l = eval(row, rec.get(expr, "left")) in
+      let r = eval(row, rec.get(expr, "right")) in
+      let op = rec.get(expr, "op") in
+      if op == "+"   then l + r
+      else if op == "-"   then l - r
+      else if op == "*"   then l * r
+      else if op == "/"   then l / r
+      else if op == "=="  then l == r
+      else if op == "!="  then l != r
+      else if op == "<"   then l < r
+      else if op == "<="  then l <= r
+      else if op == ">"   then l > r
+      else if op == ">="  then l >= r
+      else if op == "and" then l && r
+      else if op == "or"  then l || r
+      else null
+    else null
+  else expr
+}
+
+fn filter(rows, pred) {
+  list.filter(rows, fn(row) { eval(row, pred) == true })
+}
+
+fn project(rows, selects) {
+  list.map(rows, fn(row) {
+    list.fold(selects, {}, fn(acc, s) {
+      rec.set(acc, s.name, eval(row, s.expr))
+    })
+  })
+}
+
+export { eval, filter, project }

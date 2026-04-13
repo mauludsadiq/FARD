@@ -1,0 +1,58 @@
+import("std/list") as list
+import("std/rec") as rec
+import("./expr") as expr
+import("./agg") as agg
+import("./join") as join
+
+// Execute a query plan record against a data source
+// Plan shape:
+// {
+//   from:     list of rows (or a record with table name for multi-table)
+//   where:    expr (optional)
+//   select:   list of { name, expr } (optional — pass-through if absent)
+//   group_by: list of col names (optional)
+//   aggs:     list of { name, fn_name, col } (optional)
+//   order_by: col name (optional)
+//   limit:    int (optional)
+// }
+
+fn run(plan) {
+  // FROM
+  let rows = rec.getOr(plan, "from", []) in
+
+  // WHERE
+  let filtered = if rec.has(plan, "where")
+    then expr.filter(rows, rec.get(plan, "where"))
+    else rows in
+
+  // GROUP BY + AGG
+  let grouped = if rec.has(plan, "group_by")
+    then
+      let groups = agg.group_by(filtered, rec.get(plan, "group_by")) in
+      let aggs   = rec.getOr(plan, "aggs", []) in
+      agg.aggregate(groups, aggs)
+    else filtered in
+
+  // SELECT
+  let projected = if rec.has(plan, "select")
+    then expr.project(grouped, rec.get(plan, "select"))
+    else grouped in
+
+  // ORDER BY
+  let ordered = if rec.has(plan, "order_by")
+    then
+      let col = rec.get(plan, "order_by") in
+      list.sort_by(projected, fn(a, b) {
+        let av = rec.getOr(a, col, null) in
+        let bv = rec.getOr(b, col, null) in
+        if av < bv then -1 else if av > bv then 1 else 0
+      })
+    else projected in
+
+  // LIMIT
+  if rec.has(plan, "limit")
+  then list.take(ordered, rec.get(plan, "limit"))
+  else ordered
+}
+
+export { run }

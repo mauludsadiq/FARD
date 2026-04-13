@@ -1,0 +1,36 @@
+import("std/list") as list
+import("std/rec") as rec
+
+// Inner join two tables on matching key columns
+// left_key, right_key: column names to join on
+fn inner_join(left, right, left_key, right_key) {
+  list.flat_map(left, fn(l_row) {
+    let matches = list.filter(right, fn(r_row) {
+      rec.getOr(l_row, left_key, null) == rec.getOr(r_row, right_key, null)
+    }) in
+    list.map(matches, fn(r_row) {
+      rec.merge(l_row, r_row)
+    })
+  })
+}
+
+// Left join — keeps all left rows, nulls for unmatched right
+fn left_join(left, right, left_key, right_key) {
+  list.flat_map(left, fn(l_row) {
+    let matches = list.filter(right, fn(r_row) {
+      rec.getOr(l_row, left_key, null) == rec.getOr(r_row, right_key, null)
+    }) in
+    if list.len(matches) == 0
+    then [l_row]
+    else list.map(matches, fn(r_row) { rec.merge(l_row, r_row) })
+  })
+}
+
+// Cross join
+fn cross_join(left, right) {
+  list.flat_map(left, fn(l_row) {
+    list.map(right, fn(r_row) { rec.merge(l_row, r_row) })
+  })
+}
+
+export { inner_join, left_join, cross_join }

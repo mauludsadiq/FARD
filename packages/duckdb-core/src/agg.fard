@@ -1,0 +1,69 @@
+import("std/list") as list
+import("std/rec") as rec
+import("std/type") as type
+
+fn sum(values) {
+  list.fold(values, 0, fn(acc, v) {
+    if type.of(v) == "int" || type.of(v) == "float" then acc + v else acc
+  })
+}
+
+fn count(values) { list.len(values) }
+
+fn avg(values) {
+  let n = list.len(values) in
+  if n == 0 then null
+  else sum(values) / n
+}
+
+fn min_val(values) {
+  list.fold(values, null, fn(acc, v) {
+    if acc == null then v else if v < acc then v else acc
+  })
+}
+
+fn max_val(values) {
+  list.fold(values, null, fn(acc, v) {
+    if acc == null then v else if v > acc then v else acc
+  })
+}
+
+fn group_by(rows, key_cols) {
+  list.fold(rows, [], fn(groups, row) {
+    let key = list.fold(key_cols, {}, fn(k, col) {
+      rec.set(k, col, rec.getOr(row, col, null))
+    }) in
+    let found = list.fold(groups, { "idx": -1, "i": 0 }, fn(s, g) {
+      let matches = list.all(key_cols, fn(col) {
+        rec.get(g.key, col) == rec.get(key, col)
+      }) in
+      { "idx": if matches && s.idx == -1 then s.i else s.idx, "i": s.i + 1 }
+    }) in
+    if found.idx >= 0
+    then
+      let i = found.idx in
+      list.map(list.range(0, list.len(groups)), fn(j) {
+        let g = list.get(groups, j) in
+        if j == i then rec.set(g, "rows", list.concat([g.rows, [row]])) else g
+      })
+    else list.concat([groups, [{ "key": key, "rows": [row] }]])
+  })
+}
+
+fn aggregate(groups, aggs) {
+  list.map(groups, fn(g) {
+    list.fold(aggs, g.key, fn(acc, agg_spec) {
+      let values = list.map(g.rows, fn(row) { rec.getOr(row, agg_spec.col, null) }) in
+      let result =
+        if agg_spec.fn_name == "sum"   then sum(values)
+        else if agg_spec.fn_name == "count" then count(values)
+        else if agg_spec.fn_name == "avg"   then avg(values)
+        else if agg_spec.fn_name == "min"   then min_val(values)
+        else if agg_spec.fn_name == "max"   then max_val(values)
+        else null in
+      rec.set(acc, agg_spec.name, result)
+    })
+  })
+}
+
+export { sum, count, avg, min_val, max_val, group_by, aggregate }

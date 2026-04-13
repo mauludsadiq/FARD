@@ -1,0 +1,60 @@
+import("../../packages/duckdb-core/src/expr") as expr
+import("../../packages/duckdb-core/src/agg") as agg
+import("../../packages/duckdb-core/src/join") as join
+import("../../packages/duckdb-core/src/query") as query
+import("std/list") as list
+import("std/rec") as rec
+
+let rows = [
+  { "name": "Alice", "dept": "eng", "salary": 90 },
+  { "name": "Bob",   "dept": "eng", "salary": 80 },
+  { "name": "Carol", "dept": "mkt", "salary": 70 },
+  { "name": "Dave",  "dept": "mkt", "salary": 60 }
+]
+
+test "eval field"   { expr.eval(list.get(rows, 0), "name") == "Alice" }
+test "eval op +"    { expr.eval({ "x": 3, "y": 4 }, { "op": "+", "left": "x", "right": "y" }) == 7 }
+test "eval op >"    { expr.eval({ "x": 5 }, { "op": ">", "left": "x", "right": { "lit": 3 } }) == true }
+test "eval lit"     { expr.eval({}, { "lit": "hello" }) == "hello" }
+
+let eng = expr.filter(rows, { "op": "==", "left": "dept", "right": { "lit": "eng" } })
+test "filter count" { list.len(eng) == 2 }
+test "filter name"  { list.get(eng, 0).name == "Alice" }
+
+let names = expr.project(rows, [{ "name": "n", "expr": "name" }])
+test "project count" { list.len(names) == 4 }
+test "project field" { list.get(names, 0).n == "Alice" }
+
+test "sum"   { agg.sum([1, 2, 3, 4]) == 10 }
+test "count" { agg.count([1, 2, 3]) == 3 }
+test "avg"   { agg.avg([2, 4, 6]) == 4 }
+test "min"   { agg.min_val([3, 1, 2]) == 1 }
+test "max"   { agg.max_val([3, 1, 2]) == 3 }
+
+let groups = agg.group_by(rows, ["dept"])
+test "group count" { list.len(groups) == 2 }
+
+let agged = agg.aggregate(groups, [
+  { "name": "total",     "fn_name": "sum",   "col": "salary" },
+  { "name": "headcount", "fn_name": "count", "col": "name" }
+])
+test "agg result count" { list.len(agged) == 2 }
+let eng_agg = list.find(agged, fn(r) { r.dept == "eng" })
+test "eng total"     { eng_agg.some.total == 170 }
+test "eng headcount" { eng_agg.some.headcount == 2 }
+
+let depts = [{ "dept": "eng", "floor": 3 }, { "dept": "mkt", "floor": 2 }]
+let joined = join.inner_join(rows, depts, "dept", "dept")
+test "join count" { list.len(joined) == 4 }
+test "join floor" { list.get(joined, 0).floor == 3 }
+
+let result = query.run({
+  "from": rows,
+  "where": { "op": ">=", "left": "salary", "right": { "lit": 75 } },
+  "select": [{ "name": "name", "expr": "name" }, { "name": "salary", "expr": "salary" }],
+  "order_by": "salary",
+  "limit": 2
+})
+test "query count"  { list.len(result) == 2 }
+test "query first"  { list.get(result, 0).name == "Bob" }
+test "query second" { list.get(result, 1).name == "Alice" }
