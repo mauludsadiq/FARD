@@ -1584,7 +1584,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                 let b = canonical_json_bytes(&v);
                 let _ = fs::write(tracer.out_dir.join("module_graph.json"), &b);
             }));
-            let msg0 = e.root_cause().to_string();
+            let msg0 = format!("{:#}", e);  // include full anyhow context chain, not just root cause
             let code = {
                 const PINNED: &[&str] = &[
                     QMARK_EXPECT_RESULT,
@@ -2050,11 +2050,19 @@ impl Tracer {
         self.emit_event(J::Object(m))
     }
     fn module_resolve(&mut self, name: &str, kind: &str, cid: &str) -> Result<()> {
+        self.module_resolve_full(name, kind, cid, None)
+    }
+
+    fn module_resolve_full(&mut self, name: &str, kind: &str, cid: &str, resolved_path: Option<&str>) -> Result<()> {
         let mut m = Map::new();
         m.insert("t".to_string(), J::Str("module_resolve".to_string()));
         m.insert("name".to_string(), J::Str(name.to_string()));
         m.insert("kind".to_string(), J::Str(kind.to_string()));
         m.insert("cid".to_string(), J::Str(cid.to_string()));
+        m.insert("loaded".to_string(), J::Bool(true));
+        if let Some(p) = resolved_path {
+            m.insert("resolved_path".to_string(), J::Str(p.to_string()));
+        }
         let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
@@ -5580,41 +5588,80 @@ impl VmCompiler {
     }
 }
 
+fn vm_type_name(v: &Val) -> &'static str {
+    match v {
+        Val::Int(_)    => "Int",
+        Val::Float(_)  => "Float",
+        Val::Text(_)   => "Text",
+        Val::Bool(_)   => "Bool",
+        Val::Unit      => "Null",
+        Val::List(_)   => "List",
+        Val::Record(_) => "Record",
+        Val::Bytes(_)  => "Bytes",
+        Val::Func { .. } => "Func",
+        Val::Builtin(_)  => "Builtin",
+        _              => "?",
+    }
+}
+
+fn vm_type_hint(op: &str, lt: &str, rt: &str) -> &'static str {
+    match (op, lt, rt) {
+        ("+", "Text", _) | ("+", _, "Text") => "\n  hint: use str.concat(a, b) to join strings",
+        ("+", "List", _) | ("+", _, "List") => "\n  hint: use list.concat([a, b]) to join lists",
+        ("/"|"*"|"-"|"+", "Bytes", _) | ("/"|"*"|"-"|"+", _, "Bytes") =>
+            "\n  hint: Bytes cannot be used in arithmetic — did a stdlib function return Bytes instead of Float?\n  hint: try cast.float() or cast.int() to convert",
+        ("/"|"*"|"-", "Int", "Float") | ("/"|"*"|"-", "Float", "Int") =>
+            "\n  hint: mixed Int/Float — use cast.float() to promote the Int operand",
+        _ => "",
+    }
+}
+
 fn vm_arith_add(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
         (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_add(y))),
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x + y)),
         (Val::Text(x), Val::Text(y))   => Ok(Val::Text(x + &y)),
-        _ => bail!("vm: type error in +"),
+        (a, b) => bail!("Type error in +\n  left:  {} \n  right: {}{}",
+            vm_type_name(&a), vm_type_name(&b), vm_type_hint("+", vm_type_name(&a), vm_type_name(&b))),
     }
 }
 fn vm_arith_sub(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
         (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_sub(y))),
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x - y)),
-        _ => bail!("vm: type error in -"),
+        (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 - y)),
+        (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x - y as f64)),
+        (a, b) => bail!("Type error in -\n  left:  {}\n  right: {}{}",
+            vm_type_name(&a), vm_type_name(&b), vm_type_hint("-", vm_type_name(&a), vm_type_name(&b))),
     }
 }
 fn vm_arith_mul(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
         (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_mul(y))),
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x * y)),
-        _ => bail!("vm: type error in *"),
+        (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 * y)),
+        (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x * y as f64)),
+        (a, b) => bail!("Type error in *\n  left:  {}\n  right: {}{}",
+            vm_type_name(&a), vm_type_name(&b), vm_type_hint("*", vm_type_name(&a), vm_type_name(&b))),
     }
 }
 fn vm_arith_div(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
-        (Val::Int(_, ), Val::Int(0))   => bail!("ERROR_DIV_ZERO"),
+        (Val::Int(_), Val::Int(0))     => bail!("ERROR_DIV_ZERO division by zero"),
         (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x / y)),
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x / y)),
-        _ => bail!("vm: type error in /"),
+        (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 / y)),
+        (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x / y as f64)),
+        (a, b) => bail!("Type error in /\n  left:  {}\n  right: {}{}",
+            vm_type_name(&a), vm_type_name(&b), vm_type_hint("/", vm_type_name(&a), vm_type_name(&b))),
     }
 }
 fn vm_arith_mod(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
-        (Val::Int(_, ), Val::Int(0)) => bail!("ERROR_DIV_ZERO"),
+        (Val::Int(_), Val::Int(0)) => bail!("ERROR_DIV_ZERO modulo by zero"),
         (Val::Int(x), Val::Int(y))   => Ok(Val::Int(x % y)),
-        _ => bail!("vm: type error in %"),
+        (a, b) => bail!("Type error in %\n  left:  {}\n  right: {}{}",
+            vm_type_name(&a), vm_type_name(&b), vm_type_hint("%", vm_type_name(&a), vm_type_name(&b))),
     }
 }
 fn vm_val_eq(a: &Val, b: &Val) -> bool {
@@ -5632,7 +5679,7 @@ fn vm_val_lt(a: &Val, b: &Val) -> Result<bool> {
         (Val::Int(x), Val::Int(y))     => Ok(x < y),
         (Val::Float(x), Val::Float(y)) => Ok(x < y),
         (Val::Text(x), Val::Text(y))   => Ok(x < y),
-        _ => bail!("vm: type error in <"),
+        (a, b) => bail!("Type error in <\n  left:  {}\n  right: {}", vm_type_name(&a), vm_type_name(&b)),
     }
 }
 
@@ -7203,7 +7250,7 @@ fn call_builtin(
             }
             let k = match &args[1] {
                 Val::Text(s) => s.clone(),
-                _ => bail!("ERROR_BADARG rec.set arg1 must be string"),
+                other => bail!("ERROR_BADARG rec.set key must be Text\n  got type: {}\n  got value: {:?}\n  hint: record keys must be strings — check for Int or computed values used as keys", vm_type_name(other), other),
             };
             let v = args[2].clone();
             match &args[0] {
@@ -7216,7 +7263,7 @@ fn call_builtin(
                     m.lock().unwrap().insert(k, v);
                     Ok(args[0].clone())
                 }
-                _ => bail!("ERROR_BADARG rec.set arg0 must be record"),
+                other => bail!("ERROR_BADARG rec.set first argument must be a Record\n  got type: {}", vm_type_name(other)),
             }
         }
         Builtin::RecRemove => {
@@ -11918,7 +11965,7 @@ impl ModuleLoader {
                 let v = slf.eval_items(items, &mut env, tracer, path.parent().unwrap_or(here))?;
                 match v {
                     Val::Record(m) => m,
-                    _ => bail!("module must export a record"),
+                    other => bail!("Module '{}' must evaluate to a Record\n  got: {}\n  hint: end the file with a record literal {{ a: fn_a, b: fn_b }} or use export {{ a, b }}", name, vm_type_name(&other)),
                 }
             } else if name.starts_with("registry/") {
                 let reg = slf
@@ -11955,7 +12002,10 @@ impl ModuleLoader {
                     if path.to_string_lossy().contains("/pkg/") {
                         eprintln!("IMPORT_PKG_REQUIRES_LOCK");
                     }
-                    format!("missing module file: {}", path.display())
+                    format!(
+                        "Module import failed\n  requested: {}\n  resolved:  {}\n  reason:    file not found\n  hint: FARD imports are extensionless and resolved relative to the importing file",
+                        name, path.display()
+                    )
                 })?;
                 slf.check_lock(name, &file_digest(&path)?)?;
                 tracer.module_resolve(name, "rel", &file_digest(&path)?)?;
