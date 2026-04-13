@@ -1,0 +1,28 @@
+import("std/rec") as rec
+import("std/list") as list
+
+// Compare two snapshots, return { added, removed, changed }
+fn diff(before, after) {
+  let before_keys = rec.keys(before) in
+  let after_keys  = rec.keys(after) in
+
+  let added = list.filter(after_keys, fn(k) {
+    rec.has(before, k) == false
+  }) in
+
+  let removed = list.filter(before_keys, fn(k) {
+    rec.has(after, k) == false
+  }) in
+
+  let changed = list.filter(before_keys, fn(k) {
+    rec.has(after, k) && rec.get(before, k) != rec.get(after, k)
+  }) in
+
+  { "added": added, "removed": removed, "changed": changed }
+}
+
+fn any_change(d) {
+  list.len(d.added) > 0 || list.len(d.removed) > 0 || list.len(d.changed) > 0
+}
+
+export { diff, any_change }

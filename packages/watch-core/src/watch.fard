@@ -1,0 +1,46 @@
+import("std/time") as time
+import("std/list") as list
+import("std/str") as str
+import("./stat") as stat
+import("./diff") as diff
+
+// Watch a list of file paths, call handler on each change
+// handler receives { added, removed, changed }
+// poll_ms: milliseconds between checks
+// max_iters: -1 for infinite, otherwise stops after N iterations
+fn watch(paths, poll_ms, max_iters, handler) {
+  let initial = stat.snapshot(paths) in
+  let result = while { "snap": initial, "i": 0, "done": false }
+    fn(s) { s.done == false && (max_iters == -1 || s.i < max_iters) }
+    fn(s) {
+      let _ = time.sleep_ms(poll_ms) in
+      let next = stat.snapshot(paths) in
+      let d = diff.diff(s.snap, next) in
+      let _ = if diff.any_change(d) then handler(d) else null in
+      { "snap": next, "i": s.i + 1, "done": false }
+    } in
+  result.value.i
+}
+
+// Watch a directory for new/removed/changed files
+fn watch_dir(path, poll_ms, max_iters, handler) {
+  let get_paths = fn() {
+    let entries = stat.snapshot_dir(path) in
+    list.map(entries, fn(e) { e.path })
+  } in
+  let initial_paths = get_paths() in
+  let initial_snap  = stat.snapshot(initial_paths) in
+  let result = while { "snap": initial_snap, "paths": initial_paths, "i": 0, "done": false }
+    fn(s) { s.done == false && (max_iters == -1 || s.i < max_iters) }
+    fn(s) {
+      let _ = time.sleep_ms(poll_ms) in
+      let next_paths = get_paths() in
+      let next_snap  = stat.snapshot(next_paths) in
+      let d = diff.diff(s.snap, next_snap) in
+      let _ = if diff.any_change(d) then handler(d) else null in
+      { "snap": next_snap, "paths": next_paths, "i": s.i + 1, "done": false }
+    } in
+  result.value.i
+}
+
+export { watch, watch_dir }

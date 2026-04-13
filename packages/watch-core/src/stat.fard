@@ -1,0 +1,25 @@
+import("std/io") as io
+import("std/list") as list
+import("std/rec") as rec
+import("std/str") as str
+
+fn snapshot_dir(path) {
+  let entries = io.list_dir(path) in
+  list.map(entries, fn(name) {
+    let full = str.concat(path, str.concat("/", name)) in
+    { "path": full, "name": name }
+  })
+}
+
+fn file_size(path) {
+  let content = io.read_file(path) in
+  str.len(content.ok)
+}
+
+fn snapshot(paths) {
+  list.fold(paths, {}, fn(acc, p) {
+    rec.set(acc, p, file_size(p))
+  })
+}
+
+export { snapshot_dir, file_size, snapshot }

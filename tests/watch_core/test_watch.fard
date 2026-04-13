@@ -1,0 +1,34 @@
+import("../../packages/watch-core/src/stat") as stat
+import("../../packages/watch-core/src/diff") as diff
+import("std/rec") as rec
+import("std/list") as list
+
+// Test snapshot
+let snap = stat.snapshot(["tests/watch_core/test_watch.fard"])
+test "snapshot has key"     { rec.has(snap, "tests/watch_core/test_watch.fard") }
+test "snapshot size pos"    { rec.get(snap, "tests/watch_core/test_watch.fard") > 0 }
+
+// Test diff — added
+let before = { "a": 10, "b": 20 }
+let after1  = { "a": 10, "b": 20, "c": 30 }
+let d1 = diff.diff(before, after1)
+test "diff added"           { list.len(d1.added) == 1 }
+test "diff added name"      { list.get(d1.added, 0) == "c" }
+test "diff removed empty"   { list.len(d1.removed) == 0 }
+test "diff changed empty"   { list.len(d1.changed) == 0 }
+
+// Test diff — removed
+let after2 = { "a": 10 }
+let d2 = diff.diff(before, after2)
+test "diff removed"         { list.len(d2.removed) == 1 }
+test "diff removed name"    { list.get(d2.removed, 0) == "b" }
+
+// Test diff — changed
+let after3 = { "a": 99, "b": 20 }
+let d3 = diff.diff(before, after3)
+test "diff changed"         { list.len(d3.changed) == 1 }
+test "diff changed name"    { list.get(d3.changed, 0) == "a" }
+
+// Test any_change
+test "any_change true"      { diff.any_change(d1) == true }
+test "any_change false"     { diff.any_change(diff.diff(before, before)) == false }
