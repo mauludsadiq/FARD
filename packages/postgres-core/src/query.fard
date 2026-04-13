@@ -1,0 +1,89 @@
+import("std/bytes") as stdbytes
+import("std/str") as str
+import("std/list") as list
+import("std/rec") as rec
+import("./wire") as wire
+
+// Simple Query message
+fn simple_query(sql) {
+  wire.msg(81, wire.cstr(sql))
+}
+
+// Parse a single backend message from bytes at offset
+// Returns { type, len, body, next_off }
+fn parse_msg(bs, off) {
+  let tag = stdbytes.get(bs, off) in
+  let len = wire.be32_at(bs, off + 1) in
+  let body = stdbytes.slice(bs, off + 5, off + 1 + len) in
+  { "type": tag, "len": len, "body": body, "next_off": off + 1 + len }
+}
+
+// Parse all messages from a response bytes blob
+fn parse_all(bs) {
+  let total = stdbytes.len(bs) in
+  let result = while { "off": 0, "msgs": [] }
+    fn(s) { s.off < total - 1 }
+    fn(s) {
+      let m = parse_msg(bs, s.off) in
+      { "off": m.next_off, "msgs": list.concat([s.msgs, [m]]) }
+    } in
+  result.value.msgs
+}
+
+// Extract text from a DataRow message body
+// DataRow: int16 field_count, then for each field: int32 len, bytes
+fn parse_data_row(body) {
+  let n_fields = wire.be16_at(body, 0) in
+  let result = while { "off": 2, "fields": [], "i": 0 }
+    fn(s) { s.i < n_fields }
+    fn(s) {
+      let flen = wire.be32_at(body, s.off) in
+      let field = if flen == 4294967295  // -1 as u32 = NULL
+        then null
+        else stdbytes.to_string(stdbytes.slice(body, s.off + 4, s.off + 4 + flen)) in
+      { "off": s.off + 4 + (if flen == 4294967295 then 0 else flen),
+        "fields": list.concat([s.fields, [field]]),
+        "i": s.i + 1 }
+    } in
+  result.value.fields
+}
+
+// Extract column names from RowDescription message body
+// RowDescription: int16 field_count, then for each: cstr name, ...18 bytes metadata
+fn parse_row_description(body) {
+  let n_fields = wire.be16_at(body, 0) in
+  let result = while { "off": 2, "names": [], "i": 0 }
+    fn(s) { s.i < n_fields }
+    fn(s) {
+      // read null-terminated string
+      let name_end = while { "p": s.off }
+        fn(p) { stdbytes.get(body, p.p) != 0 }
+        fn(p) { { "p": p.p + 1 } } in
+      let name = stdbytes.to_string(stdbytes.slice(body, s.off, name_end.value.p)) in
+      // skip: null byte + 18 bytes of type metadata
+      { "off": name_end.value.p + 1 + 18,
+        "names": list.concat([s.names, [name]]),
+        "i": s.i + 1 }
+    } in
+  result.value.names
+}
+
+// Turn raw messages into rows of records
+fn msgs_to_rows(msgs) {
+  let col_names = list.fold(msgs, [], fn(acc, m) {
+    if m.type == 84 then parse_row_description(m.body) else acc
+  }) in
+  let rows = list.filter(msgs, fn(m) { m.type == 68 }) in
+  list.map(rows, fn(m) {
+    let fields = parse_data_row(m.body) in
+    list.fold(
+      list.range(0, list.len(col_names)),
+      {},
+      fn(acc, i) {
+        rec.set(acc, list.get(col_names, i), list.get(fields, i))
+      }
+    )
+  })
+}
+
+export { simple_query, parse_msg, parse_all, parse_data_row, parse_row_description, msgs_to_rows }

@@ -1,0 +1,46 @@
+import("std/bytes") as stdbytes
+import("std/bits") as bits
+
+// Big-endian encoders (Postgres wire protocol is big-endian)
+fn be32(n) {
+  stdbytes.of_list([
+    bits.band(bits.bshr(n, 24), 255),
+    bits.band(bits.bshr(n, 16), 255),
+    bits.band(bits.bshr(n, 8), 255),
+    bits.band(n, 255)
+  ])
+}
+
+fn be16(n) {
+  stdbytes.of_list([
+    bits.band(bits.bshr(n, 8), 255),
+    bits.band(n, 255)
+  ])
+}
+
+fn be32_at(bs, off) {
+  bits.bshl(stdbytes.get(bs, off), 24)
+  + bits.bshl(stdbytes.get(bs, off + 1), 16)
+  + bits.bshl(stdbytes.get(bs, off + 2), 8)
+  + stdbytes.get(bs, off + 3)
+}
+
+fn be16_at(bs, off) {
+  bits.bshl(stdbytes.get(bs, off), 8)
+  + stdbytes.get(bs, off + 1)
+}
+
+fn cstr(s) {
+  stdbytes.concat([stdbytes.of_str(s), stdbytes.of_list([0])])
+}
+
+fn msg(tag, body) {
+  let len = stdbytes.len(body) + 4 in
+  stdbytes.concat([
+    stdbytes.of_list([tag]),
+    be32(len),
+    body
+  ])
+}
+
+export { be32, be16, be32_at, be16_at, cstr, msg }

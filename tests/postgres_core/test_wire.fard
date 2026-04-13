@@ -1,0 +1,13 @@
+import("../../packages/postgres-core/src/wire") as wire
+import("std/bytes") as stdbytes
+
+test "be32 zero"    { stdbytes.to_list(wire.be32(0)) == [0, 0, 0, 0] }
+test "be32 one"     { stdbytes.to_list(wire.be32(1)) == [0, 0, 0, 1] }
+test "be32 256"     { stdbytes.to_list(wire.be32(256)) == [0, 0, 1, 0] }
+test "be16 zero"    { stdbytes.to_list(wire.be16(0)) == [0, 0] }
+test "be16 256"     { stdbytes.to_list(wire.be16(256)) == [1, 0] }
+test "cstr hello"   { stdbytes.to_list(wire.cstr("hi")) == [104, 105, 0] }
+test "msg tag"      { stdbytes.get(wire.msg(81, stdbytes.of_list([65])), 0) == 81 }
+test "msg len"      { stdbytes.to_list(stdbytes.slice(wire.msg(81, stdbytes.of_list([65])), 1, 5)) == [0, 0, 0, 5] }
+test "be32_at"      { wire.be32_at(stdbytes.of_list([0, 0, 1, 0, 0]), 0) == 256 }
+test "be16_at"      { wire.be16_at(stdbytes.of_list([1, 0]), 0) == 256 }

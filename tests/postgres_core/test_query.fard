@@ -1,0 +1,51 @@
+import("../../packages/postgres-core/src/wire") as wire
+import("../../packages/postgres-core/src/query") as query
+import("std/bytes") as stdbytes
+import("std/list") as list
+
+// Build a synthetic ReadyForQuery message (Z, len=5, status=73 'I')
+let rfq = wire.msg(90, stdbytes.of_list([73]))
+
+// Build a synthetic CommandComplete message (C, body="SELECT 1\0")
+let cc = wire.msg(67, wire.cstr("SELECT 1"))
+
+// Build a synthetic DataRow: 2 fields, "hello" and "42"
+let field1 = stdbytes.concat([wire.be32(5), stdbytes.of_str("hello")])
+let field2 = stdbytes.concat([wire.be32(2), stdbytes.of_str("42")])
+let data_row_body = stdbytes.concat([wire.be16(2), stdbytes.concat([field1, field2])])
+let data_row = wire.msg(68, data_row_body)
+
+// Build a synthetic RowDescription: 2 columns "name" and "age"
+// Each field: cstr name + 18 bytes metadata
+let meta = stdbytes.of_list([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+let rd_body = stdbytes.concat([
+  wire.be16(2),
+  stdbytes.concat([wire.cstr("name"), meta]),
+  stdbytes.concat([wire.cstr("age"), meta])
+])
+let row_desc = wire.msg(84, rd_body)
+
+// Combine into a full response blob
+let blob = stdbytes.concat([stdbytes.concat([stdbytes.concat([row_desc, data_row]), cc]), rfq])
+
+let msgs = query.parse_all(blob)
+
+test "parse_all finds 4 messages"      { list.len(msgs) == 4 }
+test "first msg is RowDescription"     { list.get(msgs, 0).type == 84 }
+test "second msg is DataRow"           { list.get(msgs, 1).type == 68 }
+test "third msg is CommandComplete"    { list.get(msgs, 2).type == 67 }
+test "fourth msg is ReadyForQuery"     { list.get(msgs, 3).type == 90 }
+
+let fields = query.parse_data_row(list.get(msgs, 1).body)
+test "data row field count"            { list.len(fields) == 2 }
+test "data row field 0"                { list.get(fields, 0) == "hello" }
+test "data row field 1"                { list.get(fields, 1) == "42" }
+
+let col_names = query.parse_row_description(list.get(msgs, 0).body)
+test "col name 0"                      { list.get(col_names, 0) == "name" }
+test "col name 1"                      { list.get(col_names, 1) == "age" }
+
+let rows = query.msgs_to_rows(msgs)
+test "rows count"                      { list.len(rows) == 1 }
+test "row name field"                  { list.get(rows, 0).name == "hello" }
+test "row age field"                   { list.get(rows, 0).age == "42" }

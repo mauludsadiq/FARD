@@ -1,0 +1,31 @@
+import("std/bytes") as stdbytes
+import("std/str") as str
+import("./wire") as wire
+
+// StartupMessage (no tag byte — special case)
+fn startup_msg(user, database) {
+  let body = stdbytes.concat([
+    wire.be32(196608),        // protocol version 3.0
+    wire.cstr("user"),
+    wire.cstr(user),
+    wire.cstr("database"),
+    wire.cstr(database),
+    stdbytes.of_list([0])     // terminator
+  ]) in
+  stdbytes.concat([wire.be32(stdbytes.len(body) + 4), body])
+}
+
+// PasswordMessage
+fn password_msg(password) {
+  wire.msg(112, wire.cstr(password))
+}
+
+// Parse auth response type from server
+fn auth_type(bs) {
+  // R message: tag=82, len=8, auth_type=int32
+  if stdbytes.get(bs, 0) == 82
+  then wire.be32_at(bs, 5)
+  else -1
+}
+
+export { startup_msg, password_msg, auth_type }

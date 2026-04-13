@@ -1,0 +1,72 @@
+import("std/net") as net
+import("std/bytes") as stdbytes
+import("std/list") as list
+import("./wire") as wire
+import("./auth") as auth
+import("./query") as query
+
+fn recv_all(conn_id) {
+  let result = while { "buf": stdbytes.of_list([]), "done": false }
+    fn(s) { s.done == false }
+    fn(s) {
+      let chunk = net.recv(conn_id, 4096) in
+      if chunk.ok != null
+      then
+        let buf2 = stdbytes.concat([s.buf, chunk.ok]) in
+        // Check if we have a ReadyForQuery (Z) message — signals end of response
+        let has_ready = list.any(query.parse_all(buf2), fn(m) { m.type == 90 }) in
+        { "buf": buf2, "done": has_ready }
+      else
+        { "buf": s.buf, "done": true }
+    } in
+  result.value.buf
+}
+
+fn connect(host, port, user, password, database) {
+  let c = net.connect(host, port) in
+  if c.err != null
+  then { "err": c.err }
+  else
+    let conn_id = c.ok in
+    // Send startup
+    let _ = net.send(conn_id, auth.startup_msg(user, database)) in
+    // Read auth challenge
+    let resp = net.recv(conn_id, 1024) in
+    let atype = auth.auth_type(resp.ok) in
+    // AuthenticationOk = 0, CleartextPassword = 3, MD5 = 5
+    let _ = if atype == 3
+      then net.send(conn_id, auth.password_msg(password))
+      else null in
+    // Read until ReadyForQuery
+    let _ = recv_all(conn_id) in
+    { "ok": conn_id }
+}
+
+fn exec(conn_id, sql) {
+  let _ = net.send(conn_id, query.simple_query(sql)) in
+  let resp = recv_all(conn_id) in
+  let msgs = query.parse_all(resp) in
+  // Check for ErrorResponse (E = 69)
+  let err_msg = list.find(msgs, fn(m) { m.type == 69 }) in
+  if err_msg.some != null
+  then { "err": stdbytes.to_string(err_msg.some.body) }
+  else { "ok": null }
+}
+
+fn query(conn_id, sql) {
+  let _ = net.send(conn_id, query.simple_query(sql)) in
+  let resp = recv_all(conn_id) in
+  let msgs = query.parse_all(resp) in
+  let err_msg = list.find(msgs, fn(m) { m.type == 69 }) in
+  if err_msg.some != null
+  then { "err": stdbytes.to_string(err_msg.some.body) }
+  else { "ok": query.msgs_to_rows(msgs) }
+}
+
+fn close(conn_id) {
+  // Send Terminate message (X)
+  let _ = net.send(conn_id, wire.msg(88, stdbytes.of_list([]))) in
+  net.close_conn(conn_id)
+}
+
+export { connect, exec, query, close }
