@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use valuecore::json::{JsonVal as J, from_slice, to_string, to_string_pretty};
+use valuecore::json::{JsonVal as J, from_slice, to_string_pretty};
 use valuecore::{hex_lower, sha256::Sha256};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");

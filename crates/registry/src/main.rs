@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use std::env;
-use inherit_cert_crdt::{EffectKey, RunID, InheritCertState, InheritCertDelta};
+use inherit_cert_crdt::{EffectKey, RunID, InheritCertState};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();

@@ -807,7 +807,7 @@ impl Checker {
 
             Expr::Var(name, _) => self.lookup(name),
 
-            Expr::List(items, line) => {
+            Expr::List(items, _line) => {
                 let elem = self.fresh();
                 let mut heterogeneous = false;
                 for item in items {

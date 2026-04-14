@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
-use std::io::Read;
+// use std::io::Read;
 use regex::Regex;
 use valuecore::json::{JsonVal as J, escape_string, from_slice, to_string, to_string_pretty};
 

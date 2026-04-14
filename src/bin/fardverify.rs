@@ -283,7 +283,7 @@ fn verify_proof(outdir: &str, spec_path: &str) -> Result<usize, String> {
 // ── SHA-256 helper ────────────────────────────────────────────────────────────
 fn sha256_hex(data: &[u8]) -> String {
     use valuecore::Sha256 as NativeSha256;
-    use sha2::Digest;
+    // use sha2::Digest;
     let mut h = NativeSha256::new();
     h.update(data);
     let result = h.finalize();

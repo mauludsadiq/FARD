@@ -430,8 +430,8 @@ fn build_nav(items: &[DocItem]) -> String {
 fn md_to_html(md: &str) -> String {
     let mut out = String::new();
     let mut in_ul = false;
-    let mut fn_count = 0usize;
-    let mut const_count = 0usize;
+    let mut _fn_count = 0usize;
+    let mut _const_count = 0usize;
 
     for line in md.lines() {
         if line.starts_with("# ") {
@@ -443,11 +443,11 @@ fn md_to_html(md: &str) -> String {
             let text = line.trim_start_matches("## ");
             // Determine anchor
             let anchor = if text.contains('(') {
-                fn_count += 1;
+                _fn_count += 1;
                 let name = text.trim_matches('`').split('(').next().unwrap_or("fn");
                 format!("fn-{}", name)
             } else {
-                const_count += 1;
+                _const_count += 1;
                 let name = text.trim_matches('`');
                 format!("const-{}", name)
             };

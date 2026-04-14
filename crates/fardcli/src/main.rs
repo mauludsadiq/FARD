@@ -69,7 +69,6 @@ fn json_to_v(j: &JsonVal) -> V {
 
 
 mod witness {
-    use valuecore::Sha256;
     use std::fs;
 
     pub struct Receipt {

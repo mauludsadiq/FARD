@@ -4541,7 +4541,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 _ => bail!("named call on non-function"),
             };
             // Build ordered args
-            let ordered: Vec<Val> = vec![Val::Unit; params.len()];
+            let mut ordered: Vec<Val> = vec![Val::Unit; params.len()];
             let mut filled = vec![false; params.len()];
             for (name, expr) in named_args {
                 let v = eval(expr, env, tracer, loader)?;
@@ -5546,7 +5546,8 @@ impl VmCompiler {
                 self.emit(VmOp::VmCall(args.len()));
             }
 
-            Expr::Fn(_params, _body) | Expr::Lambda(_params, _body) => {
+            #[allow(unused_variables)]
+            Expr::Fn(params, body) | Expr::Lambda(params, body) => {
                 // Don't VM-compile inline lambdas — they may capture tree-walker locals
                 // that are not available in VM slot tables
                 bail!("vm: inline Fn/Lambda not supported — use Item::Fn at top level");
@@ -10195,7 +10196,8 @@ fn call_builtin(
                           Expr::List(xs) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("list".to_string())); m.insert("items".to_string(), Val::List(xs.iter().map(expr_to_val).collect())); Val::Record(m) }
                           Expr::Rec(kvs) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("rec".to_string())); m.insert("fields".to_string(), Val::List(kvs.iter().map(|(k, v)| { let mut fm = BTreeMap::new(); fm.insert("key".to_string(), Val::Text(k.clone())); fm.insert("val".to_string(), expr_to_val(v)); Val::Record(fm) }).collect())); Val::Record(m) }
                           Expr::Get(obj, field) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("get".to_string())); m.insert("obj".to_string(), expr_to_val(obj)); m.insert("field".to_string(), Val::Text(field.clone())); Val::Record(m) }
-                          Expr::Fn(params, body) | Expr::Lambda(params, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("params".to_string(), Val::List(params.iter().map(|p| pat_to_val(p)).collect())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
+                          #[allow(unused_variables)]
+            Expr::Fn(params, body) | Expr::Lambda(params, body) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("fn".to_string())); m.insert("params".to_string(), Val::List(params.iter().map(|p| pat_to_val(p)).collect())); m.insert("body".to_string(), expr_to_val(body)); Val::Record(m) }
                           Expr::Match(scrut, arms) => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("match".to_string())); m.insert("expr".to_string(), expr_to_val(scrut)); m.insert("arms".to_string(), Val::List(arms.iter().map(|arm| { let mut am = BTreeMap::new(); am.insert("pat".to_string(), pat_to_val(&arm.pat)); if let Some(g) = &arm.guard { am.insert("guard".to_string(), expr_to_val(g)); } am.insert("body".to_string(), expr_to_val(&arm.body)); Val::Record(am) }).collect())); Val::Record(m) }
                           _ => { let mut m = BTreeMap::new(); m.insert("t".to_string(), Val::Text("other".to_string())); Val::Record(m) }
                       }

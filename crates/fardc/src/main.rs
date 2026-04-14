@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use fardlang::check::check_module as check_module_lang;
 use fardlang::eval::{eval_block, Env};
-use valuecore::Val;
 use fardlang::parse::parse_module as parse_module_lang;
 
 mod ast;
