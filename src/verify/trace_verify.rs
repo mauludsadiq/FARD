@@ -200,7 +200,7 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
 
         match t {
             "module_resolve" => {
-                expect_only_keys(obj, &["cid", "kind", "name", "t"])?;
+                expect_only_keys(obj, &["cid", "kind", "loaded", "name", "t"])?;
                 let cid = expect_str(obj, "cid")?;
                 if !is_sha256(cid) {
                     return Err("M2_BAD_CID".into());
@@ -233,7 +233,7 @@ pub fn verify_trace_outdir(outdir: &str) -> Result<(), String> {
                 saw_non_module_resolve = true;
             }
             "error" => {
-                expect_only_keys(obj, &["code", "e", "message", "t"])?;
+                expect_only_keys(obj, &["code", "e", "message", "span", "t"])?;
                 let _code = expect_str(obj, "code")?;
                 let _msg = expect_str(obj, "message")?;
                 error_count += 1;
