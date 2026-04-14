@@ -2059,10 +2059,6 @@ impl Tracer {
         m.insert("name".to_string(), J::Str(name.to_string()));
         m.insert("kind".to_string(), J::Str(kind.to_string()));
         m.insert("cid".to_string(), J::Str(cid.to_string()));
-        m.insert("loaded".to_string(), J::Bool(true));
-        if let Some(p) = resolved_path {
-            m.insert("resolved_path".to_string(), J::Str(p.to_string()));
-        }
         let line = json_to_string(&J::Object(m));
         self.write_ndjson(&line)?;
         Ok(())
