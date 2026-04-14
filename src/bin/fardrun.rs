@@ -8788,9 +8788,9 @@ fn call_builtin(
         }
         Builtin::CodecHexDecode => {
             if args.len() != 1 { bail!("ERROR_BADARG codec.hex_decode expects 1 arg"); }
-            let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG type") };
+            let s = match &args[0] { Val::Text(ss) => ss.clone(), _ => bail!("ERROR_BADARG codec.hex_decode expects text") };
             let bytes = hex_decode(s.as_str())?;
-            Ok(Val::Text(String::from_utf8(bytes)?))
+            Ok(Val::Bytes(bytes))
         }
         Builtin::StrSplit => {
             if args.len() != 2 { bail!("ERROR_BADARG str.split expects 2 args"); }
