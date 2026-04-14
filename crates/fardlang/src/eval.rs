@@ -1433,6 +1433,7 @@ fn mat_to_v(m: &[Vec<f64>]) -> V {
     V::List(m.iter().map(|r| vec_to_v(r)).collect())
 }
 
+#[allow(unreachable_patterns)]
 fn eval_linalg_builtin(f: &str, args: &[V]) -> Result<V> {
     match f {
         "linalg_zeros" => {

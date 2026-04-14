@@ -283,24 +283,7 @@ impl Cli {
                 };
                 return (dummy, false, false, None, None, None, None, Some(v), None);
             }
-            Some(Command::Eval(e)) => {
-                let dummy = RunArgs {
-                    program: std::path::PathBuf::from("."),
-                    out: std::path::PathBuf::from("."),
-                    lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
-                };
-                return (dummy, false, false, None, None, None, None, None, Some(e));
-            }
-            Some(Command::Verify(v)) => {
-                let dummy = RunArgs {
-                    program: std::path::PathBuf::from("."),
-                    out: std::path::PathBuf::from("."),
-                    lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
-                };
-                return (dummy, false, false, None, None, None, None, Some(v), None);
-            }
+
             Some(Command::Search(s)) => {
                 let query = s.query.unwrap_or_default();
                 // Print search results and exit

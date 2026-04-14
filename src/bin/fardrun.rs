@@ -575,7 +575,7 @@ fn expr_contains_var(expr: &Expr, name: &str) -> bool {
 
 
 fn cmd_eval(args: fard_v0_5_language_gate::cli::fardrun_cli::EvalArgs) -> Result<()> {
-    use fard_v0_5_language_gate::cli::fardrun_cli::EvalArgs;
+    // use fard_v0_5_language_gate::cli::fardrun_cli::EvalArgs;
     let expr = args.expr;
     // Wrap in a temp file and run
     let tmp = std::env::temp_dir().join("fard_eval_tmp.fard");
@@ -683,7 +683,7 @@ fn main() -> Result<()> {
     }
     // fardrun new <name> [--template minimal|server|ci]
     if let Some(new_args) = new_args {
-        use fard_v0_5_language_gate::cli::fardrun_cli::NewArgs;
+        // use fard_v0_5_language_gate::cli::fardrun_cli::NewArgs;
         return cmd_new(new_args);
     }
     if let Some(verify_args) = verify_args {
@@ -1158,7 +1158,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         return Ok(());
     }
     if let Some(iargs) = install_args {
-        use fard_v0_5_language_gate::cli::fardrun_cli::InstallArgs;
+        // use fard_v0_5_language_gate::cli::fardrun_cli::InstallArgs;
         // Install a specific dep or all deps from fard.toml
         let deps_to_install: Vec<(String, String)> = if let Some(dep) = &iargs.dep {
             // Single dep: name@version
@@ -1232,7 +1232,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         Cli::parse_compat_notebook()
     }
     {
-        use std::io::Write;
+        // use std::io::Write;
         let input = std::fs::read_to_string(&nb.input)
             .with_context(|| format!("cannot read notebook: {}", nb.input.display()))?;
         let out_dir = std::path::PathBuf::from(&nb.out_dir);
@@ -1367,7 +1367,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         // Build the hm checker program source — runs from project root
         let project_dir = std::env::current_dir()?;
         let hm_pkg = project_dir.join("packages/fard_hm/hm");
-        let parse_pkg = project_dir.join("packages/fard_parse/parse");
+        let _parse_pkg = project_dir.join("packages/fard_parse/parse");
         let lower_pkg = project_dir.join("packages/fard_lower/lower");
         let hm_prog = format!(
             concat!(
@@ -2681,7 +2681,7 @@ impl Parser {
                 // Actually: desugar directly into multiple binds
                 match pat {
                     Pat::Obj { ref items, .. } => {
-                        let tmp_expr = Expr::Var(tmp.clone());
+                        let _tmp_expr = Expr::Var(tmp.clone());
                         // Remove the __destruct__ placeholder we just pushed
                         binds.pop();
                         binds.push((tmp.clone(), rhs));
@@ -2984,7 +2984,7 @@ impl Parser {
                     None
                 };
                 self.expect_sym("{")?;
-                let mut body = self.parse_fn_block_body()?;
+                let body = self.parse_fn_block_body()?;
                 // Desugar default args: prepend let bindings for defaulted params
                 // fn f(a, b = expr) { body } ->
                 // fn f(a, b) { body }  (full arity, used directly)
@@ -4541,7 +4541,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 _ => bail!("named call on non-function"),
             };
             // Build ordered args
-            let mut ordered: Vec<Val> = vec![Val::Unit; params.len()];
+            let ordered: Vec<Val> = vec![Val::Unit; params.len()];
             let mut filled = vec![false; params.len()];
             for (name, expr) in named_args {
                 let v = eval(expr, env, tracer, loader)?;
@@ -4970,11 +4970,11 @@ fn val_eq(a: &Val, b: &Val) -> bool {
     }
 }
 
-fn apply_record_closure(m: &BTreeMap<String, Val>, mut cur_args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
+fn apply_record_closure(m: &BTreeMap<String, Val>, cur_args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
     let params = match m.get("params") { Some(Val::List(v)) => v.clone(), _ => bail!("closure: no params") };
     let body_val = match m.get("body") { Some(v) => v.clone(), _ => bail!("closure: no body") };
     let body_t = if let Val::Record(ref bm) = body_val { bm.get("t").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("?".to_string()) } else { "not-record".to_string() };
-    let fn_name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("anonymous".to_string());
+    let _fn_name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("anonymous".to_string());
     let fn_name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("anonymous".to_string());
     let name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None });
     if params.len() != cur_args.len() { bail!("arity mismatch: expected {} got {}", params.len(), cur_args.len()); }
@@ -5546,7 +5546,7 @@ impl VmCompiler {
                 self.emit(VmOp::VmCall(args.len()));
             }
 
-            Expr::Fn(params, body) | Expr::Lambda(params, body) => {
+            Expr::Fn(_params, _body) | Expr::Lambda(_params, _body) => {
                 // Don't VM-compile inline lambdas — they may capture tree-walker locals
                 // that are not available in VM slot tables
                 bail!("vm: inline Fn/Lambda not supported — use Item::Fn at top level");
@@ -9134,7 +9134,7 @@ fn call_builtin(
             if args.len() != 1 { bail!("menv.child expects 1 arg"); }
             match &args[0] {
                 Val::MutEnv(parent) => {
-                    let mut child = parent.lock().unwrap().clone();
+                    let child = parent.lock().unwrap().clone();
                     Ok(Val::MutEnv(Arc::new(Mutex::new(child))))
                 }
                 _ => bail!("menv.child arg0 must be menv")
@@ -12875,7 +12875,7 @@ fn jval_to_val(j: &J) -> Val {
                         return Val::List(xs.iter().map(jval_to_val).collect());
                     }}
                     "map"   => { if let J::Array(pairs) = v {
-                        let mut kvs: BTreeMap<String, Val> = pairs.iter().filter_map(|p| {
+                        let kvs: BTreeMap<String, Val> = pairs.iter().filter_map(|p| {
                             if let J::Array(kv) = p {
                                 if kv.len() == 2 {
                                     if let J::Str(k) = &kv[0] {

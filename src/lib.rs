@@ -408,7 +408,7 @@ pub fn type_check_strict(source: &str, filename: &str) -> Vec<(u32, u32, String)
     }
 }
 
-pub fn parse_check(source: &str, filename: &str) -> Vec<(u32, u32, String)> {
+pub fn parse_check(source: &str, _filename: &str) -> Vec<(u32, u32, String)> {
     // We shell out to the binary parser indirectly by re-using the run_fard path.
     // For now, use a subprocess approach: write to temp file and run fardrun --parse-only.
     // This avoids needing to expose the internal Parser struct.
