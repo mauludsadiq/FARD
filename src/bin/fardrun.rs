@@ -5436,10 +5436,12 @@ impl VmCompiler {
             Expr::If(cond, then_e, else_e) => {
                 self.compile(cond, fns)?;
                 let jf = self.emit(VmOp::JumpIfFalse(0));
+                self.emit(VmOp::Pop);
                 self.compile(then_e, fns)?;
                 let jmp = self.emit(VmOp::Jump(0));
                 let else_start = self.code.len();
                 self.patch(jf, else_start);
+                self.emit(VmOp::Pop);
                 self.compile(else_e, fns)?;
                 self.patch(jmp, self.code.len());
             }
