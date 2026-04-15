@@ -4,7 +4,7 @@ FARD is a deterministic, content-addressed scripting language. Every execution p
 
 Traceability is not a feature. It is an invariant of execution.
 
-**Version:** v1.7.0 — [Releases](https://github.com/mauludsadiq/FARD/releases)
+**Version:** v1.6.1 — [Releases](https://github.com/mauludsadiq/FARD/releases)
 
 ```bash
 curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
@@ -29,6 +29,26 @@ curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
 ```
 
 120 files. 4,930 lines. 135 tests. Pure FARD. https://github.com/mauludsadiq/Qasim-in-FARD
+
+
+-----
+
+## Self-hosting
+
+FARD's doc generator is written in FARD.
+
+    fardrun run --program apps/farddoc.fard -- --program my_module.fard --out docs/
+
+apps/farddoc.fard (200 lines) replaces the Rust farddoc binary (659 lines).
+It scans /// doc comments, extracts fn and let declarations, and renders Markdown.
+It documents itself correctly.
+
+Self-hosting progression:
+
+  farddoc       200 lines FARD    done
+  fardfmt       ~150 lines est    candidate
+  fardregistry  ~300 lines est    candidate
+  interpreter   ~14,000 lines     requires parser primitives
 
 -----
 
@@ -375,7 +395,7 @@ Each step produces a receipt. `build.receipt.json` chains all step digests. Any 
 |`fardpkg`     |Package management                                     |
 |`fard-lsp`    |Language Server Protocol                               |
 |`fardc`       |Compiler frontend and canonicalizer                    |
-|`farddoc`     |Documentation generator                                |
+|`farddoc`     |Documentation generator — self-hosted in FARD          |
 |`fard-build`  |Verifiable build system                                |
 
 ```bash
