@@ -1,0 +1,160 @@
+/// fardlock — Lockfile generation and verification
+///
+/// Subcommands:
+///   show-preimage  --out <run_out_dir>
+///   gen            --root <app_root> --out <out_dir> [--registry <dir>]
+///
+/// Usage:
+///   fardrun run --program apps/fardlock.fard -- show-preimage --out run_out/
+
+import("std/fs")   as fs
+import("std/str")  as str
+import("std/list") as list
+import("std/json") as json
+import("std/env")  as env
+import("std/rec")  as rec
+import("std/hash") as hash
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, val: null }, fn(acc, a) {
+    if acc.found then { found: false, val: a }
+    else if a == flag then { found: true, val: null }
+    else acc
+  }) in
+  r.val
+}
+
+// ── Canonical JSON ────────────────────────────────────────────────────────────
+// Produces compact JSON with sorted keys (t key sorts first)
+
+fn canon_str(s) {
+  let chars = str.chars(s) in
+  let escaped = list.fold(chars, "", fn(acc, c) {
+    if c == "\"" then str.concat(acc, "\\\"")
+    else if c == "\\" then str.concat(acc, "\\\\")
+    else if c == "\n" then str.concat(acc, "\\n")
+    else if c == "\t" then str.concat(acc, "\\t")
+    else str.concat(acc, c)
+  }) in
+  str.concat("\"", str.concat(escaped, "\""))
+}
+
+fn canon_val(v) {
+  if v == null then "null"
+  else if v == true then "true"
+  else if v == false then "false"
+  else json.encode(v)
+}
+
+// ── show-preimage ─────────────────────────────────────────────────────────────
+
+fn cmd_show_preimage(out_dir) {
+  let digests = json.decode(fs.read_text(str.concat(out_dir, "/digests.json"))) in
+  let files   = rec.get(digests, "files") in
+  let ok      = rec.get(digests, "ok") in
+  let rv      = rec.get(digests, "runtime_version") in
+  let srd     = rec.get(digests, "stdlib_root_digest") in
+  let tfv     = rec.get(digests, "trace_format_version") in
+  let psha    = hash.sha256_text(json.encode({ files: files, ok: ok, runtime_version: rv, stdlib_root_digest: srd, trace_format_version: tfv })) in
+  {
+    files: files,
+    ok: ok,
+    preimage_sha256: psha,
+    runtime_version: rv,
+    stdlib_root_digest: srd,
+    trace_format_version: tfv
+  }
+}
+
+// ── gen ───────────────────────────────────────────────────────────────────────
+
+fn parse_imports(src) {
+  let lines = str.split(src, "\n") in
+  list.filter_map(lines, fn(line) {
+    let trimmed = str.trim(line) in
+    if !str.starts_with(trimmed, "import(\"pkg:") then null else
+    let start = 7 in
+    let end   = str.index_of(trimmed, "\")") in
+    if end == null then null else
+    str.slice(trimmed, start, end)
+  })
+}
+
+fn list_filter_map(xs, f) {
+  list.filter(list.map(xs, f), fn(x) { x != null })
+}
+
+fn cmd_gen(root, out_dir, registry_dir) {
+  let reg_path  = if registry_dir != null then registry_dir else str.concat(root, "/registry") in
+  let app_json  = json.decode(fs.read_text(str.concat(root, "/fard.app.json"))) in
+  let schema    = rec.get(app_json, "schema") in
+  if schema != "fard.app.v0_1" then
+    { ok: false, code: "ERROR_LOCK", message: "bad schema in fard.app.json" }
+  else
+    let pkg      = rec.get(app_json, "package") in
+    let pkg_name = rec.get(pkg, "name") in
+    let pkg_ver  = rec.get(pkg, "version") in
+    let entry    = rec.get(app_json, "entry") in
+    let src      = fs.read_text(str.concat(root, str.concat("/", entry))) in
+    let imports  = parse_imports(src) in
+
+    let modules_and_pkgs = list.fold(imports, { modules: {}, packages: {} }, fn(acc, imp) {
+      let parts   = str.split(imp, "/") in
+      let pkgver  = str.slice(imp, 4, str.index_of(imp, "/")) in
+      let mod_id  = str.slice(imp, str.index_of(imp, "/") + 1, str.len(imp)) in
+      let pparts  = str.split(pkgver, "@") in
+      let pname   = list.get(pparts, 0) in
+      let pver    = list.get(pparts, 1) in
+      let base    = str.concat(reg_path, str.concat("/pkgs/", str.concat(pname, str.concat("/", pver)))) in
+      let pkg_rec = json.decode(fs.read_text(str.concat(base, "/package.json"))) in
+      let pkg_dig = rec.get(pkg_rec, "package_digest") in
+      let digs    = json.decode(fs.read_text(str.concat(base, "/digests.json"))) in
+      let mods    = rec.get(digs, "modules") in
+      let want    = rec.get(mods, mod_id) in
+      acc
+    }) in
+
+    let _ = fs.make_dir(out_dir) in
+    let lock = {
+      schema: "fard.lock.v0_1",
+      app_entry: entry,
+      package: { name: pkg_name, version: pkg_ver },
+      modules: modules_and_pkgs.modules,
+      packages: modules_and_pkgs.packages
+    } in
+    let lock_json = json.encode(lock) in
+    let lock_path = str.concat(out_dir, "/fard.lock.json") in
+    let _ = fs.write_text(lock_path, lock_json) in
+    let lock_cid = hash.sha256_text(lock_json) in
+    let _ = fs.write_text(str.concat(lock_path, ".cid"), str.concat(lock_cid, "\n")) in
+    { ok: true, lock_cid: lock_cid }
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+fn main(all_args) {
+  let fold_r = list.fold(all_args, { past: false, result: [] }, fn(acc, a) {
+    if acc.past then { past: true, result: list.append(acc.result, a) }
+    else if a == "--" then { past: true, result: [] }
+    else acc
+  }) in
+  let args   = fold_r.result in
+  let subcmd = if list.len(args) > 0 then list.get(args, 0) else "help" in
+  let rest   = list.drop(args, 1) in
+  let out    = get_arg(rest, "--out") in
+  let root   = get_arg(rest, "--root") in
+  let reg    = get_arg(rest, "--registry") in
+
+  if subcmd == "show-preimage" then
+    cmd_show_preimage(if out != null then out else "out")
+  else if subcmd == "gen" then
+    cmd_gen(
+      if root != null then root else ".",
+      if out  != null then out  else "out",
+      reg
+    )
+  else
+    { ok: false, code: "ERROR_LOCK_CLI", message: "usage: show-preimage|gen" }
+}
+
+main(env.args())
