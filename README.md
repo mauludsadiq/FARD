@@ -48,6 +48,7 @@ Self-hosting progression:
   farddoc       200 lines FARD    done
   fardfmt       171 lines FARD    done
   fardregistry  193 lines FARD    done
+  fard-build    183 lines FARD    done
   interpreter   ~14,000 lines     requires parser primitives
 
 -----
@@ -396,7 +397,7 @@ Each step produces a receipt. `build.receipt.json` chains all step digests. Any 
 |`fard-lsp`    |Language Server Protocol                               |
 |`fardc`       |Compiler frontend and canonicalizer                    |
 |`farddoc`     |Documentation generator — self-hosted in FARD           |
-|`fard-build`  |Verifiable build system                                |
+|`fard-build`  |Verifiable build system — self-hosted in FARD          |
 
 ```bash
 fardrun run --program main.fard --out ./out   # produces result.json, trace.ndjson, digests.json
