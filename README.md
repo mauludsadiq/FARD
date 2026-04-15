@@ -46,7 +46,7 @@ It documents itself correctly.
 Self-hosting progression:
 
   farddoc       200 lines FARD    done
-  fardfmt       ~150 lines est    candidate
+  fardfmt       171 lines FARD    done
   fardregistry  ~300 lines est    candidate
   interpreter   ~14,000 lines     requires parser primitives
 
@@ -395,7 +395,7 @@ Each step produces a receipt. `build.receipt.json` chains all step digests. Any 
 |`fardpkg`     |Package management                                     |
 |`fard-lsp`    |Language Server Protocol                               |
 |`fardc`       |Compiler frontend and canonicalizer                    |
-|`farddoc`     |Documentation generator — self-hosted in FARD          |
+|`farddoc`     |Documentation generator — self-hosted in FARD           |
 |`fard-build`  |Verifiable build system                                |
 
 ```bash
