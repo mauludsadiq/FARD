@@ -47,7 +47,7 @@ Self-hosting progression:
 
   farddoc       200 lines FARD    done
   fardfmt       171 lines FARD    done
-  fardregistry  ~300 lines est    candidate
+  fardregistry  193 lines FARD    done
   interpreter   ~14,000 lines     requires parser primitives
 
 -----
@@ -388,7 +388,7 @@ Each step produces a receipt. `build.receipt.json` chains all step digests. Any 
 |`fardfmt`     |Canonical formatter                                    |
 |`fardcheck`   |HM-style type checker                                  |
 |`fardwasm`    |FARD → WAT/WASM compiler                               |
-|`fardregistry`|Receipt registry server with CRDT routes               |
+|`fardregistry`|Receipt registry server — self-hosted in FARD          |
 |`fardlock`    |Lockfile generation and enforcement                    |
 |`fardbundle`  |Bundle build, verify, and run                          |
 |`fardverify`  |Trace, chain, proof, and bundle verification           |
