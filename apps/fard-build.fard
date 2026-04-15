@@ -1,0 +1,183 @@
+/// fard-build — Verifiable build system
+///
+/// Reads fard.build.toml, runs each step as a witnessed fardrun execution,
+/// chains receipts cryptographically, produces build/build.receipt.json.
+///
+/// fard.build.toml format:
+///   [build]
+///   name = "my-project"
+///   version = "1.0.0"
+///
+///   [[step]]
+///   name = "compile"
+///   program = "steps/compile.fard"
+///   out = "build/compile"
+///
+/// Usage:
+///   fardrun run --program apps/fard-build.fard -- --config fard.build.toml
+
+import("std/fs")      as fs
+import("std/str")     as str
+import("std/list")    as list
+import("std/json")    as json
+import("std/env")     as env
+import("std/rec")     as rec
+import("std/process") as process
+import("std/crypto")  as crypto
+
+// ── Argument parsing ──────────────────────────────────────────────────────────
+
+let args = env.args()
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, result: { none: null } }, fn(acc, item) {
+    if acc.found then { found: false, result: { some: item } }
+    else if item == flag then { found: true, result: { none: null } }
+    else acc
+  }) in
+  r.result
+}
+
+fn has_flag(args, flag) {
+  rec.has(list.find(args, fn(a) { a == flag }), "some")
+}
+
+let config_arg  = get_arg(args, "--config")
+let out_arg     = get_arg(args, "--out")
+let step_arg    = get_arg(args, "--step")
+let verify_flag = has_flag(args, "--verify")
+
+let config_path = if rec.has(config_arg, "some") then config_arg.some else "fard.build.toml"
+let out_dir     = if rec.has(out_arg, "some") then out_arg.some else "build"
+
+// ── TOML parser ───────────────────────────────────────────────────────────────
+
+fn parse_toml_value(v) {
+  let v = str.trim(v) in
+  let v = if str.starts_with(v, "\"") && str.ends_with(v, "\"")
+          then str.slice(v, 1, str.len(v) - 1)
+          else v in
+  v
+}
+
+fn parse_depends_on(v) {
+  let v = str.trim(v) in
+  let inner = if str.starts_with(v, "[") then str.slice(v, 1, str.len(v) - 1) else v in
+  list.filter(
+    list.map(str.split(inner, ","), fn(s) {
+      let s = str.trim(s) in
+      if str.starts_with(s, "\"") then str.slice(s, 1, str.len(s) - 1) else s
+    }),
+    fn(s) { s != "" }
+  )
+}
+
+fn parse_build_toml(src) {
+  let lines = str.split(src, "\n") in
+  let state = list.fold(lines, {
+    name: "unnamed", version: "0.0.0",
+    steps: [], current: null,
+    in_build: false, in_step: false
+  }, fn(acc, raw) {
+    let line = str.trim(raw) in
+    if line == "" || str.starts_with(line, "#") then acc
+    else if line == "[build]" then
+      let steps = if acc.current != null then list.append(acc.steps, acc.current) else acc.steps in
+      { name: acc.name, version: acc.version, steps: steps, current: null, in_build: true, in_step: false }
+    else if line == "[[step]]" then
+      let steps = if acc.current != null then list.append(acc.steps, acc.current) else acc.steps in
+      { name: acc.name, version: acc.version, steps: steps,
+        current: { name: "", program: "", out: "", depends_on: [] },
+        in_build: false, in_step: true }
+    else if str.starts_with(line, "[") then
+      { name: acc.name, version: acc.version, steps: acc.steps, current: acc.current, in_build: false, in_step: false }
+    else if str.contains(line, "=") then
+      let idx = str.index_of(line, "=") in
+      let k   = str.trim(str.slice(line, 0, idx)) in
+      let v   = parse_toml_value(str.slice(line, idx + 1, str.len(line))) in
+      if acc.in_build then
+        if k == "name" then { name: v, version: acc.version, steps: acc.steps, current: acc.current, in_build: true, in_step: false }
+        else if k == "version" then { name: acc.name, version: v, steps: acc.steps, current: acc.current, in_build: true, in_step: false }
+        else acc
+      else if acc.in_step && acc.current != null then
+        let c = acc.current in
+        let c = if k == "name" then { name: v, program: c.program, out: c.out, depends_on: c.depends_on }
+                else if k == "program" then { name: c.name, program: v, out: c.out, depends_on: c.depends_on }
+                else if k == "out" then { name: c.name, program: c.program, out: v, depends_on: c.depends_on }
+                else if k == "depends_on" then { name: c.name, program: c.program, out: c.out, depends_on: parse_depends_on(v) }
+                else c in
+        { name: acc.name, version: acc.version, steps: acc.steps, current: c, in_build: false, in_step: true }
+      else acc
+    else acc
+  }) in
+  let steps = if state.current != null then list.append(state.steps, state.current) else state.steps in
+  { name: state.name, version: state.version, steps: steps }
+}
+
+// ── Step execution ────────────────────────────────────────────────────────────
+
+fn run_step(step, prior_digest) {
+  let _ = fs.make_dir(step.out) in
+  let extra_env = if prior_digest != null
+    then [{ key: "FARD_PRIOR_DIGEST", value: prior_digest }, { key: "FARD_BUILD_STEP", value: step.name }]
+    else [{ key: "FARD_BUILD_STEP", value: step.name }] in
+  let result = process.capture("fardrun", ["run", "--program", step.program, "--out", step.out]) in
+  let ok      = result.exit_code == 0 in
+  let all_out = str.concat(result.stdout, result.stderr) in
+  let digest_line = list.find(str.split(all_out, "\n"), fn(l) { str.starts_with(l, "fard_run_digest=") }) in
+  let digest = if rec.has(digest_line, "some")
+    then str.slice(digest_line.some, 16, str.len(digest_line.some))
+    else null in
+  { name: step.name, ok: ok, digest: digest, duration_ms: 0, error: if ok then null else result.stderr }
+}
+
+// ── Receipt ───────────────────────────────────────────────────────────────────
+
+fn build_receipt(config, results) {
+  let chain_input = str.join(
+    list.filter(list.map(results, fn(r) { if r.digest != null then r.digest else "" }), fn(s) { s != "" }),
+    ":"
+  ) in
+  let chain_digest = str.concat("sha256:", crypto.hmac_sha256("", chain_input)) in
+  let all_ok = list.all(results, fn(r) { r.ok }) in
+  {
+    kind: "fard/build_receipt/v0.1",
+    name: config.name,
+    version: config.version,
+    ok: all_ok,
+    chain_digest: chain_digest,
+    step_count: list.len(results),
+    passed: list.len(list.filter(results, fn(r) { r.ok })),
+    failed: list.len(list.filter(results, fn(r) { !r.ok })),
+    steps: results
+  }
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+let config_src = fs.read_text(config_path)
+let config     = parse_build_toml(config_src)
+
+let only_step  = if rec.has(step_arg, "some") then step_arg.some else null
+
+let steps_to_run = if only_step != null
+  then list.filter(config.steps, fn(s) { s.name == only_step })
+  else config.steps
+
+let _ = fs.make_dir(out_dir)
+
+let run_state = list.fold(steps_to_run, { results: [], last_digest: null, failed: false }, fn(acc, step) {
+  if acc.failed then acc else
+  let prior = if list.len(step.depends_on) > 0 then
+    let dep_result = list.find(acc.results, fn(r) { list.any(step.depends_on, fn(d) { d == r.name }) }) in
+    if rec.has(dep_result, "some") then dep_result.some.digest else acc.last_digest
+  else acc.last_digest in
+  let result = run_step(step, prior) in
+  { results: list.append(acc.results, result), last_digest: result.digest, failed: !result.ok }
+})
+
+let receipt      = build_receipt(config, run_state.results)
+let receipt_path = str.concat(out_dir, "/build.receipt.json")
+let _            = fs.write_text(receipt_path, json.encode(receipt))
+
+receipt
