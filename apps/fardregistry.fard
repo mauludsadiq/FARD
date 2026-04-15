@@ -1,0 +1,138 @@
+import("std/net")    as net
+import("std/sqlite") as sqlite
+import("std/json")   as json
+import("std/str")    as str
+import("std/list")   as list
+import("std/env")    as env
+import("std/rec")    as rec
+import("std/int")    as int
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, result: { none: null } }, fn(acc, item) {
+    if acc.found then { found: false, result: { some: item } }
+    else if item == flag then { found: true, result: { none: null } }
+    else acc
+  }) in
+  r.result
+}
+
+let args    = env.args()
+let port_r  = get_arg(args, "--port")
+let db_r    = get_arg(args, "--db")
+let port    = if rec.has(port_r, "some") then int.parse(port_r.some).v else 7370
+let db_path = if rec.has(db_r, "some") then db_r.some else "fardregistry.db"
+
+let db = sqlite.open(db_path)
+let _  = sqlite.exec(db, "PRAGMA journal_mode=WAL")
+let _  = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS receipts (run_id TEXT PRIMARY KEY, raw_json TEXT NOT NULL, published_at INTEGER NOT NULL DEFAULT (strftime('%s','now')))")
+let _  = sqlite.exec(db, "CREATE TABLE IF NOT EXISTS packages (name TEXT NOT NULL, version TEXT NOT NULL, entry_digest TEXT NOT NULL, tarball_url TEXT NOT NULL, published_at INTEGER NOT NULL DEFAULT (strftime('%s','now')), PRIMARY KEY (name, version))")
+
+fn json_resp(status, body) {
+  { status: status, body: body, headers: { "content-type": "application/json", "access-control-allow-origin": "*" } }
+}
+
+fn err_resp(status, msg) {
+  json_resp(status, json.encode({ err: msg }))
+}
+
+fn handle_health(req) {
+  { status: 200, body: "ok", headers: { "content-type": "text/plain" } }
+}
+
+fn handle_stats(req) {
+  let count_rows = sqlite.query(db, "SELECT COUNT(*) as n FROM receipts") in
+  let count = rec.get(list.get(count_rows, 0), "n") in
+  let id_rows = sqlite.query(db, "SELECT run_id FROM receipts ORDER BY published_at DESC LIMIT 100") in
+  let ids = list.map(id_rows, fn(r) { rec.get(r, "run_id") }) in
+  json_resp(200, json.encode({ count: count, run_ids: ids }))
+}
+
+fn handle_publish(req) {
+  let body = rec.get(req, "body") in
+  let v = json.decode(body) in
+  let run_id = rec.get(v, "run_id") in
+  if run_id == null then err_resp(400, "invalid JSON or missing run_id") else
+  if false then err_resp(400, "x") else
+  let run_id = run_id in
+    if run_id == null then err_resp(400, "missing run_id")
+    else if !str.starts_with(run_id, "sha256:") then err_resp(400, "run_id must start with sha256:")
+    else
+      let safe_body = str.replace(body, "'", "''") in
+      let _ = sqlite.exec(db, str.concat("INSERT OR REPLACE INTO receipts (run_id, raw_json) VALUES ('", str.concat(run_id, str.concat("', '", str.concat(safe_body, "')")))))  in
+      json_resp(200, json.encode({ ok: run_id }))
+}
+
+fn handle_get_receipt(run_id) {
+  let rows = sqlite.query(db, str.concat("SELECT raw_json FROM receipts WHERE run_id = '", str.concat(run_id, "'"))) in
+  if list.len(rows) == 0 then err_resp(404, str.concat("not found: ", run_id))
+  else json_resp(200, rec.get(list.get(rows, 0), "raw_json"))
+}
+
+fn verify_chain(run_id, depth) {
+  if depth > 64 then { err: "chain too deep" } else
+  let rows = sqlite.query(db, str.concat("SELECT raw_json FROM receipts WHERE run_id = '", str.concat(run_id, "'"))) in
+  if list.len(rows) == 0 then { err: str.concat("not found: ", run_id) }
+  else
+    let raw = rec.get(list.get(rows, 0), "raw_json") in
+    let v    = json.decode(raw) in
+    let deps = rec.get(v, "derived_from") in
+      let dep_list = if deps == null then [] else deps in
+      list.fold(dep_list, { ok: depth, err: null }, fn(acc, dep) {
+        if acc.err != null then acc else
+        let r = verify_chain(dep, depth + 1) in
+        if rec.has(r, "err") then { ok: acc.ok, err: r.err }
+        else if r.ok > acc.ok then { ok: r.ok, err: null }
+        else acc
+      })
+}
+
+fn handle_verify(run_id) {
+  let r = verify_chain(run_id, 0) in
+  if r.err != null then err_resp(404, r.err)
+  else json_resp(200, json.encode({ ok: true, run_id: run_id, depth: r.ok }))
+}
+
+fn handle_list_packages(req) {
+  let rows = sqlite.query(db, "SELECT name, version, entry_digest, tarball_url FROM packages ORDER BY name, published_at DESC") in
+  json_resp(200, json.encode(rows))
+}
+
+fn handle_list_package_versions(name) {
+  let rows = sqlite.query(db, str.concat("SELECT version, entry_digest, tarball_url FROM packages WHERE name='", str.concat(name, "' ORDER BY published_at DESC"))) in
+  json_resp(200, json.encode(rows))
+}
+
+fn handle_publish_package(req) {
+  let body = rec.get(req, "body") in
+  let v    = json.decode(body) in
+  let name = rec.get(v, "name") in
+    let version = rec.get(v, "version") in
+    let digest  = rec.get(v, "entry_digest") in
+    let url     = rec.get(v, "tarball_url") in
+    if name == null || version == null then err_resp(400, "name and version required")
+    else
+      let d = if digest == null then "" else digest in
+      let u = if url == null then "" else url in
+      let tbl = "packages (name,version,entry_digest,tarball_url)" in
+      let vals = str.concat(name, str.concat("','", str.concat(version, str.concat("','", str.concat(d, str.concat("','", str.concat(u, "')"))))))) in
+      let sql = str.concat("INSERT OR REPLACE ", str.concat("INTO ", str.concat(tbl, str.concat(" VALUES ('", vals)))) in
+      let _ = sqlite.exec(db, sql) in
+      let _ = sqlite.exec(db, sql) in
+      json_resp(200, json.encode({ ok: str.concat(name, str.concat("@", version)) }))
+}
+
+fn handler(req) {
+  let method = rec.get(req, "method") in
+  let path   = rec.get(req, "path") in
+  if path == "/health" then handle_health(req)
+  else if path == "/stats" then handle_stats(req)
+  else if path == "/publish" && method == "POST" then handle_publish(req)
+  else if path == "/packages" && method == "GET" then handle_list_packages(req)
+  else if path == "/packages/publish" && method == "POST" then handle_publish_package(req)
+  else if str.starts_with(path, "/receipt/") then handle_get_receipt(str.slice(path, 9, str.len(path)))
+  else if str.starts_with(path, "/verify/") then handle_verify(str.slice(path, 8, str.len(path)))
+  else if str.starts_with(path, "/packages/") then handle_list_package_versions(str.slice(path, 10, str.len(path)))
+  else err_resp(404, "not found")
+}
+
+let _ = net.serve(port, handler)
