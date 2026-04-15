@@ -1,0 +1,227 @@
+/// farddoc — Generate Markdown documentation from FARD source comments.
+///
+/// Doc comment syntax:
+///   /// Single line doc comment
+///   fn name(params) { ... }
+///
+/// Usage:
+///   fardrun run --program apps/farddoc.fard -- --program file.fard
+///   fardrun run --program apps/farddoc.fard -- --package path/to/pkg
+
+import("std/str")  as str
+import("std/list") as list
+import("std/fs")   as fs
+import("std/env")  as env
+import("std/rec")  as rec
+
+// ── Argument parsing ──────────────────────────────────────────────────────────
+
+let args = env.args()
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, result: { none: null } }, fn(acc, item) {
+    if acc.found then { found: false, result: { some: item } }
+    else if item == flag then { found: true, result: { none: null } }
+    else acc
+  }) in
+  r.result
+}
+
+let program_arg = get_arg(args, "--program")
+let package_arg = get_arg(args, "--package")
+let out_arg     = get_arg(args, "--out")
+
+// ── Source file collection ────────────────────────────────────────────────────
+
+fn collect_fard_files(path) {
+  let info = fs.stat(path) in
+  if rec.has(info, "err") then [] else
+  if info.ok.is_dir then
+    let entries = fs.read_dir(path) in
+    if rec.has(entries, "err") then [] else
+    list.flat_map(entries.ok, fn(entry) {
+      if str.ends_with(entry, ".fard") then [entry]
+      else collect_fard_files(entry)
+    })
+  else [path]
+}
+
+let source_files =
+  if rec.has(program_arg, "some") then [program_arg.some]
+  else if rec.has(package_arg, "some") then collect_fard_files(package_arg.some)
+  else []
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn list_last(xs) {
+  list.get(xs, list.len(xs) - 1)
+}
+
+fn list_prepend(item, xs) {
+  list.concat([[item], xs])
+}
+
+fn list_filter_map(xs, f) {
+  list.filter(list.map(xs, f), fn(x) { x != null })
+}
+
+fn str_trim_prefix(s, prefix) {
+  if str.starts_with(s, prefix) then str.slice(s, str.len(prefix), str.len(s))
+  else s
+}
+
+// ── Module name extraction ────────────────────────────────────────────────────
+
+fn extract_module_name(filename) {
+  let parts = str.split(filename, "/") in
+  let base = list_last(parts) in
+  if str.ends_with(base, ".fard") then str.slice(base, 0, str.len(base) - 5)
+  else base
+}
+
+// ── Parameter parsing ─────────────────────────────────────────────────────────
+
+fn parse_one_param(p) {
+  let p = str.trim(p) in
+  if p == "" then null else
+  if str.contains(p, ":") then
+    let idx = str.index_of(p, ":") in
+    { name: str.trim(str.slice(p, 0, idx)), type_hint: str.trim(str.slice(p, idx + 1, str.len(p))) }
+  else
+    { name: p, type_hint: null }
+}
+
+fn parse_params(param_str) {
+  if str.trim(param_str) == "" then [] else
+  list_filter_map(str.split(param_str, ","), parse_one_param)
+}
+
+// ── Doc item extraction ───────────────────────────────────────────────────────
+
+fn extract_items(source, filename) {
+  let lines      = str.split(source, "\n") in
+  let module_name = extract_module_name(filename) in
+
+  let state = list.fold(lines, {
+    items:      [],
+    pending:    [],
+    module_doc: [],
+    saw_item:   false,
+    idx:        0
+  }, fn(acc, line) {
+    let trimmed = str.trim(line) in
+    let idx     = acc.idx + 1 in
+
+    if str.starts_with(trimmed, "///") then
+      let text = str.trim(str.slice(trimmed, 3, str.len(trimmed))) in
+      if !acc.saw_item && list.len(acc.items) == 0 && list.len(acc.pending) == 0 then
+        { items: acc.items, pending: acc.pending, module_doc: list.append(acc.module_doc, text), saw_item: false, idx: idx }
+      else
+        { items: acc.items, pending: list.append(acc.pending, text), module_doc: acc.module_doc, saw_item: acc.saw_item, idx: idx }
+
+    else if str.starts_with(trimmed, "//") then
+      let pending = if str.contains(trimmed, "────") || str.contains(trimmed, "====")
+                    then [] else acc.pending in
+      { items: acc.items, pending: pending, module_doc: acc.module_doc, saw_item: acc.saw_item, idx: idx }
+
+    else if str.starts_with(trimmed, "fn ") then
+      let rest  = str.trim(str.slice(trimmed, 3, str.len(trimmed))) in
+      let pi    = str.index_of(rest, "(") in
+      let name  = str.trim(str.slice(rest, 0, pi)) in
+      let after = str.slice(rest, pi + 1, str.len(rest)) in
+      let ci    = str.index_of(after, ")") in
+      let pstr  = str.slice(after, 0, ci) in
+      let params = parse_params(pstr) in
+      let item  = { t: "fn", name: name, params: params, doc_lines: acc.pending, line: idx } in
+      { items: list.append(acc.items, item), pending: [], module_doc: acc.module_doc, saw_item: true, idx: idx }
+
+    else if str.starts_with(trimmed, "let ") && list.len(acc.pending) > 0 then
+      let rest  = str.trim(str.slice(trimmed, 4, str.len(trimmed))) in
+      let parts = str.split(rest, " ") in
+      let name  = str.replace(list.get(parts, 0), "=", "") in
+      let item  = { t: "let", name: str.trim(name), doc_lines: acc.pending, line: idx } in
+      { items: list.append(acc.items, item), pending: [], module_doc: acc.module_doc, saw_item: true, idx: idx }
+
+    else
+      let pending = if trimmed != "" && !str.starts_with(trimmed, "import") && !str.starts_with(trimmed, "{")
+                    then [] else acc.pending in
+      { items: acc.items, pending: pending, module_doc: acc.module_doc, saw_item: acc.saw_item, idx: idx }
+  }) in
+
+  let module_item = { t: "module", name: module_name, description: state.module_doc, source_file: filename } in
+  list_prepend(module_item, state.items)
+}
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+
+fn render_param_sig(p) {
+  if p.type_hint != null then str.concat(p.name, str.concat(": ", p.type_hint))
+  else p.name
+}
+
+fn render_param_doc(p) {
+  if p.type_hint != null then
+    str.concat("- `", str.concat(p.name, str.concat("` — ", p.type_hint)))
+  else
+    str.concat("- `", str.concat(p.name, "`"))
+}
+
+fn render_item(item) {
+  if item.t == "module" then
+    let desc = if list.len(item.description) > 0
+               then str.concat(str.join(item.description, "\n"), "\n\n")
+               else "" in
+    str.concat("# ", str.concat(item.name, str.concat("\n\n",
+      str.concat(desc, str.concat("*Source: `", str.concat(item.source_file, "`*\n\n---\n\n"))))))
+
+  else if item.t == "fn" then
+    let sig  = str.join(list.map(item.params, render_param_sig), ", ") in
+    let head = str.concat("## `", str.concat(item.name, str.concat("(", str.concat(sig, ")`\n\n")))) in
+    let docs = if list.len(item.doc_lines) > 0
+               then str.concat(str.join(item.doc_lines, "\n"), "\n\n")
+               else "" in
+    let has_types = list.any(item.params, fn(p) { p.type_hint != null }) in
+    let params_section = if has_types then
+      str.concat("**Parameters**\n\n",
+        str.concat(str.join(list.map(item.params, render_param_doc), "\n"), "\n\n"))
+      else "" in
+    str.concat(head, str.concat(docs, str.concat(params_section,
+      str.concat("*Line ", str.concat(str.from(item.line), "*\n\n")))))
+
+  else if item.t == "let" then
+    let head = str.concat("## `", str.concat(item.name, "`\n\n")) in
+    let docs = str.join(item.doc_lines, "\n") in
+    str.concat(head, str.concat(docs, str.concat("\n\n*Line ",
+      str.concat(str.from(item.line), "*\n\n"))))
+
+  else ""
+}
+
+fn render_markdown(items) {
+  str.join(list.map(items, render_item), "")
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+fn process_file(filepath) {
+  let src = fs.read_text(filepath) in
+  let items = extract_items(src, filepath) in
+  { ok: { file: filepath, markdown: render_markdown(items) } }
+}
+
+let out_dir = if rec.has(out_arg, "some") then out_arg.some else "docs/generated"
+let _       = fs.make_dir(out_dir)
+let results = list.map(source_files, process_file)
+
+let written = list.map(results, fn(r) {
+  if rec.has(r, "err") then r else
+  let outpath = str.concat(out_dir, str.concat("/", str.concat(extract_module_name(r.ok.file), ".md"))) in
+  let _ = fs.write_text(outpath, r.ok.markdown) in
+  { ok: outpath }
+})
+
+{
+  generated:       list_filter_map(written, fn(r) { if rec.has(r, "ok") then r.ok else null }),
+  errors:          list_filter_map(written, fn(r) { if rec.has(r, "err") then r.err else null }),
+  files_processed: list.len(source_files)
+}
