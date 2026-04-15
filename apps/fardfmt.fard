@@ -1,0 +1,171 @@
+/// fardfmt — FARD code formatter
+///
+/// Formatting rules:
+///   - 2-space indent inside braces
+///   - Trailing whitespace removed
+///   - Single trailing newline
+///   - Max one consecutive blank line
+///
+/// Usage:
+///   fardrun run --program apps/fardfmt.fard -- --program file.fard
+///   fardrun run --program apps/fardfmt.fard -- --check file.fard
+
+import("std/str")  as str
+import("std/list") as list
+import("std/fs")   as fs
+import("std/env")  as env
+import("std/rec")  as rec
+
+// ── Argument parsing ──────────────────────────────────────────────────────────
+
+let args = env.args()
+
+fn has_flag(args, flag) {
+  rec.has(list.find(args, fn(a) { a == flag }), "some")
+}
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, result: { none: null } }, fn(acc, item) {
+    if acc.found then { found: false, result: { some: item } }
+    else if item == flag then { found: true, result: { none: null } }
+    else acc
+  }) in
+  r.result
+}
+
+let check_mode  = has_flag(args, "--check")
+let program_arg = get_arg(args, "--program")
+let files = list.filter(args, fn(a) { !str.starts_with(a, "--") })
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+fn repeat_str(s, n) {
+  if n <= 0 then "" else str.concat(s, repeat_str(s, n - 1))
+}
+
+fn count_char(s, c) {
+  let chars = str.chars(s) in
+  list.fold(chars, 0, fn(acc, ch) { if ch == c then acc + 1 else acc })
+}
+
+// Count braces outside of string literals
+fn count_unquoted(line, target) {
+  let chars = str.chars(line) in
+  let r = list.fold(chars, { count: 0, in_str: false, escaped: false }, fn(acc, c) {
+    if acc.escaped then { count: acc.count, in_str: acc.in_str, escaped: false }
+    else if acc.in_str && c == "\\" then { count: acc.count, in_str: true, escaped: true }
+    else if acc.in_str && c == "\"" then { count: acc.count, in_str: false, escaped: false }
+    else if !acc.in_str && c == "\"" then { count: acc.count, in_str: true, escaped: false }
+    else if !acc.in_str && c == target then { count: acc.count + 1, in_str: false, escaped: false }
+    else { count: acc.count, in_str: acc.in_str, escaped: false }
+  }) in
+  r.count
+}
+
+// ── Line formatter ────────────────────────────────────────────────────────────
+// Process each line by splitting on string literals first,
+// then normalizing spacing in the non-string parts.
+
+fn normalize_spaces(s) {
+  // Collapse multiple spaces to one
+  let r = list.fold(str.chars(s), { out: "", prev_space: false }, fn(acc, c) {
+    if c == " " then
+    if acc.prev_space then acc
+    else { out: str.concat(acc.out, " "), prev_space: true }
+    else { out: str.concat(acc.out, c), prev_space: false }
+  }) in
+  str.trim(r.out)
+}
+
+fn format_line(line, indent) {
+  let trimmed = str.trim(line) in
+  if trimmed == "" then "" else
+  let prefix = repeat_str(" ", indent) in
+  str.concat(prefix, trimmed)
+}
+
+// ── Source formatter ──────────────────────────────────────────────────────────
+
+fn format_src(src) {
+  let lines = str.split(src, "\n") in
+
+  let state = list.fold(lines, { out: [], indent: 0, prev_blank: false }, fn(acc, line) {
+    let trimmed = str.trim(line) in
+
+    if trimmed == "" then
+    if !acc.prev_blank && list.len(acc.out) > 0 then
+    { out: list.append(acc.out, ""), indent: acc.indent, prev_blank: true }
+    else
+    { out: acc.out, indent: acc.indent, prev_blank: true }
+    else
+
+    // Count leading close braces to reduce indent before this line
+    let leading_closes = list.fold(str.chars(trimmed), { n: 0, done: false }, fn(a, c) {
+      if a.done then a
+      else if c == "}" then { n: a.n + 1, done: false }
+      else { n: a.n, done: true }
+    }).n in
+
+    let indent = if leading_closes > 0 && acc.indent >= leading_closes * 2
+    then acc.indent - leading_closes * 2
+    else acc.indent in
+
+    let formatted = format_line(trimmed, indent) in
+
+    // Compute next indent from net brace count
+    let opens  = count_unquoted(trimmed, "{") in
+    let closes = count_unquoted(trimmed, "}") in
+    let net    = opens - closes in
+
+    let next_indent =
+    if net > 0 then indent + net * 2
+    else if net < 0 then
+    let non_leading_closes = closes - leading_closes in
+    let trailing_net = opens - non_leading_closes in
+    if trailing_net < 0 && indent >= (-trailing_net) * 2
+    then indent - (-trailing_net) * 2
+    else indent
+    else indent in
+
+    { out: list.append(acc.out, formatted), indent: next_indent, prev_blank: false }
+  }) in
+
+  // Drop trailing blank lines
+  let trimmed_lines = list.fold(
+  list.build(list.len(state.out), fn(i) { list.get(state.out, list.len(state.out) - 1 - i) }),
+  { lines: [], dropping: true },
+  fn(acc, line) {
+    if acc.dropping && line == "" then acc
+    else { lines: list.append(acc.lines, line), dropping: false }
+  }
+  ).lines in
+
+  // Reverse and join
+  let n = list.len(trimmed_lines) in
+  let reversed = list.build(n, fn(i) { list.get(trimmed_lines, n - 1 - i) }) in
+  str.concat(str.join(reversed, "\n"), "\n")
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+fn process_file(filepath) {
+  let src = fs.read_text(filepath) in
+  let formatted = format_src(src) in
+  if formatted == src then { ok: { file: filepath, changed: false } }
+  else if check_mode then { ok: { file: filepath, changed: true } }
+  else
+  let _ = fs.write_text(filepath, formatted) in
+  { ok: { file: filepath, changed: true } }
+}
+
+let source_files =
+if rec.has(program_arg, "some") then [program_arg.some]
+else files
+
+let results = list.map(source_files, process_file)
+
+{
+  files_processed: list.len(source_files),
+  changed: list.len(list.filter(results, fn(r) { rec.has(r, "ok") && r.ok.changed })),
+  results: results
+}
