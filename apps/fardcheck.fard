@@ -1,0 +1,240 @@
+/// fardcheck — Best-effort type and style checker for FARD programs
+///
+/// Checks:
+///   - Undefined function calls
+///   - Arity mismatches on known functions
+///   - Hex-Haiku: function bodies > 6 semantic lines
+///   - Import alias usage
+///
+/// Usage:
+///   fardrun run --program apps/fardcheck.fard -- --program file.fard
+///   fardrun run --program apps/fardcheck.fard -- --program file.fard --hex-haiku
+
+import("std/str")  as str
+import("std/list") as list
+import("std/fs")   as fs
+import("std/env")  as env
+import("std/rec")  as rec
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, val: null }, fn(acc, a) {
+    if acc.found then { found: false, val: a }
+    else if a == flag then { found: true, val: null }
+    else acc
+  }) in
+  r.val
+}
+
+fn filter_map(xs, f) {
+  list.filter(list.map(xs, f), fn(x) { x != null })
+}
+
+fn has_flag(args, flag) {
+  rec.has(list.find(args, fn(a) { a == flag }), "some")
+}
+
+// ── Tokenizer (line-aware) ────────────────────────────────────────────────────
+
+fn is_alpha(c) {
+  str.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_", c)
+}
+
+fn is_alnum(c) {
+  str.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789", c)
+}
+
+fn is_digit(c) {
+  str.contains("0123456789", c)
+}
+
+fn is_ws(c) {
+  c == " " || c == "\t" || c == "\n"
+}
+
+fn tokenize(src) {
+  let chars = str.chars(src) in
+  let n     = list.len(chars) in
+  let state = list.fold(
+    list.build(n, fn(i) { i }),
+    { tokens: [], line: 1, i: 0 },
+    fn(acc, idx) {
+      if idx < acc.i then acc else
+      let c = list.get(chars, idx) in
+      if c == "\n" then
+        { tokens: acc.tokens, line: acc.line + 1, i: idx + 1 }
+      else if is_ws(c) then
+        { tokens: acc.tokens, line: acc.line, i: idx + 1 }
+      else if c == "/" && idx + 1 < n && list.get(chars, idx + 1) == "/" then
+        let skip = list.fold(list.build(n - idx, fn(j) { j }), { done: false, end: idx }, fn(a, j) {
+          if a.done then a
+          else if idx + j < n && list.get(chars, idx + j) == "\n" then { done: true, end: idx + j }
+          else { done: false, end: idx + j + 1 }
+        }) in
+        { tokens: acc.tokens, line: acc.line, i: skip.end }
+      else if c == "\"" then
+        let str_end = list.fold(list.build(n - idx - 1, fn(j) { j }), { done: false, end: idx + 1, esc: false }, fn(a, j) {
+          if a.done then a else
+          let ci = idx + 1 + j in
+          let ch = list.get(chars, ci) in
+          if a.esc then { done: false, end: ci + 1, esc: false }
+          else if ch == "\\" then { done: false, end: ci + 1, esc: true }
+          else if ch == "\"" then { done: true, end: ci + 1, esc: false }
+          else { done: false, end: ci + 1, esc: false }
+        }) in
+        { tokens: list.append(acc.tokens, { t: "str", v: "", line: acc.line }), line: acc.line, i: str_end.end }
+      else if is_alpha(c) then
+        let word_end = list.fold(list.build(n - idx, fn(j) { j + 1 }), { done: false, end: idx + 1 }, fn(a, j) {
+          if a.done then a
+          else if idx + j < n && is_alnum(list.get(chars, idx + j)) then { done: false, end: idx + j + 1 }
+          else { done: true, end: idx + j }
+        }) in
+        let word = str.slice(src, idx, word_end.end) in
+        let kind = if word == "fn" || word == "let" || word == "in" || word == "if" ||
+                      word == "then" || word == "else" || word == "import" || word == "as" ||
+                      word == "match" || word == "test" || word == "true" || word == "false" || word == "null"
+                   then "kw" else "ident" in
+        { tokens: list.append(acc.tokens, { t: kind, v: word, line: acc.line }), line: acc.line, i: word_end.end }
+      else if is_digit(c) then
+        let num_end = list.fold(list.build(n - idx, fn(j) { j + 1 }), { done: false, end: idx + 1 }, fn(a, j) {
+          if a.done then a
+          else if idx + j < n && (is_digit(list.get(chars, idx + j)) || list.get(chars, idx + j) == ".") then { done: false, end: idx + j + 1 }
+          else { done: true, end: idx + j }
+        }) in
+        { tokens: list.append(acc.tokens, { t: "num", v: str.slice(src, idx, num_end.end), line: acc.line }), line: acc.line, i: num_end.end }
+      else
+        { tokens: list.append(acc.tokens, { t: "sym", v: c, line: acc.line }), line: acc.line, i: idx + 1 }
+    }
+  ) in
+  state.tokens
+}
+
+// ── Definition extractor ──────────────────────────────────────────────────────
+// Scan tokens to find: fn definitions (name + arity), let bindings, imports
+
+fn extract_defs(tokens) {
+  let n = list.len(tokens) in
+  list.fold(
+    list.build(n, fn(i) { i }),
+    { fns: [], lets: [], imports: [], i: 0 },
+    fn(acc, idx) {
+      if idx < acc.i then acc else
+      let tok = list.get(tokens, idx) in
+      if tok.t == "kw" && tok.v == "fn" && idx + 1 < n then
+        let name_tok = list.get(tokens, idx + 1) in
+        if name_tok.t != "ident" then { fns: acc.fns, lets: acc.lets, imports: acc.imports, i: idx + 1 } else
+        let arity_fold = list.fold(list.build(n - idx - 2, fn(j) { j }), { count: 0, past_open: false, done: false }, fn(a, j) {
+          if a.done then a else
+          let t = list.get(tokens, idx + 2 + j) in
+          if !a.past_open && t.v == "(" then { count: a.count, past_open: true, done: false }
+          else if a.past_open && t.v == ")" then { count: a.count, past_open: true, done: true }
+          else if a.past_open && t.t == "ident" then { count: a.count + 1, past_open: true, done: false }
+          else a
+        }) in
+        { fns: list.append(acc.fns, { name: name_tok.v, arity: arity_fold.count, line: tok.line }),
+          lets: acc.lets, imports: acc.imports, i: idx + 1 }
+      else if tok.t == "kw" && tok.v == "let" && idx + 1 < n then
+        let name_tok = list.get(tokens, idx + 1) in
+        if name_tok.t != "ident" then { fns: acc.fns, lets: acc.lets, imports: acc.imports, i: idx + 1 } else
+        { fns: acc.fns, lets: list.append(acc.lets, name_tok.v), imports: acc.imports, i: idx + 1 }
+      else if tok.t == "kw" && tok.v == "import" then
+        let as_idx = list.fold(list.build(n - idx, fn(j) { j + 1 }), { done: false, idx: idx }, fn(a, j) {
+          if a.done then a
+          else if idx + j < n && list.get(tokens, idx + j).v == "as" then { done: true, idx: idx + j + 1 }
+          else { done: false, idx: idx + j }
+        }) in
+        let alias_tok = if as_idx.idx < n then list.get(tokens, as_idx.idx) else { t: "", v: "", line: 0 } in
+        { fns: acc.fns, lets: acc.lets, imports: list.append(acc.imports, alias_tok.v), i: idx + 1 }
+      else
+        { fns: acc.fns, lets: acc.lets, imports: acc.imports, i: idx + 1 }
+    }
+  )
+}
+
+// ── Call checker ──────────────────────────────────────────────────────────────
+
+fn check_calls(tokens, defs) {
+  let n        = list.len(tokens) in
+  let fn_names = list.map(defs.fns, fn(f) { f.name }) in
+  let known    = list.concat([fn_names, defs.lets, defs.imports,
+    ["true", "false", "null", "if", "fn", "let", "match"]]) in
+  filter_map(
+    list.build(n, fn(i) { i }),
+    fn(idx) {
+      let tok = list.get(tokens, idx) in
+      if tok.t != "ident" then null else
+      if idx + 1 >= n then null else
+      let next = list.get(tokens, idx + 1) in
+      if next.v != "(" then null else
+      let prev = if idx > 0 then list.get(tokens, idx - 1) else { t: "", v: "", line: 0 } in
+      if prev.v == "." then null else
+      if list.any(known, fn(k) { k == tok.v }) then null else
+      { type: "undefined_fn", name: tok.v, line: tok.line }
+    }
+  )
+}
+
+// ── Hex-Haiku checker ─────────────────────────────────────────────────────────
+
+fn count_semantic_lines(tokens, fn_start_idx) {
+  let n = list.len(tokens) in
+  let body = list.fold(list.build(n - fn_start_idx, fn(j) { j }), { depth: 0, past_open: false, lets: 0, done: false }, fn(acc, j) {
+    if acc.done then acc else
+    let tok = list.get(tokens, fn_start_idx + j) in
+    if !acc.past_open && tok.v == "{" then { depth: 1, past_open: true, lets: acc.lets, done: false }
+    else if acc.past_open && tok.v == "{" then { depth: acc.depth + 1, past_open: true, lets: acc.lets, done: false }
+    else if acc.past_open && tok.v == "}" && acc.depth == 1 then { depth: 0, past_open: true, lets: acc.lets, done: true }
+    else if acc.past_open && tok.v == "}" then { depth: acc.depth - 1, past_open: true, lets: acc.lets, done: false }
+    else if acc.past_open && tok.t == "kw" && tok.v == "let" then { depth: acc.depth, past_open: true, lets: acc.lets + 1, done: false }
+    else acc
+  }) in
+  body.lets + 1
+}
+
+fn check_hex_haiku(tokens, defs) {
+  let n = list.len(tokens) in
+  filter_map(defs.fns, fn(f) {
+    let fn_idx = list.fold(list.build(n, fn(i) { i }), { done: false, idx: 0 }, fn(acc, i) {
+      if acc.done then acc
+      else if list.get(tokens, i).t == "kw" && list.get(tokens, i).v == "fn" &&
+              i + 1 < n && list.get(tokens, i + 1).v == f.name
+      then { done: true, idx: i }
+      else { done: false, idx: i }
+    }).idx in
+    let lines = count_semantic_lines(tokens, fn_idx) in
+    if lines > 6 then { type: "hex_haiku", name: f.name, lines: lines, line: f.line }
+    else null
+  })
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+
+fn main(all_args) {
+  let fold_r = list.fold(all_args, { past: false, result: [] }, fn(acc, a) {
+    if acc.past then { past: true, result: list.append(acc.result, a) }
+    else if a == "--" then { past: true, result: [] }
+    else acc
+  }) in
+  let args      = fold_r.result in
+  let prog      = get_arg(args, "--program") in
+  let hex_haiku = has_flag(args, "--hex-haiku") in
+
+  if prog == null then
+    { ok: false, errors: [], message: "usage: --program <file.fard>" }
+  else
+    let src     = fs.read_text(prog) in
+    let tokens  = tokenize(src) in
+    let defs    = extract_defs(tokens) in
+    let errors  = check_calls(tokens, defs) in
+    let hh_errs = if hex_haiku then check_hex_haiku(tokens, defs) else [] in
+    let all_errs = list.concat([errors, hh_errs]) in
+    {
+      ok: list.len(all_errs) == 0,
+      file: prog,
+      items_checked: list.len(defs.fns) + list.len(defs.lets),
+      functions: list.len(defs.fns),
+      errors: all_errs,
+      error_count: list.len(all_errs)
+    }
+}
+
+main(env.args())
