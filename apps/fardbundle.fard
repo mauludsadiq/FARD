@@ -1,0 +1,159 @@
+/// fardbundle — Bundle, verify, and run FARD programs
+///
+/// Subcommands:
+///   build  --root <dir> --entry <relpath> --out <dir>
+///   verify --bundle <bundle.json> --out <dir>
+///   run    --bundle <bundle.json> --out <dir>
+
+import("std/fs")      as fs
+import("std/str")     as str
+import("std/list")    as list
+import("std/json")    as json
+import("std/env")     as env
+import("std/rec")     as rec
+import("std/hash")    as hash
+import("std/process") as process
+
+fn get_arg(args, flag) {
+  let r = list.fold(args, { found: false, val: null }, fn(acc, a) {
+    if acc.found then { found: false, val: a }
+    else if a == flag then { found: true, val: null }
+    else acc
+  }) in
+  r.val
+}
+
+fn is_safe_rel_path(p) {
+  if p == "" then false
+  else if str.starts_with(p, "/") then false
+  else if str.contains(p, "\\") then false
+  else if str.contains(p, ":") then false
+  else !list.any(str.split(p, "/"), fn(part) {
+    part == "" || part == "." || part == ".."
+  })
+}
+
+fn collect_fard_files(root) {
+  let entries = fs.read_dir(root) in
+  list.flat_map(entries, fn(name) {
+    let entry = str.concat(root, str.concat("/", name)) in
+    let info  = fs.stat(entry) in
+    if info == null then [] else
+    if info.is_dir then
+      let parts = str.split(entry, "/") in
+      let name  = list.get(parts, list.len(parts) - 1) in
+      if name == "target" || name == ".git" then []
+      else collect_fard_files(entry)
+    else if str.ends_with(entry, ".fard") then [entry]
+    else []
+  })
+}
+
+fn rel_path(root, full) {
+  let prefix = if str.ends_with(root, "/") then root else str.concat(root, "/") in
+  if str.starts_with(full, prefix) then str.slice(full, str.len(prefix), str.len(full))
+  else full
+}
+
+fn cmd_build(root, entry, out_dir) {
+  let bundle_dir = str.concat(out_dir, "/bundle") in
+  let files_dir  = str.concat(bundle_dir, "/files") in
+  let _ = fs.make_dir(files_dir) in
+  let all_files  = collect_fard_files(root) in
+  let rels       = list.filter(list.map(all_files, fn(f) { rel_path(root, f) }), is_safe_rel_path) in
+  let file_records = list.map(rels, fn(rel) {
+    let src  = str.concat(root, str.concat("/", rel)) in
+    let text = fs.read_text(src) in
+    let sha  = hash.sha256_text(text) in
+    let _    = fs.write_text(str.concat(files_dir, str.concat("/", rel)), text) in
+    { path: rel, sha256: sha, len: str.len(text) }
+  }) in
+  let has_entry  = list.any(file_records, fn(r) { r.path == entry }) in
+  let file_records = if has_entry then file_records else
+    let text = fs.read_text(str.concat(root, str.concat("/", entry))) in
+    let sha  = hash.sha256_text(text) in
+    let _    = fs.write_text(str.concat(files_dir, str.concat("/", entry)), text) in
+    list.append(file_records, { path: entry, sha256: sha, len: str.len(text) })
+  in
+  let manifest_for_digest = json.encode({ schema: "fard.bundle.v0_1", entry: entry, files: file_records }) in
+  let bundle_digest = hash.sha256_text(manifest_for_digest) in
+  let manifest = { schema: "fard.bundle.v0_1", entry: entry, files: file_records, bundle_digest: bundle_digest } in
+  let _ = fs.write_text(str.concat(bundle_dir, "/bundle.json"), json.encode(manifest)) in
+  let _ = fs.write_text(str.concat(bundle_dir, "/imports.lock.json"),
+    json.encode({ schema: "fard.imports_lock.v0_1", bundle_digest: bundle_digest })) in
+  { ok: true, bundle_digest: bundle_digest, files: list.len(file_records) }
+}
+
+fn cmd_verify(bundle_path, out_dir) {
+  let bundle    = json.decode(fs.read_text(bundle_path)) in
+  let schema    = rec.get(bundle, "schema") in
+  let entry     = rec.get(bundle, "entry") in
+  let files     = rec.get(bundle, "files") in
+  let want_dig  = rec.get(bundle, "bundle_digest") in
+  if schema != "fard.bundle.v0_1" then { ok: false, code: "ERROR_BUNDLE_VERIFY", message: "schema mismatch" }
+  else if entry == null || entry == "" then { ok: false, code: "ERROR_BUNDLE_VERIFY", message: "entry missing in manifest" }
+  else if !is_safe_rel_path(entry) then { ok: false, code: "ERROR_BUNDLE_VERIFY", message: "unsafe file path" }
+  else
+    let computed = hash.sha256_text(json.encode({ schema: "fard.bundle.v0_1", entry: entry, files: files })) in
+    if computed != want_dig then { ok: false, code: "ERROR_BUNDLE_VERIFY", message: "DIGEST_MISMATCH" }
+    else
+      let parts      = str.split(bundle_path, "/") in
+      let bundle_dir = str.join(list.take(parts, list.len(parts) - 1), "/") in
+      let files_dir  = str.concat(bundle_dir, "/files") in
+      let errors = list.filter(list.map(files, fn(f) {
+        let rel    = rec.get(f, "path") in
+        let sha    = rec.get(f, "sha256") in
+        let actual = hash.sha256_text(fs.read_text(str.concat(files_dir, str.concat("/", rel)))) in
+        if actual != sha then rel else null
+      }), fn(e) { e != null }) in
+      if list.len(errors) > 0 then { ok: false, code: "ERROR_BUNDLE_VERIFY", message: "DIGEST_MISMATCH file" }
+      else { ok: true, bundle_digest: want_dig }
+}
+
+fn cmd_run(bundle_path, out_dir) {
+  let v = cmd_verify(bundle_path, out_dir) in
+  if !v.ok then v else
+  let bundle      = json.decode(fs.read_text(bundle_path)) in
+  let entry       = rec.get(bundle, "entry") in
+  let files       = rec.get(bundle, "files") in
+  let parts       = str.split(bundle_path, "/") in
+  let bundle_dir  = str.join(list.take(parts, list.len(parts) - 1), "/") in
+  let files_dir   = str.concat(bundle_dir, "/files") in
+  let extract_dir = str.concat(out_dir, "/extract") in
+  let _ = fs.make_dir(extract_dir) in
+  let _ = list.map(files, fn(f) {
+    let rel  = rec.get(f, "path") in
+    let text = fs.read_text(str.concat(files_dir, str.concat("/", rel))) in
+    fs.write_text(str.concat(extract_dir, str.concat("/", rel)), text)
+  }) in
+  let entry_path = str.concat(extract_dir, str.concat("/", entry)) in
+  let result     = process.capture("fardrun", ["run", "--program", entry_path, "--out", out_dir]) in
+  if result.exit_code != 0 then { ok: false, code: "ERROR_BUNDLE_RUN", message: result.stderr }
+  else { ok: true }
+}
+
+fn main(all_args) {
+  let args_r = list.fold(all_args, { past: false, result: [] }, fn(acc, a) {
+    if acc.past then { past: true, result: list.append(acc.result, a) }
+    else if a == "--" then { past: true, result: [] }
+    else acc
+  }) in
+  let args = args_r.result in
+  let subcmd = if list.len(args) > 0 then list.get(args, 0) else "help" in
+  let rest   = list.drop(args, 1) in
+  let root   = get_arg(rest, "--root") in
+  let entry  = get_arg(rest, "--entry") in
+  let out    = get_arg(rest, "--out") in
+  let bundle = get_arg(rest, "--bundle") in
+  let out2   = if out != null then out else "out" in
+  if subcmd == "build" then
+    cmd_build(if root != null then root else ".", if entry != null then entry else "main.fard", out2)
+  else if subcmd == "verify" then
+    cmd_verify(if bundle != null then bundle else "bundle/bundle.json", out2)
+  else if subcmd == "run" then
+    cmd_run(if bundle != null then bundle else "bundle/bundle.json", out2)
+  else
+    { ok: false, code: "ERROR_BUNDLE_CLI", message: "usage: build|verify|run" }
+}
+
+main(env.args())
