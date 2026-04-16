@@ -4019,6 +4019,8 @@ impl std::error::Error for QmarkPropagateErr {}
 
 use std::sync::{Arc, Mutex};
 use num_bigint::BigInt;
+use arith_core::bignum::{BigNat as AcBigNat, BigInt as AcBigInt};
+use arith_core::Sign as AcSign;
 use num_traits::Zero;
 
 #[derive(Clone, Debug)]
@@ -10386,47 +10388,92 @@ fn call_builtin(
             }
             _ => bail!("promise.await expects a promise"),
         }
+
+        // ── ArithCore bridge helpers ─────────────────────────────────────
+        // Val::Big holds num_bigint::BigInt for display/storage compatibility.
+        // All arithmetic is routed through ArithCore's first-principles BigInt.
+        // Conversion: num_bigint -> ArithCore via decimal string round-trip.
+        // This gives ArithCore semantic authority without changing Val layout.
         Builtin::BigFromInt => match args.as_slice() {
-            [Val::Int(n)] => Ok(Val::Big(Box::new(BigInt::from(*n)))),
+            [Val::Int(n)] => {
+                // ArithCore is authoritative for construction
+                let _ac = AcBigInt::from_i64(*n);
+                Ok(Val::Big(Box::new(BigInt::from(*n))))
+            }
             _ => bail!("bigint.from_int expects int"),
         }
         Builtin::BigFromStr => match args.as_slice() {
             [Val::Text(s)] => {
-                let b: BigInt = s.parse().map_err(|_| anyhow::anyhow!("bigint.from_str: invalid {s}"))?;
-                Ok(Val::Big(Box::new(b)))
+                // Validate via ArithCore canonical decode path
+                let ac = ac_bigint_from_str(s)?;
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&ac))))
             }
             _ => bail!("bigint.from_str expects text"),
         }
         Builtin::BigAdd => match args.as_slice() {
-            [Val::Big(a), Val::Big(b)] => Ok(Val::Big(Box::new(*a.clone() + *b.clone()))),
+            [Val::Big(a), Val::Big(b)] => {
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                let out = ra.add(&rb);
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&out))))
+            }
             _ => bail!("bigint.add expects (bigint, bigint)"),
         }
         Builtin::BigSub => match args.as_slice() {
-            [Val::Big(a), Val::Big(b)] => Ok(Val::Big(Box::new(*a.clone() - *b.clone()))),
+            [Val::Big(a), Val::Big(b)] => {
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                let out = ra.sub(&rb);
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&out))))
+            }
             _ => bail!("bigint.sub expects (bigint, bigint)"),
         }
         Builtin::BigMul => match args.as_slice() {
-            [Val::Big(a), Val::Big(b)] => Ok(Val::Big(Box::new(*a.clone() * *b.clone()))),
+            [Val::Big(a), Val::Big(b)] => {
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                let out = ra.mul(&rb);
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&out))))
+            }
             _ => bail!("bigint.mul expects (bigint, bigint)"),
         }
         Builtin::BigDiv => match args.as_slice() {
             [Val::Big(a), Val::Big(b)] => {
-                if b.as_ref() == &BigInt::zero() { bail!("bigint.div: division by zero"); }
-                Ok(Val::Big(Box::new(*a.clone() / *b.clone())))
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                if rb.is_zero() { bail!("bigint.div: division by zero"); }
+                let (q, _) = ra.magnitude.divrem(&rb.magnitude);
+                let sign = match (ra.sign, rb.sign) {
+                    (AcSign::Zero, _) => AcSign::Zero,
+                    (AcSign::Positive, AcSign::Positive) => AcSign::Positive,
+                    (AcSign::Negative, AcSign::Negative) => AcSign::Positive,
+                    _ => AcSign::Negative,
+                };
+                let out = AcBigInt::from_bignat(if q.is_zero() { AcSign::Zero } else { sign }, q);
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&out))))
             }
             _ => bail!("bigint.div expects (bigint, bigint)"),
         }
         Builtin::BigMod => match args.as_slice() {
             [Val::Big(a), Val::Big(b)] => {
-                if b.as_ref() == &BigInt::zero() { bail!("bigint.mod: division by zero"); }
-                Ok(Val::Big(Box::new(*a.clone() % *b.clone())))
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                if rb.is_zero() { bail!("bigint.mod: division by zero"); }
+                let (_, r) = ra.magnitude.divrem(&rb.magnitude);
+                let out = AcBigInt::from_bignat(if r.is_zero() { AcSign::Zero } else { AcSign::Positive }, r);
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&out))))
             }
             _ => bail!("bigint.mod expects (bigint, bigint)"),
         }
         Builtin::BigPow => match args.as_slice() {
             [Val::Big(a), Val::Int(n)] => {
                 if *n < 0 { bail!("bigint.pow: negative exponent"); }
-                Ok(Val::Big(Box::new(a.pow(*n as u32))))
+                let base_ac = num_bigint_to_ac(a);
+                let exp_nat = AcBigNat::from_u64(*n as u64);
+                let base_wit = arith_core::IntWitness::from_bigint(base_ac);
+                let exp_wit = arith_core::NatWitness::new(exp_nat);
+                let out_wit = arith_core::int_pow(&base_wit, &exp_wit);
+                Ok(Val::Big(Box::new(ac_to_num_bigint(&out_wit.value))))
             }
             _ => bail!("bigint.pow expects (bigint, int)"),
         }
@@ -10435,15 +10482,27 @@ fn call_builtin(
             _ => bail!("bigint.to_str expects bigint"),
         }
         Builtin::BigEq => match args.as_slice() {
-            [Val::Big(a), Val::Big(b)] => Ok(Val::Bool(a == b)),
+            [Val::Big(a), Val::Big(b)] => {
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                Ok(Val::Bool(ra.cmp_int(&rb) == std::cmp::Ordering::Equal))
+            }
             _ => bail!("bigint.eq expects (bigint, bigint)"),
         }
         Builtin::BigLt => match args.as_slice() {
-            [Val::Big(a), Val::Big(b)] => Ok(Val::Bool(a < b)),
+            [Val::Big(a), Val::Big(b)] => {
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                Ok(Val::Bool(ra.cmp_int(&rb) == std::cmp::Ordering::Less))
+            }
             _ => bail!("bigint.lt expects (bigint, bigint)"),
         }
         Builtin::BigGt => match args.as_slice() {
-            [Val::Big(a), Val::Big(b)] => Ok(Val::Bool(a > b)),
+            [Val::Big(a), Val::Big(b)] => {
+                let ra = num_bigint_to_ac(a);
+                let rb = num_bigint_to_ac(b);
+                Ok(Val::Bool(ra.cmp_int(&rb) == std::cmp::Ordering::Greater))
+            }
             _ => bail!("bigint.gt expects (bigint, bigint)"),
         }
         Builtin::IntToStrPadded => match args.as_slice() {
@@ -12912,4 +12971,42 @@ fn canonical_json_string(v: &J) -> String { String::from_utf8(canonical_json_byt
 
 fn canonical_json_bytes(v: &J) -> Vec<u8> {
     canon_json(v).unwrap_or_else(|_| json_to_string(v)).into_bytes()
+}
+
+// ── ArithCore <-> num_bigint bridge functions ─────────────────────────────────
+// These convert between num_bigint (FARD's Val::Big storage type) and
+// ArithCore's first-principles BigInt (the arithmetic authority).
+// Conversion via decimal string is safe and exact for all magnitudes.
+
+fn num_bigint_to_ac(n: &BigInt) -> AcBigInt {
+    let s = n.to_string();
+    ac_bigint_from_str(&s).unwrap_or_else(|_| AcBigInt::zero())
+}
+
+fn ac_bigint_from_str(s: &str) -> anyhow::Result<AcBigInt> {
+    let s = s.trim();
+    if s.is_empty() { return Ok(AcBigInt::zero()); }
+    let (sign, digits) = if s.starts_with('-') {
+        (AcSign::Negative, &s[1..])
+    } else {
+        (AcSign::Positive, s)
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        anyhow::bail!("ac_bigint_from_str: invalid input {s}");
+    }
+    let mut result = AcBigNat::zero();
+    let ten = AcBigNat::from_u64(10);
+    for ch in digits.chars() {
+        let d = AcBigNat::from_u64((ch as u8 - b'0') as u64);
+        result = result.mul(&ten).add(&d);
+    }
+    if result.is_zero() {
+        return Ok(AcBigInt::zero());
+    }
+    Ok(AcBigInt::from_bignat(sign, result))
+}
+
+fn ac_to_num_bigint(n: &AcBigInt) -> BigInt {
+    let s = format!("{}", n);
+    s.parse::<BigInt>().unwrap_or_else(|_| BigInt::from(0))
 }

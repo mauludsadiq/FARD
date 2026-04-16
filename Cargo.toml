@@ -15,6 +15,7 @@ rayon = "1"
 uuid = { version = "1", features = ["v4", "v5"] }
 chrono = "0.4"
 num-bigint = "0.4"
+arith-core = { path = "crates/arith-core" }
 num-traits = "0.2"
 ed25519-dalek = "2.0"
 valuecore = { path = "crates/valuecore" }
@@ -52,4 +53,5 @@ members = [
   "crates/fardlang",
   "crates/fardcli",
   "crates/fard-lsp",
+  "crates/arith-core",
 ]

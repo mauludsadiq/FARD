@@ -1,0 +1,12 @@
+[package]
+name = "arith-core"
+version = "0.3.0"
+edition = "2021"
+description = "ArithCore: canonical arithmetic kernel for FARD — Nat/Int/Rat witnesses, receipts, Merkle, replay"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
