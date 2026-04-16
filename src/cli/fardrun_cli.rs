@@ -89,6 +89,9 @@ pub struct RunArgs {
     #[arg(long, default_value_t = false)]
     pub hm_types: bool,
 
+    #[arg(long, default_value_t = false)]
+    pub strict_arith: bool,
+
     /// Program arguments passed after --
     #[arg(last = true)]
     pub program_args: Vec<String>,
@@ -169,7 +172,7 @@ impl Cli {
                     program: std::path::PathBuf::from("."),
                     out: std::path::PathBuf::from("."),
                     lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
+                    no_trace: false, strict_types: false, hm_types: false, strict_arith: false, program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, None, None, Some(EvalArgs { expr }));
             }
@@ -185,7 +188,7 @@ impl Cli {
                 enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
             };
             return (dummy, true, false, None, None, None, None, None, None);
@@ -203,7 +206,7 @@ impl Cli {
                     enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, Some(t), None, None, None, None, None);
@@ -217,7 +220,7 @@ impl Cli {
                     enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, Some(p), None, None, None, None);
@@ -231,7 +234,7 @@ impl Cli {
                     enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, Some(i), None, None, None);
@@ -245,7 +248,7 @@ impl Cli {
                     enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, Some(n), None, None);
@@ -260,7 +263,7 @@ impl Cli {
                     enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, None, None, None);
@@ -270,7 +273,7 @@ impl Cli {
                     program: std::path::PathBuf::from("."),
                     out: std::path::PathBuf::from("."),
                     lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
+                    no_trace: false, strict_types: false, hm_types: false, strict_arith: false, program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, None, None, Some(e));
             }
@@ -279,7 +282,7 @@ impl Cli {
                     program: std::path::PathBuf::from("."),
                     out: std::path::PathBuf::from("."),
                     lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, program_args: vec![],
+                    no_trace: false, strict_types: false, hm_types: false, strict_arith: false, program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, None, Some(v), None);
             }
@@ -298,7 +301,7 @@ impl Cli {
                     enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                 };
                 return (dummy, false, false, None, None, None, None, None, None);
@@ -313,7 +316,7 @@ impl Cli {
                         enforce_lockfile: false,
                     no_trace: false,
                     strict_types: false,
-                    hm_types: false,
+                    hm_types: false, strict_arith: false,
                     program_args: vec![],
                     };
                     return (dummy, false, true, None, None, None, None, None, None);
