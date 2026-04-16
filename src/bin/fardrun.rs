@@ -3776,6 +3776,8 @@ struct Func {
 #[derive(Clone, Debug)]
 enum Builtin {
     PngRed1x1,
+    PngEncodeRgb,
+    PngEncodeRgba,
     Unimplemented(&'static str),
     // Type checking constructors
     TypeCheck(String, Vec<String>),   // type_name, required_fields
@@ -6116,6 +6118,41 @@ fn call_builtin(
             print!("{}", out);
             Ok(Val::Unit)
         }
+        
+        Builtin::PngEncodeRgb => {
+            if args.len() != 3 {
+                bail!("ERROR_BADARG std/png.encode_rgb expects 3 args (width, height, pixels)");
+            }
+            let width = match &args[0] { Val::Int(n) => *n as u32, _ => bail!("arg0 must be int") };
+            let height = match &args[1] { Val::Int(n) => *n as u32, _ => bail!("arg1 must be int") };
+            let pixels = match &args[2] { Val::Bytes(b) => b.clone(), _ => bail!("arg2 must be bytes") };
+
+            let expected = (width as usize) * (height as usize) * 3;
+            if pixels.len() != expected {
+                bail!("pixel buffer length mismatch");
+            }
+
+            let out = png_encode_rgb_core(width, height, &pixels)?;
+            Ok(Val::Bytes(out))
+        }
+
+        Builtin::PngEncodeRgba => {
+            if args.len() != 3 {
+                bail!("ERROR_BADARG std/png.encode_rgba expects 3 args (width, height, pixels)");
+            }
+            let width = match &args[0] { Val::Int(n) => *n as u32, _ => bail!("arg0 must be int") };
+            let height = match &args[1] { Val::Int(n) => *n as u32, _ => bail!("arg1 must be int") };
+            let pixels = match &args[2] { Val::Bytes(b) => b.clone(), _ => bail!("arg2 must be bytes") };
+
+            let expected = (width as usize) * (height as usize) * 4;
+            if pixels.len() != expected {
+                bail!("pixel buffer length mismatch");
+            }
+
+            let out = png_encode_rgba_core(width, height, &pixels)?;
+            Ok(Val::Bytes(out))
+        }
+
         Builtin::PngRed1x1 => {
             if !args.is_empty() {
                 bail!("ERROR_BADARG std/png.red_1x1 expects 0 args");
@@ -12720,6 +12757,8 @@ Ok(m)
                 let mut m = BTreeMap::new();
 
                 m.insert("red_1x1".to_string(), Val::Builtin(Builtin::PngRed1x1));
+                m.insert("encode_rgb".to_string(), Val::Builtin(Builtin::PngEncodeRgb));
+                m.insert("encode_rgba".to_string(), Val::Builtin(Builtin::PngEncodeRgba));
 
                 Ok(m)
             }
@@ -13072,4 +13111,71 @@ fn ac_bigint_from_str(s: &str) -> anyhow::Result<AcBigInt> {
 fn ac_to_num_bigint(n: &AcBigInt) -> BigInt {
     let s = format!("{}", n);
     s.parse::<BigInt>().unwrap_or_else(|_| BigInt::from(0))
+}
+
+fn png_be32(n: u32) -> [u8; 4] {
+    n.to_be_bytes()
+}
+
+fn png_chunk(tag: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(12 + data.len());
+    out.extend_from_slice(&png_be32(data.len() as u32));
+    out.extend_from_slice(tag);
+    out.extend_from_slice(data);
+    let mut h = crc32fast::Hasher::new();
+    h.update(tag);
+    h.update(data);
+    out.extend_from_slice(&png_be32(h.finalize()));
+    out
+}
+
+fn png_build_scanlines(width: u32, height: u32, bpp: usize, data: &[u8]) -> Result<Vec<u8>> {
+    let row_width = (width as usize) * bpp;
+    let expected = row_width * (height as usize);
+    if data.len() != expected {
+        bail!("png scanline input length mismatch: expected {}, got {}", expected, data.len());
+    }
+    let mut scanlines = Vec::with_capacity((row_width + 1) * (height as usize));
+    for row in data.chunks_exact(row_width) {
+        scanlines.push(0u8);
+        scanlines.extend_from_slice(row);
+    }
+    Ok(scanlines)
+}
+
+fn png_zlib_compress(data: &[u8]) -> Result<Vec<u8>> {
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(data)?;
+    Ok(enc.finish()?)
+}
+
+fn png_encode_core(width: u32, height: u32, color_type: u8, data: &[u8], bpp: usize) -> Result<Vec<u8>> {
+    let scanlines = png_build_scanlines(width, height, bpp, data)?;
+    let compressed = png_zlib_compress(&scanlines)?;
+
+    let mut png = Vec::new();
+    png.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
+
+    let mut ihdr = Vec::with_capacity(13);
+    ihdr.extend_from_slice(&png_be32(width));
+    ihdr.extend_from_slice(&png_be32(height));
+    ihdr.push(8u8);
+    ihdr.push(color_type);
+    ihdr.push(0u8);
+    ihdr.push(0u8);
+    ihdr.push(0u8);
+
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &compressed));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    Ok(png)
+}
+
+fn png_encode_rgb_core(width: u32, height: u32, pixels: &[u8]) -> Result<Vec<u8>> {
+    png_encode_core(width, height, 2, pixels, 3)
+}
+
+fn png_encode_rgba_core(width: u32, height: u32, pixels: &[u8]) -> Result<Vec<u8>> {
+    png_encode_core(width, height, 6, pixels, 4)
 }
