@@ -63,7 +63,7 @@ pub struct TestArgs {
     pub json: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct RunArgs {
     #[arg(long)]
     pub program: PathBuf,
@@ -168,29 +168,14 @@ impl Cli {
             let a1 = argv[1].to_string_lossy();
             if a1 == "-e" || a1 == "--eval" {
                 let expr = argv[2].to_string_lossy().to_string();
-                let dummy = RunArgs {
-                    program: std::path::PathBuf::from("."),
-                    out: std::path::PathBuf::from("."),
-                    lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, strict_arith: false, program_args: vec![],
-                };
+                let dummy = RunArgs::default();
                 return (dummy, false, false, None, None, None, None, None, Some(EvalArgs { expr }));
             }
         }
         let cli = Cli::parse_from(argv.clone());
 
         if cli.version {
-            let dummy = RunArgs {
-                program: PathBuf::from("."),
-                out: PathBuf::from("."),
-                lockfile: None,
-                registry: None,
-                enforce_lockfile: false,
-                    no_trace: false,
-                    strict_types: false,
-                    hm_types: false, strict_arith: false,
-                    program_args: vec![],
-            };
+            let dummy = RunArgs::default();
             return (dummy, true, false, None, None, None, None, None, None);
         }
 
@@ -240,17 +225,7 @@ impl Cli {
                 return (dummy, false, false, None, None, Some(i), None, None, None);
             }
             Some(Command::New(n)) => {
-                let dummy = RunArgs {
-                    program: PathBuf::from("."),
-                    out: PathBuf::from("."),
-                    lockfile: None,
-                    registry: None,
-                    enforce_lockfile: false,
-                    no_trace: false,
-                    strict_types: false,
-                    hm_types: false, strict_arith: false,
-                    program_args: vec![],
-                };
+                let dummy = RunArgs::default();
                 return (dummy, false, false, None, None, None, Some(n), None, None);
             }
             Some(Command::Notebook(_)) => {
@@ -269,21 +244,11 @@ impl Cli {
                 return (dummy, false, false, None, None, None, None, None, None);
             }
             Some(Command::Eval(e)) => {
-                let dummy = RunArgs {
-                    program: std::path::PathBuf::from("."),
-                    out: std::path::PathBuf::from("."),
-                    lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, strict_arith: false, program_args: vec![],
-                };
+                let dummy = RunArgs::default();
                 return (dummy, false, false, None, None, None, None, None, Some(e));
             }
             Some(Command::Verify(v)) => {
-                let dummy = RunArgs {
-                    program: std::path::PathBuf::from("."),
-                    out: std::path::PathBuf::from("."),
-                    lockfile: None, registry: None, enforce_lockfile: false,
-                    no_trace: false, strict_types: false, hm_types: false, strict_arith: false, program_args: vec![],
-                };
+                let dummy = RunArgs::default();
                 return (dummy, false, false, None, None, None, None, Some(v), None);
             }
 
@@ -293,32 +258,12 @@ impl Cli {
                 // Store search query in env for fardrun.rs to handle
                 std::env::set_var("FARD_SEARCH_QUERY", &query);
                 std::env::set_var("FARD_SEARCH_MODE", "1");
-                let dummy = RunArgs {
-                    program: PathBuf::from("."),
-                    out: PathBuf::from("."),
-                    lockfile: None,
-                    registry: None,
-                    enforce_lockfile: false,
-                    no_trace: false,
-                    strict_types: false,
-                    hm_types: false, strict_arith: false,
-                    program_args: vec![],
-                };
+                let dummy = RunArgs::default();
                 return (dummy, false, false, None, None, None, None, None, None);
             }
             Some(Command::Repl) | None => {
                 if want_repl {
-                    let dummy = RunArgs {
-                        program: PathBuf::from("."),
-                        out: PathBuf::from("."),
-                        lockfile: None,
-                        registry: None,
-                        enforce_lockfile: false,
-                    no_trace: false,
-                    strict_types: false,
-                    hm_types: false, strict_arith: false,
-                    program_args: vec![],
-                    };
+                    let dummy = RunArgs::default();
                     return (dummy, false, true, None, None, None, None, None, None);
                 }
                 eprintln!("usage: fardrun run --program <file.fard> --out <dir>");
