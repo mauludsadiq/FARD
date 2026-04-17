@@ -1329,15 +1329,24 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         return Ok(());
     }
 
-    let program = run.program;
+    let mut program = run.program;
     let out_dir = run.out;
+    fs::create_dir_all(&out_dir).ok();
+    let program_src = if program == PathBuf::from("/dev/stdin") {
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+            .context("cannot read /dev/stdin")?;
+        let stdin_prog = out_dir.join("__stdin_main__.fard");
+        fs::write(&stdin_prog, &buf)?;
+        program = stdin_prog;
+        Some(buf)
+    } else {
+        fs::read_to_string(&program).ok()
+    };
 
     // ── Strict type checking ──────────────────────────────────────────────────
     if run.strict_types {
-        let src_text = match fs::read_to_string(&program) {
-            Ok(s) => s,
-            Err(e) => bail!("cannot read {}: {}", program.display(), e),
-        };
+        let src_text = program_src.clone().unwrap_or_default();
         let errors = fard_v0_5_language_gate::type_check_strict(&src_text, &program.to_string_lossy());
         if !errors.is_empty() {
             fs::create_dir_all(&out_dir).ok();
@@ -1373,10 +1382,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
 
     // ── HM type checking ─────────────────────────────────────────────────────
     if run.hm_types {
-        let src_text = match fs::read_to_string(&program) {
-            Ok(s) => s,
-            Err(e) => bail!("cannot read {}: {}", program.display(), e),
-        };
+        let src_text = program_src.clone().unwrap_or_default();
         // Build the hm checker program source — runs from project root
         let project_dir = std::env::current_dir()?;
         let hm_pkg = project_dir.join("packages/fard_hm/hm");
@@ -1497,8 +1503,9 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
     let effective_trace = if run.no_trace { &devnull_trace } else { &trace_path };
     let mut tracer = Tracer::new(&out_dir, effective_trace)?;
     // Detect module-level pragma: // @strict_arith in source file
-    let pragma_strict_arith = fs::read_to_string(&program)
-        .unwrap_or_default()
+    let pragma_strict_arith = program_src
+        .as_deref()
+        .unwrap_or("")
         .lines()
         .any(|l| l.trim() == "// @strict_arith");
 

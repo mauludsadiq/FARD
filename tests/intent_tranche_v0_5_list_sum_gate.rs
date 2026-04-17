@@ -35,6 +35,7 @@ fn run_fard(program: &str, out_dir: &str) -> (i32, String) {
         .unwrap()
         .write_all(program.as_bytes())
         .unwrap();
+    drop(child.stdin.take());
 
     let outp = child.wait_with_output().unwrap();
     let code = outp.status.code().unwrap_or(1);
