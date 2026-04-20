@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**13 Apr 2026 · v1.7.0 · updated for media decoders, transforms, and integration packages**
+**20 Apr 2026 · v1.7.0 · updated for media decoders, transforms, and integration packages**
 
 This document covers the **fardrun** production dialect. All stdlib module contents
 verified directly from source — not inferred from prior documentation.
@@ -536,7 +536,9 @@ Returns hex string prefixed `sha256:`.
 
 ### std/fs
 
-`read_text`, `write_text`, `exists`, `read_dir`, `stat`, `delete`, `make_dir`
+`read_text`, `write_text`, `write_bytes`, `exists`, `read_dir`, `stat`, `delete`, `make_dir`
+
+> `write_bytes(path, bytes)` — writes a `Bytes` value to a file. Sandbox-restricted to relative paths.
 
 ### std/path
 
@@ -548,7 +550,9 @@ Returns hex string prefixed `sha256:`.
 
 ### std/process
 
-`spawn`, `exit`
+`spawn`, `exit`, `capture`
+
+> `capture(cmd, args) -> { ok, exit_code, stdout, stderr }` — runs a subprocess and captures output.
 
 ### std/http
 
@@ -704,7 +708,12 @@ Returns hex string prefixed `sha256:`.
 
 ### std/png
 
-`red_1x1`
+`red_1x1`, `encode`, `encode_rgb`, `encode_rgba`, `encode_palette`
+
+> `encode(width, height, pixels)` — pixels is `List({r,g,b,a})`, returns `Bytes`.
+> `encode_rgb(width, height, bytes)` — bytes is `Bytes` (flat RGB).
+> `encode_rgba(width, height, bytes)` — bytes is `Bytes` (flat RGBA).
+> `encode_palette(width, height, indices, palette)` — indices is `List(Int)`, palette is `List({r,g,b})` or `List({r,g,b,a})`.
 
 ### std/cli
 
