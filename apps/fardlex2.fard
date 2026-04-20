@@ -1,0 +1,148 @@
+/// fardlex2 — FARD lexer using direct recursion (O(n) performance)
+
+import("std/str")  as str
+import("std/list") as list
+
+fn is_alpha(c) {
+  str.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_", c)
+}
+
+fn is_alnum(c) {
+  str.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789", c)
+}
+
+fn is_digit(c) {
+  str.contains("0123456789", c)
+}
+
+fn is_keyword(w) {
+  w == "let" || w == "in" || w == "fn" || w == "if" || w == "then" || w == "else" ||
+  w == "import" || w == "as" || w == "export" || w == "match" || w == "using" ||
+  w == "test" || w == "while" || w == "return" || w == "true" || w == "false" ||
+  w == "null" || w == "artifact"
+}
+
+fn tok(t, v, line, col) { { t: t, v: v, line: line, col: col } }
+
+fn peek(chars, i) {
+  if i < list.len(chars) then list.get(chars, i) else ""
+}
+
+fn scan_word_end(chars, n, i) {
+  if i >= n then i
+  else if is_alnum(list.get(chars, i)) then scan_word_end(chars, n, i + 1)
+  else i
+}
+
+fn scan_number_end(chars, n, i, is_float) {
+  if i >= n then { end: i, is_float: is_float }
+  else
+    let c = list.get(chars, i) in
+    if is_digit(c) then scan_number_end(chars, n, i + 1, is_float)
+    else if c == "." && i + 1 < n && is_digit(list.get(chars, i + 1)) then
+      scan_number_end(chars, n, i + 1, true)
+    else { end: i, is_float: is_float }
+}
+
+fn scan_string_end(chars, n, i, esc) {
+  if i >= n then i
+  else if esc then scan_string_end(chars, n, i + 1, false)
+  else
+    let c = list.get(chars, i) in
+    if c == "\\" then scan_string_end(chars, n, i + 1, true)
+    else if c == "\"" then i + 1
+    else scan_string_end(chars, n, i + 1, false)
+}
+
+fn scan_comment_end(chars, n, i) {
+  if i >= n then i
+  else if list.get(chars, i) == "\n" then i
+  else scan_comment_end(chars, n, i + 1)
+}
+
+fn scan_backtick_end(chars, n, i) {
+  if i >= n then i
+  else if list.get(chars, i) == "`" then i + 1
+  else scan_backtick_end(chars, n, i + 1)
+}
+
+fn lex_loop(chars, n, src, i, line, col, tokens) {
+  if i >= n then list.append(tokens, tok("eof", "", line, col))
+  else
+    let c  = list.get(chars, i) in
+    let c2 = peek(chars, i + 1) in
+    let c3 = peek(chars, i + 2) in
+
+    if c == "\n" then
+      lex_loop(chars, n, src, i + 1, line + 1, 1, tokens)
+    else if c == " " || c == "\t" then
+      lex_loop(chars, n, src, i + 1, line, col + 1, tokens)
+
+    // Doc comment ///
+    else if c == "/" && c2 == "/" && c3 == "/" then
+      let end = scan_comment_end(chars, n, i) in
+      let v   = str.slice(src, i, end) in
+      lex_loop(chars, n, src, end, line, col + (end - i), list.append(tokens, tok("doc", v, line, col)))
+
+    // Line comment //
+    else if c == "/" && c2 == "/" then
+      let end = scan_comment_end(chars, n, i) in
+      lex_loop(chars, n, src, end, line, col, tokens)
+
+    // Hash comment
+    else if c == "#" then
+      let end = scan_comment_end(chars, n, i) in
+      lex_loop(chars, n, src, end, line, col, tokens)
+
+    // String
+    else if c == "\"" then
+      let end = scan_string_end(chars, n, i + 1, false) in
+      let v   = str.slice(src, i + 1, end - 1) in
+      lex_loop(chars, n, src, end, line, col + (end - i), list.append(tokens, tok("str", v, line, col)))
+
+    // Backtick string
+    else if c == "`" then
+      let end = scan_backtick_end(chars, n, i + 1) in
+      let v   = str.slice(src, i + 1, end - 1) in
+      lex_loop(chars, n, src, end, line, col + (end - i), list.append(tokens, tok("str", v, line, col)))
+
+    // Two-char operators
+    else if c == "=" && c2 == "=" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","==",line,col)))
+    else if c == "!" && c2 == "=" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","!=",line,col)))
+    else if c == "<" && c2 == "=" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","<=",line,col)))
+    else if c == ">" && c2 == "=" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym",">=",line,col)))
+    else if c == "&" && c2 == "&" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","&&",line,col)))
+    else if c == "|" && c2 == "|" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","||",line,col)))
+    else if c == "-" && c2 == ">" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","->",line,col)))
+    else if c == "=" && c2 == ">" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","=>",line,col)))
+    else if c == "|" && c2 == ">" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","|>",line,col)))
+    else if c == "?" && c2 == "." then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","?.",line,col)))
+    else if c == "?" && c2 == "?" then lex_loop(chars, n, src, i+2, line, col+2, list.append(tokens, tok("sym","??",line,col)))
+    else if c == "." && c2 == "." && c3 == "." then lex_loop(chars, n, src, i+3, line, col+3, list.append(tokens, tok("sym","...",line,col)))
+
+    // Identifiers and keywords
+    else if is_alpha(c) then
+      let end  = scan_word_end(chars, n, i + 1) in
+      let word = str.slice(src, i, end) in
+      let kind = if is_keyword(word) then "kw" else "ident" in
+      lex_loop(chars, n, src, end, line, col + (end - i), list.append(tokens, tok(kind, word, line, col)))
+
+    // Numbers
+    else if is_digit(c) then
+      let r    = scan_number_end(chars, n, i + 1, false) in
+      let kind = if r.is_float then "float" else "int" in
+      let v    = str.slice(src, i, r.end) in
+      lex_loop(chars, n, src, r.end, line, col + (r.end - i), list.append(tokens, tok(kind, v, line, col)))
+
+    // Single-char symbols
+    else
+      lex_loop(chars, n, src, i + 1, line, col + 1, list.append(tokens, tok("sym", c, line, col)))
+}
+
+fn tokenize(src) {
+  let chars = str.chars(src) in
+  let n     = list.len(chars) in
+  lex_loop(chars, n, src, 0, 1, 1, [])
+}
+
+{ tokenize: tokenize, tok: tok, is_keyword: is_keyword }
