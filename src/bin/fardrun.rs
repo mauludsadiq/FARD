@@ -3783,8 +3783,10 @@ struct Func {
 #[derive(Clone, Debug)]
 enum Builtin {
     PngRed1x1,
-    PngEncodeRgb,
-    PngEncodeRgba,
+    PngEncode,        // png.encode(w, h, pixels_rgba) -> bytes
+    PngEncodeRgb,     // png.encode_rgb(w, h, pixels_rgb) -> bytes
+    PngEncodeRgba,    // png.encode_rgba(w, h, pixels_rgba flat) -> bytes
+    PngEncodePalette, // png.encode_palette(w, h, indices, palette) -> bytes
     Unimplemented(&'static str),
     // Type checking constructors
     TypeCheck(String, Vec<String>),   // type_name, required_fields
@@ -3949,6 +3951,7 @@ enum Builtin {
     StrUrlDecode,
     FsReadText,
     FsWriteText,
+    FsWriteBytes,
     FsExists,
     FsReadDir,
     FsStat,
@@ -6168,6 +6171,87 @@ fn call_builtin(
             Ok(Val::Bytes(bs))
         }
 
+
+        Builtin::PngEncode => {
+            // png.encode(width, height, pixels) -> bytes
+            // pixels: list of {r,g,b,a} records
+            if args.len() != 3 { bail!("ERROR_BADARG png.encode expects 3 args: width, height, pixels"); }
+            let w = match &args[0] { Val::Int(n) => *n as u32, _ => bail!("png.encode: width must be int") };
+            let h = match &args[1] { Val::Int(n) => *n as u32, _ => bail!("png.encode: height must be int") };
+            let pixels = match &args[2] { Val::List(v) => v.clone(), _ => bail!("png.encode: pixels must be list") };
+            if pixels.len() != (w * h) as usize {
+                bail!("png.encode: expected {} pixels, got {}", w * h, pixels.len());
+            }
+            let mut rgba: Vec<u8> = Vec::with_capacity((w * h * 4) as usize);
+            for px in &pixels {
+                match px {
+                    Val::Record(m) => {
+                        let r = match m.get("r") { Some(Val::Int(n)) => *n as u8, _ => 0 };
+                        let g = match m.get("g") { Some(Val::Int(n)) => *n as u8, _ => 0 };
+                        let b = match m.get("b") { Some(Val::Int(n)) => *n as u8, _ => 0 };
+                        let a = match m.get("a") { Some(Val::Int(n)) => *n as u8, _ => 255 };
+                        rgba.extend_from_slice(&[r, g, b, a]);
+                    }
+                    _ => bail!("png.encode: each pixel must be a record {{r,g,b,a}}"),
+                }
+            }
+            Ok(Val::Bytes(png_encode_rgba_core(w, h, &rgba)?))
+        }
+
+        Builtin::PngEncodeRgb => {
+            // png.encode_rgb(width, height, pixels) -> bytes
+            // pixels: flat list of ints [r,g,b, r,g,b, ...]
+            if args.len() != 3 { bail!("ERROR_BADARG png.encode_rgb expects 3 args: width, height, pixels"); }
+            let w = match &args[0] { Val::Int(n) => *n as u32, _ => bail!("png.encode_rgb: width must be int") };
+            let h = match &args[1] { Val::Int(n) => *n as u32, _ => bail!("png.encode_rgb: height must be int") };
+            let flat = match &args[2] { Val::List(v) => v.clone(), _ => bail!("png.encode_rgb: pixels must be list") };
+            if flat.len() != (w * h * 3) as usize {
+                bail!("png.encode_rgb: expected {} values (w*h*3), got {}", w * h * 3, flat.len());
+            }
+            let mut rgb: Vec<u8> = Vec::with_capacity((w * h * 3) as usize);
+            for v in &flat {
+                match v { Val::Int(n) => rgb.push(*n as u8), _ => bail!("png.encode_rgb: pixel values must be ints") }
+            }
+            Ok(Val::Bytes(png_encode_rgb_core(w, h, &rgb)?))
+        }
+
+        Builtin::PngEncodePalette => {
+            // png.encode_palette(width, height, indices, palette) -> bytes
+            // indices: flat list of ints (0-255)
+            // palette: list of {r,g,b} or {r,g,b,a}
+            if args.len() != 4 { bail!("ERROR_BADARG png.encode_palette expects 4 args"); }
+            let w = match &args[0] { Val::Int(n) => *n as u32, _ => bail!("png.encode_palette: width must be int") };
+            let h = match &args[1] { Val::Int(n) => *n as u32, _ => bail!("png.encode_palette: height must be int") };
+            let idx_list = match &args[2] { Val::List(v) => v.clone(), _ => bail!("png.encode_palette: indices must be list") };
+            let pal_list = match &args[3] { Val::List(v) => v.clone(), _ => bail!("png.encode_palette: palette must be list") };
+            if idx_list.len() != (w * h) as usize {
+                bail!("png.encode_palette: expected {} indices, got {}", w * h, idx_list.len());
+            }
+            if pal_list.len() > 256 { bail!("png.encode_palette: palette must have <= 256 entries"); }
+            let mut indices: Vec<u8> = Vec::with_capacity((w * h) as usize);
+            for v in &idx_list {
+                match v { Val::Int(n) => indices.push(*n as u8), _ => bail!("png.encode_palette: indices must be ints") }
+            }
+            let mut palette: Vec<[u8; 3]> = Vec::new();
+            let mut trns: Vec<u8> = Vec::new();
+            let mut has_alpha = false;
+            for entry in &pal_list {
+                match entry {
+                    Val::Record(m) => {
+                        let r = match m.get("r") { Some(Val::Int(n)) => *n as u8, _ => 0 };
+                        let g = match m.get("g") { Some(Val::Int(n)) => *n as u8, _ => 0 };
+                        let b = match m.get("b") { Some(Val::Int(n)) => *n as u8, _ => 0 };
+                        let a = match m.get("a") { Some(Val::Int(n)) => *n as u8, _ => 255 };
+                        if a != 255 { has_alpha = true; }
+                        palette.push([r, g, b]);
+                        trns.push(a);
+                    }
+                    _ => bail!("png.encode_palette: palette entries must be records"),
+                }
+            }
+            let trns_opt = if has_alpha { Some(trns.as_slice()) } else { None };
+            Ok(Val::Bytes(png_encode_palette_core(w, h, &indices, &palette, trns_opt)?))
+        }
         Builtin::IntAdd => {
             if args.len() != 2 {
                 bail!("ERROR_BADARG int.add expects 2 args");
@@ -9079,6 +9163,22 @@ fn call_builtin(
                 }
                 _ => bail!("ERROR_BADARG fs.read_text expects string path"),
             }
+        }
+
+        Builtin::FsWriteBytes => {
+            if args.len() != 2 { bail!("ERROR_ARITY fs.write_bytes expects 2 args"); }
+            let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG fs.write_bytes path must be text") };
+            let bytes = match &args[1] { Val::Bytes(b) => b.clone(), _ => bail!("ERROR_BADARG fs.write_bytes content must be bytes") };
+            fs_sandbox_check(&path)?;
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| anyhow!("ERROR_IO fs.write_bytes mkdir {}: {}", path, e))?;
+                }
+            }
+            std::fs::write(&path, &bytes)
+                .map_err(|e| anyhow!("ERROR_IO fs.write_bytes {}: {}", path, e))?;
+            Ok(Val::Unit)
         }
 
         Builtin::FsWriteText => {
@@ -12488,6 +12588,7 @@ Ok(m)
                 let mut m = BTreeMap::new();
                 m.insert("read_text".to_string(), Val::Builtin(Builtin::FsReadText));
                 m.insert("write_text".to_string(), Val::Builtin(Builtin::FsWriteText));
+                m.insert("write_bytes".to_string(), Val::Builtin(Builtin::FsWriteBytes));
                 m.insert("exists".to_string(), Val::Builtin(Builtin::FsExists));
                 m.insert("read_dir".to_string(), Val::Builtin(Builtin::FsReadDir));
                 m.insert("stat".to_string(), Val::Builtin(Builtin::FsStat));
@@ -12764,8 +12865,10 @@ Ok(m)
                 let mut m = BTreeMap::new();
 
                 m.insert("red_1x1".to_string(), Val::Builtin(Builtin::PngRed1x1));
+                m.insert("encode".to_string(), Val::Builtin(Builtin::PngEncode));
                 m.insert("encode_rgb".to_string(), Val::Builtin(Builtin::PngEncodeRgb));
                 m.insert("encode_rgba".to_string(), Val::Builtin(Builtin::PngEncodeRgba));
+                m.insert("encode_palette".to_string(), Val::Builtin(Builtin::PngEncodePalette));
 
                 Ok(m)
             }
@@ -13186,3 +13289,33 @@ fn png_encode_rgb_core(width: u32, height: u32, pixels: &[u8]) -> Result<Vec<u8>
 fn png_encode_rgba_core(width: u32, height: u32, pixels: &[u8]) -> Result<Vec<u8>> {
     png_encode_core(width, height, 6, pixels, 4)
 }
+fn png_encode_palette_core(width: u32, height: u32, indices: &[u8], palette: &[[u8;3]], trns: Option<&[u8]>) -> Result<Vec<u8>> {
+    let row_width = width as usize;
+    let expected = row_width * height as usize;
+    if indices.len() != expected {
+        bail!("png_encode_palette: expected {} indices, got {}", expected, indices.len());
+    }
+    let mut scanlines = Vec::with_capacity((row_width + 1) * height as usize);
+    for row in indices.chunks_exact(row_width) {
+        scanlines.push(0u8);
+        scanlines.extend_from_slice(row);
+    }
+    let compressed = png_zlib_compress(&scanlines)?;
+    let mut plte = Vec::with_capacity(palette.len() * 3);
+    for c in palette { plte.extend_from_slice(c); }
+    let mut png = Vec::new();
+    png.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
+    let mut ihdr = Vec::with_capacity(13);
+    ihdr.extend_from_slice(&png_be32(width));
+    ihdr.extend_from_slice(&png_be32(height));
+    ihdr.push(8u8); ihdr.push(3u8); ihdr.push(0u8); ihdr.push(0u8); ihdr.push(0u8);
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"PLTE", &plte));
+    if let Some(t) = trns {
+        png.extend_from_slice(&png_chunk(b"tRNS", t));
+    }
+    png.extend_from_slice(&png_chunk(b"IDAT", &compressed));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+    Ok(png)
+}
+
