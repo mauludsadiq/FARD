@@ -724,6 +724,17 @@ fn print_error_with_source(msg: &str, em: &std::collections::BTreeMap<String, va
     }
 }
 fn main() -> Result<()> {
+    // Spawn on a large stack to support deep recursive FARD programs
+    // (parser self-hosting, deeply nested expressions, etc.)
+    let result = std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024) // 64MB
+        .spawn(main_inner)?
+        .join()
+        .map_err(|_| anyhow::anyhow!("thread panicked"))?;
+    result
+}
+
+fn main_inner() -> Result<()> {
     let (run, want_version, want_repl, test_args, publish_args, install_args, new_args, verify_args, eval_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
 
     // Handle search subcommand
