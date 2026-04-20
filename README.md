@@ -39,9 +39,8 @@ FARD's doc generator is written in FARD.
 
     fardrun run --program apps/farddoc.fard -- --program my_module.fard --out docs/
 
-apps/farddoc.fard (200 lines) replaces the Rust farddoc binary (659 lines).
-It scans /// doc comments, extracts fn and let declarations, and renders Markdown.
-It documents itself correctly.
+The entire FARD toolchain is now self-hosted in pure FARD.
+4,209 lines of Rust replaced with 1,308 lines of FARD (69% reduction).
 
 Self-hosting progression:
 
@@ -53,6 +52,9 @@ Self-hosting progression:
   fardlock      161 lines FARD    done
   fardcheck     240 lines FARD    done
   interpreter   ~14,000 lines     requires parser primitives
+
+New runtime builtins: png.encode (RGBA record pixels), png.encode_palette (indexed color),
+fs.write_bytes (binary file output).
 
 -----
 
