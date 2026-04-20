@@ -663,6 +663,66 @@ fn cmd_verify(args: fard_v0_5_language_gate::cli::fardrun_cli::VerifyArgs) -> Re
     Ok(())
 }
 
+
+fn print_error_with_source(msg: &str, em: &std::collections::BTreeMap<String, valuecore::json::JsonVal>) {
+    // Extract span from error map
+    let file = em.get("span")
+        .and_then(|s| if let valuecore::json::JsonVal::Object(m) = s { m.get("file") } else { None })
+        .and_then(|v| if let valuecore::json::JsonVal::Str(s) = v { Some(s.as_str()) } else { None })
+        .unwrap_or("");
+    let line_num = em.get("span")
+        .and_then(|s| if let valuecore::json::JsonVal::Object(m) = s { m.get("line") } else { None })
+        .and_then(|v| if let valuecore::json::JsonVal::Int(n) = v { Some(*n as usize) } else { None })
+        .unwrap_or(0);
+    let col_num = em.get("span")
+        .and_then(|s| if let valuecore::json::JsonVal::Object(m) = s { m.get("col") } else { None })
+        .and_then(|v| if let valuecore::json::JsonVal::Int(n) = v { Some(*n as usize) } else { None })
+        .unwrap_or(0);
+
+    eprintln!("Error: {}", msg);
+
+    // Show source line if we have file/line info
+    if !file.is_empty() && line_num > 0 {
+        if let Ok(src) = std::fs::read_to_string(file) {
+            let lines: Vec<&str> = src.lines().collect();
+            if line_num <= lines.len() {
+                let src_line = lines[line_num - 1];
+                eprintln!("  |");
+                eprintln!("{:>4} | {}", line_num, src_line);
+                if col_num > 0 {
+                    let caret_pos = col_num.saturating_sub(1);
+                    eprintln!("  |  {}^", " ".repeat(caret_pos));
+                }
+                eprintln!("  |");
+            }
+        }
+    }
+
+    // Help hints for common patterns
+    let code = em.get("code")
+        .and_then(|v| if let valuecore::json::JsonVal::Str(s) = v { Some(s.as_str()) } else { None })
+        .unwrap_or("");
+
+    match code {
+        "ERROR_UNBOUND" => {
+            eprintln!("  = help: Did you forget to import this module? Try: import(\"std/list\") as list");
+        }
+        "ERROR_BADARG" if msg.contains("rec.has arg0 must be record") => {
+            eprintln!("  = help: rec.has requires a record — check if the value could be null or a plain list");
+            eprintln!("  = help: If folding, use an intermediate let: let r = list.fold(...) in r.result");
+        }
+        "ERROR_SANDBOX" => {
+            eprintln!("  = help: fs paths must be relative — absolute paths like /tmp/... are not allowed");
+        }
+        "ERROR_PARSE" if msg.contains("expected symbol \"in\"") => {
+            eprintln!("  = help: let bindings inside function bodies need \"in\": let x = val in expr");
+        }
+        "ERROR_OOB" => {
+            eprintln!("  = help: list index out of bounds — check list length before calling list.get");
+        }
+        _ => {}
+    }
+}
 fn main() -> Result<()> {
     let (run, want_version, want_repl, test_args, publish_args, install_args, new_args, verify_args, eval_args) = fard_v0_5_language_gate::cli::fardrun_cli::Cli::parse_compat();
 
@@ -1363,6 +1423,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
             em.insert("message".to_string(), J::Str(format!("{} type error(s)", errors.len())));
             em.insert("type_errors".to_string(), J::Array(type_errors));
             em.insert("strict_types".to_string(), J::Bool(true));
+            let em_for_print = em.clone();
             fs::write(
                 out_dir.join("error.json"),
                 json_to_string(&J::Object(em)).into_bytes(),
@@ -1792,6 +1853,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                     ));
                 }
             }
+            let em_for_print = em.clone();
             fs::write(
                 out_dir.join("error.json"),
                 json_to_string(&J::Object(em)).into_bytes(),
@@ -1825,7 +1887,8 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                     run.no_trace,
                 )?;
             }
-            bail!(msg);
+            print_error_with_source(&msg, &em_for_print);
+            std::process::exit(1);
         }
     };
     let j = v.to_json().context("final result must be jsonable")?;
