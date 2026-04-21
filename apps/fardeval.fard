@@ -51,11 +51,26 @@ fn eval(node, env) {
     env_get(env, node.v)
 
   else if t == "bin" then
-    let lr = eval(node.left,  env) in
-    if !lr.ok then lr else
-    let rr = eval(node.right, env) in
-    if !rr.ok then rr else
-    eval_bin(node.op, lr.val, rr.val)
+    if node.op == "|>" then
+      let lr = eval(node.left, env) in
+      if !lr.ok then lr else
+      // If right side is a call node, prepend left as first arg
+      if node.right.t == "call" then
+        let fr = eval(node.right.fn_n, env) in
+        if !fr.ok then fr else
+        let ar = eval_args(node.right.args, env, []) in
+        if !ar.ok then ar else
+        call(fr.val, list.concat([[lr.val], ar.val]))
+      else
+        let fr = eval(node.right, env) in
+        if !fr.ok then fr else
+        call(fr.val, [lr.val])
+    else
+      let lr = eval(node.left,  env) in
+      if !lr.ok then lr else
+      let rr = eval(node.right, env) in
+      if !rr.ok then rr else
+      eval_bin(node.op, lr.val, rr.val)
 
   else if t == "unary" then
     let r = eval(node.operand, env) in
