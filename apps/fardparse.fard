@@ -9,14 +9,15 @@
 ///   let tokens = lex.tokenize(src)
 ///   let result = par.parse_module(tokens, 0)
 
-import("std/str")  as str
-import("std/list") as list
-import("std/rec")  as rec
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/array") as array
 
 // ── Token accessors ───────────────────────────────────────────────────────────
 
 fn tok_at(tokens, pos) {
-  if pos < list.len(tokens) then list.get(tokens, pos)
+  if pos < array.len(tokens) then array.get(tokens, pos)
   else { t: "eof", v: "", line: 0, col: 0 }
 }
 
@@ -477,6 +478,11 @@ fn parse_module_items(tokens, pos, acc) {
 }
 
 fn parse_module(tokens, pos) {
+  let arr = array.from_list(tokens) in
+  parse_module_arr(arr, pos)
+}
+
+fn parse_module_arr(tokens, pos) {
   let r = parse_module_items(tokens, pos, []) in
   if !r.ok then err(r.err, r.pos)
   else ok({ t: "module", items: r.items }, r.pos)

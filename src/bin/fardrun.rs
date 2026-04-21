@@ -4127,6 +4127,9 @@ enum Builtin {
     MathSin, MathCos, MathTan, MathAtan2, IntToHex, IntToBin, FloatIsInf, TypeOf,
     EnvGet, EnvArgs, ProcessSpawn, ProcessExit, ProcessCapture,
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
+    StrFoldChars,
+    StrCharAt,
+    StrLexTokens,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
     SetNew, SetAdd, SetRemove, SetHas, SetUnion, SetIntersect, SetDiff, SetToList, SetFromList, SetSize,
@@ -4141,6 +4144,7 @@ enum Builtin {
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
+    ArrayNew, ArrayPush, ArrayPop, ArrayGet, ArrayLen, ArrayToList, ArrayFromList,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -10397,6 +10401,65 @@ fn call_builtin(
             }
             _ => bail!("ERROR_BADARG list.flat_map expects (list, fn)"),
         }
+
+        Builtin::ArrayNew => {
+            Ok(Val::Mtx(std::sync::Arc::new(std::sync::Mutex::new(Val::List(vec![])))))
+        }
+        Builtin::ArrayPush => match args.as_slice() {
+            [Val::Mtx(m), val] => {
+                let mut guard = m.lock().unwrap();
+                if let Val::List(ref mut v) = *guard {
+                    v.push(val.clone());
+                    Ok(Val::Unit)
+                } else { bail!("array.push: not an array") }
+            }
+            _ => bail!("array.push expects (array, value)"),
+        }
+        Builtin::ArrayPop => match args.as_slice() {
+            [Val::Mtx(m)] => {
+                let mut guard = m.lock().unwrap();
+                if let Val::List(ref mut v) = *guard {
+                    Ok(v.pop().unwrap_or(Val::Unit))
+                } else { bail!("array.pop: not an array") }
+            }
+            _ => bail!("array.pop expects array"),
+        }
+        Builtin::ArrayGet => match args.as_slice() {
+            [Val::Mtx(m), Val::Int(i)] => {
+                let guard = m.lock().unwrap();
+                if let Val::List(ref v) = *guard {
+                    let idx = *i as usize;
+                    if idx < v.len() { Ok(v[idx].clone()) }
+                    else { bail!("array.get: index out of bounds") }
+                } else { bail!("array.get: not an array") }
+            }
+            _ => bail!("array.get expects (array, int)"),
+        }
+        Builtin::ArrayLen => match args.as_slice() {
+            [Val::Mtx(m)] => {
+                let guard = m.lock().unwrap();
+                if let Val::List(ref v) = *guard {
+                    Ok(Val::Int(v.len() as i64))
+                } else { bail!("array.len: not an array") }
+            }
+            _ => bail!("array.len expects array"),
+        }
+        Builtin::ArrayToList => match args.as_slice() {
+            [Val::Mtx(m)] => {
+                let guard = m.lock().unwrap();
+                if let Val::List(ref v) = *guard {
+                    Ok(Val::List(v.clone()))
+                } else { bail!("array.to_list: not an array") }
+            }
+            _ => bail!("array.to_list expects array"),
+        }
+        Builtin::ArrayFromList => match args.as_slice() {
+            [Val::List(v)] => {
+                Ok(Val::Mtx(std::sync::Arc::new(std::sync::Mutex::new(Val::List(v.clone())))))
+            }
+            _ => bail!("array.from_list expects list"),
+        }
+
         Builtin::CellNew => match args.as_slice() {
             [v] => Ok(Val::List(vec![v.clone()])),  // cell is a single-element list as mutable box
             _ => bail!("cell.new expects 1 arg"),
@@ -10409,6 +10472,148 @@ fn call_builtin(
             [Val::List(v), new_val] if v.len() == 1 => Ok(Val::List(vec![new_val.clone()])),
             _ => bail!("cell.set expects (cell, value)"),
         }
+
+
+        Builtin::StrCharAt => match args.as_slice() {
+            [Val::Text(s), Val::Int(i)] => {
+                let idx = *i as usize;
+                let ch = s.chars().nth(idx);
+                match ch {
+                    Some(c) => Ok(Val::Text(c.to_string())),
+                    None => Ok(Val::Unit),
+                }
+            }
+            _ => bail!("str.char_at expects (str, int)"),
+        }
+
+
+        Builtin::StrLexTokens => match args.as_slice() {
+            [Val::Text(src)] => {
+                let keywords: std::collections::HashSet<&str> = [
+                    "let","in","fn","if","then","else","import","as","export",
+                    "match","using","test","while","return","true","false","null","artifact"
+                ].iter().copied().collect();
+                let mut tokens: Vec<Val> = Vec::new();
+                let chars: Vec<char> = src.chars().collect();
+                let n = chars.len();
+                let mut i = 0usize;
+                let mut line = 1usize;
+                let mut col = 1usize;
+                macro_rules! mktok {
+                    ($t:expr, $v:expr, $l:expr, $c:expr) => {{
+                        let mut m = std::collections::BTreeMap::new();
+                        m.insert("t".to_string(), Val::Text($t.to_string()));
+                        m.insert("v".to_string(), Val::Text($v.to_string()));
+                        m.insert("line".to_string(), Val::Int($l as i64));
+                        m.insert("col".to_string(), Val::Int($c as i64));
+                        Val::Record(m)
+                    }};
+                }
+                while i < n {
+                    let c = chars[i];
+                    let c2 = if i+1 < n { chars[i+1] } else { '\0' };
+                    let c3 = if i+2 < n { chars[i+2] } else { '\0' };
+                    match c {
+                        '\n' => { line += 1; col = 1; i += 1; }
+                        ' ' | '\t' | '\r' => { col += 1; i += 1; }
+                        '/' if c2 == '/' && c3 == '/' => {
+                            let start = i;
+                            let sc = col;
+                            while i < n && chars[i] != '\n' { i += 1; }
+                            let v: String = chars[start..i].iter().collect();
+                            tokens.push(mktok!("doc", v, line, sc));
+                        }
+                        '/' if c2 == '/' => { while i < n && chars[i] != '\n' { i += 1; } }
+                        '#' => { while i < n && chars[i] != '\n' { i += 1; } }
+                        '"' => {
+                            let sc = col; i += 1; col += 1;
+                            let mut s = String::new();
+                            let mut esc = false;
+                            while i < n {
+                                let ch = chars[i];
+                                if esc { s.push(ch); esc = false; }
+                                else if ch == '\\' { esc = true; }
+                                else if ch == '"' { i += 1; col += 1; break; }
+                                else { s.push(ch); }
+                                i += 1; col += 1;
+                            }
+                            tokens.push(mktok!("str", s, line, sc));
+                            continue;
+                        }
+                        '`' => {
+                            let sc = col; i += 1; col += 1;
+                            let mut s = String::new();
+                            while i < n && chars[i] != '`' { s.push(chars[i]); i += 1; col += 1; }
+                            if i < n { i += 1; col += 1; }
+                            tokens.push(mktok!("str", s, line, sc));
+                            continue;
+                        }
+                        '=' if c2 == '=' => { tokens.push(mktok!("sym","==",line,col)); i+=2; col+=2; }
+                        '!' if c2 == '=' => { tokens.push(mktok!("sym","!=",line,col)); i+=2; col+=2; }
+                        '<' if c2 == '=' => { tokens.push(mktok!("sym","<=",line,col)); i+=2; col+=2; }
+                        '>' if c2 == '=' => { tokens.push(mktok!("sym",">=",line,col)); i+=2; col+=2; }
+                        '&' if c2 == '&' => { tokens.push(mktok!("sym","&&",line,col)); i+=2; col+=2; }
+                        '|' if c2 == '|' => { tokens.push(mktok!("sym","||",line,col)); i+=2; col+=2; }
+                        '-' if c2 == '>' => { tokens.push(mktok!("sym","->",line,col)); i+=2; col+=2; }
+                        '=' if c2 == '>' => { tokens.push(mktok!("sym","=>",line,col)); i+=2; col+=2; }
+                        '|' if c2 == '>' => { tokens.push(mktok!("sym","|>",line,col)); i+=2; col+=2; }
+                        '?' if c2 == '.' => { tokens.push(mktok!("sym","?.",line,col)); i+=2; col+=2; }
+                        '?' if c2 == '?' => { tokens.push(mktok!("sym","??",line,col)); i+=2; col+=2; }
+                        '.' if c2 == '.' && c3 == '.' => { tokens.push(mktok!("sym","...",line,col)); i+=3; col+=3; }
+                        _ if c.is_alphabetic() || c == '_' => {
+                            let sc = col;
+                            let start = i;
+                            while i < n && (chars[i].is_alphanumeric() || chars[i] == '_') { i += 1; col += 1; }
+                            let word: String = chars[start..i].iter().collect();
+                            let t = if keywords.contains(word.as_str()) { "kw" } else { "ident" };
+                            tokens.push(mktok!(t, word, line, sc));
+                            continue;
+                        }
+                        _ if c.is_ascii_digit() => {
+                            let sc = col;
+                            let start = i;
+                            let mut is_float = false;
+                            while i < n && (chars[i].is_ascii_digit() || (chars[i] == '.' && i+1 < n && chars[i+1].is_ascii_digit())) {
+                                if chars[i] == '.' { is_float = true; }
+                                i += 1; col += 1;
+                            }
+                            let v: String = chars[start..i].iter().collect();
+                            let t = if is_float { "float" } else { "int" };
+                            tokens.push(mktok!(t, v, line, sc));
+                            continue;
+                        }
+                        _ => {
+                            tokens.push(mktok!("sym", c.to_string(), line, col));
+                            i += 1; col += 1;
+                        }
+                    }
+                }
+                // EOF token
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("t".to_string(), Val::Text("eof".to_string()));
+                m.insert("v".to_string(), Val::Text("".to_string()));
+                m.insert("line".to_string(), Val::Int(line as i64));
+                m.insert("col".to_string(), Val::Int(col as i64));
+                tokens.push(Val::Record(m));
+                Ok(Val::List(tokens))
+            }
+            _ => bail!("str.lex_tokens expects string"),
+        }
+
+        Builtin::StrFoldChars => {
+            // str.fold_chars(s, init, fn(acc, char) -> acc) -> acc
+            // Folds over characters of a string without building intermediate list
+            if args.len() != 3 { bail!("str.fold_chars expects 3 args: str, init, fn"); }
+            let s = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("str.fold_chars: arg0 must be text") };
+            let mut acc = args[1].clone();
+            let f = args[2].clone();
+            for ch in s.chars() {
+                let char_str = Val::Text(ch.to_string());
+                acc = call(f.clone(), vec![acc, char_str], tracer, loader)?;
+            }
+            Ok(acc)
+        }
+
         Builtin::FardEval => match args.as_slice() {
             [Val::Text(code)] => {
                 let mut p = Parser::from_src(code, "<eval>")?;
@@ -12501,6 +12706,9 @@ impl ModuleLoader {
                 m.insert("repeat".to_string(), Val::Builtin(Builtin::StrRepeat));
                 m.insert("index_of".to_string(), Val::Builtin(Builtin::StrIndexOf));
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
+                m.insert("fold_chars".to_string(), Val::Builtin(Builtin::StrFoldChars));
+                m.insert("char_at".to_string(), Val::Builtin(Builtin::StrCharAt));
+                m.insert("lex_tokens".to_string(), Val::Builtin(Builtin::StrLexTokens));
                 m.insert("url_decode".to_string(), Val::Builtin(Builtin::StrUrlDecode));
                 Ok(m)
             }
@@ -12847,6 +13055,17 @@ Ok(m)
                 m.insert("new".to_string(), Val::Builtin(Builtin::CellNew));
                 m.insert("get".to_string(), Val::Builtin(Builtin::CellGet));
                 m.insert("set".to_string(), Val::Builtin(Builtin::CellSet));
+                Ok(m)
+            }
+            "std/array" => {
+                let mut m = BTreeMap::new();
+                m.insert("new".to_string(),       Val::Builtin(Builtin::ArrayNew));
+                m.insert("push".to_string(),      Val::Builtin(Builtin::ArrayPush));
+                m.insert("pop".to_string(),       Val::Builtin(Builtin::ArrayPop));
+                m.insert("get".to_string(),       Val::Builtin(Builtin::ArrayGet));
+                m.insert("len".to_string(),       Val::Builtin(Builtin::ArrayLen));
+                m.insert("to_list".to_string(),   Val::Builtin(Builtin::ArrayToList));
+                m.insert("from_list".to_string(), Val::Builtin(Builtin::ArrayFromList));
                 Ok(m)
             }
             "std/base64" => {
