@@ -9,6 +9,9 @@ import("std/cast")  as cast
 import("std/int")   as int
 import("std/math")  as math
 import("std/type")  as type
+import("std/json")  as json
+import("std/hash")  as hash
+import("std/fs")    as fs
 
 // ── Environment ───────────────────────────────────────────────────────────────
 // Env is a record { bindings: {name: val}, parent: env | null }
@@ -303,6 +306,30 @@ fn get_type_mod(val) {
   else null
 }
 
+
+fn make_json_mod() {
+  {
+    encode: n1(fn(v)    { json.encode(v) }),
+    decode: n1(fn(s)    { json.decode(s) })
+  }
+}
+
+fn make_hash_mod() {
+  {
+    sha256:      n1(fn(s) { hash.sha256_text(s) }),
+    sha256_text: n1(fn(s) { hash.sha256_text(s) })
+  }
+}
+
+fn make_fs_mod() {
+  {
+    read_text:  n1(fn(p)    { fs.read_text(p) }),
+    write_text: n2(fn(p, s) { fs.write_text(p, s) }),
+    exists:     n1(fn(p)    { fs.exists(p) }),
+    read_dir:   n1(fn(p)    { fs.read_dir(p) })
+  }
+}
+
 fn get_stdlib_mod(path) {
   if path == "std/list" then make_list_mod()
   else if path == "std/str" then make_str_mod()
@@ -310,6 +337,9 @@ fn get_stdlib_mod(path) {
   else if path == "std/cast" then make_cast_mod()
   else if path == "std/int" then make_int_mod()
   else if path == "std/math" then make_math_mod()
+  else if path == "std/json" then make_json_mod()
+  else if path == "std/hash" then make_hash_mod()
+  else if path == "std/fs"   then make_fs_mod()
   else null
 }
 
@@ -373,16 +403,25 @@ fn make_list_mod() {
 
 fn make_str_mod() {
   {
-    len:      n1(fn(s)       { str.len(s) }),
-    concat:   n2(fn(a, b)    { str.concat(a, b) }),
-    slice:    n3(fn(s, a, b) { str.slice(s, a, b) }),
-    contains: n2(fn(s, sub)  { str.contains(s, sub) }),
-    split:    n2(fn(s, sep)  { str.split(s, sep) }),
-    trim:     n1(fn(s)       { str.trim(s) }),
-    upper:    n1(fn(s)       { str.upper(s) }),
-    lower:    n1(fn(s)       { str.lower(s) }),
-    starts_with: n2(fn(s, p) { str.starts_with(s, p) }),
-    ends_with:   n2(fn(s, p) { str.ends_with(s, p) })
+    len:         n1(fn(s)       { str.len(s) }),
+    concat:      n2(fn(a, b)    { str.concat(a, b) }),
+    slice:       n3(fn(s, a, b) { str.slice(s, a, b) }),
+    contains:    n2(fn(s, sub)  { str.contains(s, sub) }),
+    split:       n2(fn(s, sep)  { str.split(s, sep) }),
+    split_lines: n1(fn(s)       { str.split_lines(s) }),
+    join:        n2(fn(xs, sep) { str.join(xs, sep) }),
+    trim:        n1(fn(s)       { str.trim(s) }),
+    upper:       n1(fn(s)       { str.upper(s) }),
+    lower:       n1(fn(s)       { str.lower(s) }),
+    starts_with: n2(fn(s, p)    { str.starts_with(s, p) }),
+    ends_with:   n2(fn(s, p)    { str.ends_with(s, p) }),
+    replace:     n3(fn(s, a, b) { str.replace(s, a, b) }),
+    index_of:    n2(fn(s, sub)  { str.index_of(s, sub) }),
+    pad_left:    n2(fn(s, n)    { str.pad_left(s, n) }),
+    chars:       n1(fn(s)       { str.chars(s) }),
+    from_chars:  n1(fn(xs)      { str.join(xs, "") }),
+    to_int:      n1(fn(s)       { cast.int(s) }),
+    to_float:    n1(fn(s)       { cast.float(s) })
   }
 }
 
