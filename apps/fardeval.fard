@@ -6,6 +6,8 @@ import("std/list")  as list
 import("std/rec")   as rec
 import("std/array") as array
 import("std/cast")  as cast
+import("std/int")   as int
+import("std/math")  as math
 
 // ── Environment ───────────────────────────────────────────────────────────────
 // Env is a record { bindings: {name: val}, parent: env | null }
@@ -218,7 +220,9 @@ fn eval_module_items(items, env) {
       else eval_module_items(rest, env)
 
     else if t == "import" then
-      eval_module_items(rest, env)
+      let mod = get_stdlib_mod(item.path) in
+      let env2 = if mod != null then env_set(env, item.alias, mod) else env in
+      eval_module_items(rest, env2)
 
     else
       { ok: false, err: str.concat("unknown item: ", t) }
@@ -262,6 +266,35 @@ fn eval_list_filter_acc(xs, f, acc) {
 
 fn eval_list_filter(xs, f) {
   eval_list_filter_acc(xs, f, [])
+}
+
+
+fn get_stdlib_mod(path) {
+  if path == "std/list" then make_list_mod()
+  else if path == "std/str" then make_str_mod()
+  else if path == "std/rec" then make_rec_mod()
+  else if path == "std/cast" then make_cast_mod()
+  else if path == "std/int" then make_int_mod()
+  else if path == "std/math" then make_math_mod()
+  else null
+}
+
+fn make_rec_mod() {
+  {
+    has:  n2(fn(r, k)    { rec.has(r, k) }),
+    get:  n2(fn(r, k)    { rec.get(r, k) }),
+    set:  n3(fn(r, k, v) { rec.set(r, k, v) }),
+    keys: n1(fn(r)       { rec.keys(r) }),
+    del:  n2(fn(r, k)    { rec.del(r, k) })
+  }
+}
+
+fn make_cast_mod() {
+  {
+    int:   n1(fn(v) { cast.int(v) }),
+    float: n1(fn(v) { cast.float(v) }),
+    text:  n1(fn(v) { int.to_text(v) })
+  }
 }
 
 // ── Prelude builder ───────────────────────────────────────────────────────────
@@ -316,6 +349,27 @@ fn make_str_mod() {
     lower:    n1(fn(s)       { str.lower(s) }),
     starts_with: n2(fn(s, p) { str.starts_with(s, p) }),
     ends_with:   n2(fn(s, p) { str.ends_with(s, p) })
+  }
+}
+
+fn make_int_mod() {
+  {
+    to_text: n1(fn(n) { int.to_text(n) }),
+    abs:     n1(fn(n) { if n < 0 then 0 - n else n }),
+    min:     n2(fn(a, b) { if a < b then a else b }),
+    max:     n2(fn(a, b) { if a > b then a else b }),
+    mod:     n2(fn(a, b) { a % b })
+  }
+}
+
+fn make_math_mod() {
+  {
+    min:  n2(fn(a, b) { if a < b then a else b }),
+    max:  n2(fn(a, b) { if a > b then a else b }),
+    abs:  n1(fn(n)    { if n < 0 then 0 - n else n }),
+    floor: n1(fn(n)   { math.floor(n) }),
+    ceil:  n1(fn(n)   { math.ceil(n) }),
+    sqrt:  n1(fn(n)   { math.sqrt(n) })
   }
 }
 
