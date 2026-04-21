@@ -1,0 +1,233 @@
+/// fardeval — FARD evaluator written in FARD
+/// Evaluates AST produced by fardparse
+
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/array") as array
+import("std/cast")  as cast
+
+// ── Environment ───────────────────────────────────────────────────────────────
+// Env is a record { bindings: {name: val}, parent: env | null }
+
+fn env_new(parent) {
+  { bindings: {}, parent: parent }
+}
+
+fn env_get(env, name) {
+  if rec.has(env.bindings, name) then { ok: true, val: rec.get(env.bindings, name) }
+  else if env.parent != null then env_get(env.parent, name)
+  else { ok: false, err: str.concat("unbound: ", name) }
+}
+
+fn env_set(env, name, val) {
+  { bindings: rec.set(env.bindings, name, val), parent: env.parent }
+}
+
+fn env_set_many(env, names, vals) {
+  if list.len(names) == 0 then env
+  else
+    let name = list.get(names, 0) in
+    let val  = list.get(vals,  0) in
+    let env2 = env_set(env, name, val) in
+    env_set_many(env2, list.tail(names), list.tail(vals))
+}
+
+// ── Eval ──────────────────────────────────────────────────────────────────────
+
+fn eval(node, env) {
+  let t = node.t in
+
+  if t == "int"   then { ok: true, val: cast.int(node.v) }
+  else if t == "float" then { ok: true, val: cast.float(node.v) }
+  else if t == "bool" then { ok: true, val: node.v == "true" }
+  else if t == "null" then { ok: true, val: null }
+  else if t == "str"  then { ok: true, val: node.v }
+
+  else if t == "var" then
+    env_get(env, node.v)
+
+  else if t == "bin" then
+    let lr = eval(node.left,  env) in
+    if !lr.ok then lr else
+    let rr = eval(node.right, env) in
+    if !rr.ok then rr else
+    eval_bin(node.op, lr.val, rr.val)
+
+  else if t == "unary" then
+    let r = eval(node.operand, env) in
+    if !r.ok then r else
+    if node.op == "!" then { ok: true, val: !r.val }
+    else if node.op == "-" then { ok: true, val: 0 - r.val }
+    else { ok: false, err: str.concat("unknown unary op: ", node.op) }
+
+  else if t == "if" then
+    let cr = eval(node.cond, env) in
+    if !cr.ok then cr else
+    if cr.val then eval(node.then_n, env)
+    else eval(node.else_n, env)
+
+  else if t == "let" then
+    let vr = eval(node.val, env) in
+    if !vr.ok then vr else
+    eval(node.body, env_set(env, node.name, vr.val))
+
+  else if t == "list" then
+    eval_list_items(node.items, env, [])
+
+  else if t == "rec" then
+    eval_rec_fields(node.fields, env, {})
+
+  else if t == "get" then
+    let or = eval(node.obj, env) in
+    if !or.ok then or else
+    if rec.has(or.val, node.field) then { ok: true, val: rec.get(or.val, node.field) }
+    else { ok: false, err: str.concat("no field: ", node.field) }
+
+  else if t == "fn" then
+    { ok: true, val: { t: "closure", name: null, params: node.params, body: node.body, env: env } }
+
+  else if t == "call" then
+    let fr = eval(node.fn_n, env) in
+    if !fr.ok then fr else
+    eval_args_and_call(node.args, env, fr.val)
+
+  else if t == "index" then
+    let or = eval(node.obj, env) in
+    if !or.ok then or else
+    let ir = eval(node.idx, env) in
+    if !ir.ok then ir else
+    { ok: true, val: list.get(or.val, ir.val) }
+
+  else if t == "match" then
+    let sr = eval(node.subj, env) in
+    if !sr.ok then sr else
+    eval_match_arms(node.arms, env, sr.val)
+
+  else
+    { ok: false, err: str.concat("unknown node type: ", t) }
+}
+
+fn eval_bin(op, a, b) {
+  if op == "+"  then { ok: true, val: a + b }
+  else if op == "-"  then { ok: true, val: a - b }
+  else if op == "*"  then { ok: true, val: a * b }
+  else if op == "/"  then { ok: true, val: a / b }
+  else if op == "%"  then { ok: true, val: a % b }
+  else if op == "==" then { ok: true, val: a == b }
+  else if op == "!=" then { ok: true, val: a != b }
+  else if op == "<"  then { ok: true, val: a < b }
+  else if op == ">"  then { ok: true, val: a > b }
+  else if op == "<=" then { ok: true, val: a <= b }
+  else if op == ">=" then { ok: true, val: a >= b }
+  else if op == "&&" then { ok: true, val: a && b }
+  else if op == "||" then { ok: true, val: a || b }
+  else { ok: false, err: str.concat("unknown op: ", op) }
+}
+
+fn eval_list_items(items, env, acc) {
+  if list.len(items) == 0 then { ok: true, val: acc }
+  else
+    let r = eval(list.get(items, 0), env) in
+    if !r.ok then r else
+    eval_list_items(list.tail(items), env, list.append(acc, r.val))
+}
+
+fn eval_rec_fields(fields, env, acc) {
+  if list.len(fields) == 0 then { ok: true, val: acc }
+  else
+    let f  = list.get(fields, 0) in
+    let vr = eval(f.v, env) in
+    if !vr.ok then vr else
+    eval_rec_fields(list.tail(fields), env, rec.set(acc, f.k, vr.val))
+}
+
+fn eval_args(args, env, acc) {
+  if list.len(args) == 0 then { ok: true, val: acc }
+  else
+    let r = eval(list.get(args, 0), env) in
+    if !r.ok then r else
+    eval_args(list.tail(args), env, list.append(acc, r.val))
+}
+
+fn eval_args_and_call(args, env, f) {
+  let ar = eval_args(args, env, []) in
+  if !ar.ok then ar else
+  call(f, ar.val)
+}
+
+fn call(f, args) {
+  if f.t == "closure" then
+    if list.len(f.params) != list.len(args) then
+      { ok: false, err: "arity mismatch" }
+    else
+      let base_env = if rec.has(f, "name") && f.name != null then env_set(f.env, f.name, f) else f.env in
+      let call_env = env_set_many(base_env, f.params, args) in
+      eval(f.body, call_env)
+  else
+    { ok: false, err: "not a function" }
+}
+
+fn eval_match_arms(arms, env, subj) {
+  if list.len(arms) == 0 then { ok: false, err: "no match arm" }
+  else
+    let arm  = list.get(arms, 0) in
+    let rest = list.tail(arms) in
+    let pr   = eval(arm.pat, env) in
+    if !pr.ok then pr else
+    if pr.val == subj || arm.pat.t == "var" then
+      if arm.pat.t == "var" then
+        eval(arm.body, env_set(env, arm.pat.v, subj))
+      else
+        eval(arm.body, env)
+    else eval_match_arms(rest, env, subj)
+}
+
+// ── Module evaluator ──────────────────────────────────────────────────────────
+
+fn eval_module_items(items, env) {
+  if list.len(items) == 0 then { ok: true, val: null, env: env }
+  else
+    let item = list.get(items, 0) in
+    let rest = list.tail(items) in
+    let t    = item.t in
+
+    if t == "fn_item" then
+      let closure = { t: "closure", name: item.name, params: item.params, body: item.body, env: env } in
+      let self_env = env_set(env, item.name, closure) in
+      let rec_closure = { t: "closure", name: item.name, params: item.params, body: item.body, env: self_env } in
+      eval_module_items(rest, env_set(env, item.name, rec_closure))
+
+    else if t == "let_item" then
+      let vr = eval(item.val, env) in
+      if !vr.ok then vr else
+      eval_module_items(rest, env_set(env, item.name, vr.val))
+
+    else if t == "expr_item" then
+      let vr = eval(item.expr, env) in
+      if !vr.ok then vr else
+      if list.len(rest) == 0 then { ok: true, val: vr.val, env: env }
+      else eval_module_items(rest, env)
+
+    else if t == "import" then
+      eval_module_items(rest, env)
+
+    else
+      { ok: false, err: str.concat("unknown item: ", t) }
+}
+
+fn eval_program(ast) {
+  let env = env_new(null) in
+  let r   = eval_module_items(ast.items, env) in
+  r
+}
+
+{
+  eval:         eval,
+  eval_program: eval_program,
+  eval_module_items: eval_module_items,
+  call:         call,
+  env_new:      env_new,
+  env_set:      env_set,
+  env_get:      env_get
+}
