@@ -37,3 +37,5 @@ spec/tmp/*
 =
 editors/vscode/node_modules/
 editors/vscode/package-lock.json
+test_*.png
+test_*.fard
