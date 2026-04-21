@@ -8,6 +8,7 @@ import("std/array") as array
 import("std/cast")  as cast
 import("std/int")   as int
 import("std/math")  as math
+import("std/type")  as type
 
 // ── Environment ───────────────────────────────────────────────────────────────
 // Env is a record { bindings: {name: val}, parent: env | null }
@@ -83,8 +84,16 @@ fn eval(node, env) {
   else if t == "get" then
     let or = eval(node.obj, env) in
     if !or.ok then or else
-    if rec.has(or.val, node.field) then { ok: true, val: rec.get(or.val, node.field) }
-    else { ok: false, err: str.concat("no field: ", node.field) }
+    let val_type = type.of(or.val) in
+    if val_type == "record" && rec.has(or.val, node.field) then
+      { ok: true, val: rec.get(or.val, node.field) }
+    else
+      let mod = get_type_mod(or.val) in
+      if mod != null && rec.has(mod, node.field) then
+        { ok: true, val: { t: "bound", obj: or.val, method: rec.get(mod, node.field) } }
+      else if val_type == "record" then
+        { ok: false, err: str.concat("no field: ", node.field) }
+      else { ok: false, err: str.concat("no method: ", node.field) }
 
   else if t == "fn" then
     { ok: true, val: { t: "closure", name: null, params: node.params, body: node.body, env: env } }
@@ -166,6 +175,8 @@ fn call(f, args) {
       let base_env = if rec.has(f, "name") && f.name != null then env_set(f.env, f.name, f) else f.env in
       let call_env = env_set_many(base_env, f.params, args) in
       eval(f.body, call_env)
+  else if f.t == "bound" then
+    call(f.method, list.concat([[f.obj], args]))
   else if f.t == "native" then
     { ok: true, val: f.func(args) }
   else if f.t == "native1" then
@@ -268,6 +279,14 @@ fn eval_list_filter(xs, f) {
   eval_list_filter_acc(xs, f, [])
 }
 
+
+
+fn get_type_mod(val) {
+  let t = type.of(val) in
+  if t == "list" then make_list_mod()
+  else if t == "text" then make_str_mod()
+  else null
+}
 
 fn get_stdlib_mod(path) {
   if path == "std/list" then make_list_mod()
