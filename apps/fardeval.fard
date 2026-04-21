@@ -14,20 +14,21 @@ import("std/hash")  as hash
 import("std/fs")    as fs
 
 // ── Environment ───────────────────────────────────────────────────────────────
-// Env is a record { bindings: {name: val}, parent: env | null }
+// Env is a linked list of frames: { key: name, val: val, next: frame | null }
+// O(1) set (prepend), O(n) lookup — no copying
 
 fn env_new(parent) {
-  { bindings: {}, parent: parent }
+  parent
 }
 
 fn env_get(env, name) {
-  if rec.has(env.bindings, name) then { ok: true, val: rec.get(env.bindings, name) }
-  else if env.parent != null then env_get(env.parent, name)
-  else { ok: false, err: str.concat("unbound: ", name) }
+  if env == null then { ok: false, err: str.concat("unbound: ", name) }
+  else if env.key == name then { ok: true, val: env.val }
+  else env_get(env.next, name)
 }
 
 fn env_set(env, name, val) {
-  { bindings: rec.set(env.bindings, name, val), parent: env.parent }
+  { key: name, val: val, next: env }
 }
 
 fn env_set_many(env, names, vals) {
@@ -35,8 +36,7 @@ fn env_set_many(env, names, vals) {
   else
     let name = list.get(names, 0) in
     let val  = list.get(vals,  0) in
-    let env2 = env_set(env, name, val) in
-    env_set_many(env2, list.tail(names), list.tail(vals))
+    env_set_many(env_set(env, name, val), list.tail(names), list.tail(vals))
 }
 
 // ── Eval ──────────────────────────────────────────────────────────────────────
