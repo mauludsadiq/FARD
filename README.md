@@ -4,7 +4,7 @@ FARD is a deterministic, content-addressed scripting language. Every execution p
 
 Traceability is not a feature. It is an invariant of execution.
 
-**Version:** v1.6.1 — [Releases](https://github.com/mauludsadiq/FARD/releases)
+**Version:** v1.7.0 — [Releases](https://github.com/mauludsadiq/FARD/releases)
 
 ```bash
 curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
@@ -42,20 +42,27 @@ FARD's doc generator is written in FARD.
 The entire FARD toolchain is now self-hosted in pure FARD.
 4,209 lines of Rust replaced with 1,308 lines of FARD (69% reduction).
 
-Self-hosting progression:
+| App | Lines |
+|---|---|
+| `farddoc` | 200 |
+| `fardfmt` | 171 |
+| `fardregistry` | 193 |
+| `fard-build` | 183 |
+| `fardbundle` | 160 |
+| `fardlock` | 161 |
+| `fardcheck` | 240 |
 
-  farddoc       200 lines FARD    done
-  fardfmt       171 lines FARD    done
-  fardregistry  193 lines FARD    done
-  fard-build    183 lines FARD    done
-  fardbundle    160 lines FARD    done
-  fardlock      161 lines FARD    done
-  fardcheck     240 lines FARD    done
-  interpreter   ~14,000 lines     requires parser primitives
+Parser self-hosting — FARD parser written in FARD:
 
-New runtime builtins: png.encode (RGBA record pixels), png.encode_palette (indexed color),
-fs.write_bytes (binary file output).
+| File | Lines | Description |
+|---|---|---|
+| `apps/fardlex2.fard` | 141 | Full FARD lexer — span-annotated tokens |
+| `apps/fardparse.fard` | 500 | Recursive descent parser — typed AST records |
 
+`fardparse.fard` parses itself: 5031 tokens → 43 AST items in 1.4s using `str.lex_tokens` + `array.from_list`.
+
+New builtins (v1.7.0): `str.lex_tokens`, `str.fold_chars`, `str.char_at`, `std/array`,
+`png.encode`, `png.encode_palette`, `fs.write_bytes`, `process.capture`.
 -----
 
 ## Quick Start
