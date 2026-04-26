@@ -1,0 +1,360 @@
+/// fard_ir_interp — FARD IR interpreter (iterative, explicit call stack)
+///
+/// Uses an explicit call stack stored in a mutable array.
+/// No recursion — O(1) native stack depth regardless of program depth.
+
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/array") as array
+import("std/cast")  as cast
+import("std/int")   as int
+
+// ── Array set (native O(1) via builtin) ───────────────────────────────────────
+
+fn array_set(arr, idx, val) { array.set(arr, idx, val) }
+
+// ── VM globals ────────────────────────────────────────────────────────────────
+
+fn make_globals() { array.new() }
+
+fn globals_set(globals, name, val) {
+  let n = array.len(globals) in
+  let _ = find_and_set(globals, name, val, 0, n) in
+  null
+}
+
+fn find_and_set(globals, name, val, i, n) {
+  if i >= n then
+    let _ = array.push(globals, { name: name, val: val }) in null
+  else
+    let e = array.get(globals, i) in
+    if e.name == name then
+      let _ = array_set(globals, i, { name: name, val: val }) in null
+    else find_and_set(globals, name, val, i + 1, n)
+}
+
+fn globals_get(globals, name) {
+  find_global(globals, name, array.len(globals) - 1)
+}
+
+fn find_global(globals, name, i) {
+  if i < 0 then null
+  else
+    let e = array.get(globals, i) in
+    if e.name == name then e.val
+    else find_global(globals, name, i - 1)
+}
+
+// ── Call frame ────────────────────────────────────────────────────────────────
+// { regs: array, fn_def: record, pc: int, dst: int }
+// dst = register in CALLER to write return value into (-1 for top frame)
+
+fn make_frame(fn_def, args, ret_dst) {
+  let regs = array.new() in
+  let _ = init_regs(regs, fn_def.locals) in
+  let _ = set_args(regs, args, 0) in
+  { regs: regs, fn_def: fn_def, pc: 0, ret_dst: ret_dst }
+}
+
+fn init_regs(regs, n) {
+  if n == 0 then null
+  else
+    let _ = array.push(regs, null) in
+    init_regs(regs, n - 1)
+}
+
+fn set_args(regs, args, i) {
+  if i >= list.len(args) then null
+  else
+    let _ = array_set(regs, i, list.get(args, i)) in
+    set_args(regs, args, i + 1)
+}
+
+// ── Main execution loop (fully iterative) ─────────────────────────────────────
+
+
+fn resolve_patches(code) {
+  let n    = list.len(code) in
+  let arr  = array.from_list(code) in
+  let _    = apply_patches(arr, code, 0, n) in
+  array.to_list(arr)
+}
+
+fn apply_patches(arr, code, i, n) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "patch_branch" then
+      let target = instr.idx in
+      let orig   = array.get(arr, target) in
+      let _      = array.set(arr, target, { op: "branch", cond: orig.cond, then_t: instr.then_t, else_t: instr.else_t }) in
+      let _      = array.set(arr, i, { op: "nop" }) in
+      apply_patches(arr, code, i + 1, n)
+    else if instr.op == "patch_jump" then
+      let target = instr.idx in
+      let _      = array.set(arr, target, { op: "jump", target: instr.target }) in
+      let _      = array.set(arr, i, { op: "nop" }) in
+      apply_patches(arr, code, i + 1, n)
+    else
+      apply_patches(arr, code, i + 1, n)
+}
+
+fn resolve_fn(fn_def) {
+  { name: fn_def.name, arity: fn_def.arity, locals: fn_def.locals, code: resolve_patches(fn_def.code) }
+}
+
+fn resolve_ir(ir) {
+  { fns: list.map(ir.fns, fn(f) { resolve_fn(f) }), entry: ir.entry }
+}
+
+fn run(ir) {
+  let ir      = resolve_ir(ir) in
+  let globals = make_globals() in
+  let entry   = list.get(ir.fns, ir.entry) in
+  let stack   = array.new() in
+  let frame0  = make_frame(entry, [], -1) in
+  let _ = array.push(stack, frame0) in
+  exec(ir, globals, stack)
+}
+
+fn exec(ir, globals, stack) {
+  let r = list.fold(list.build(100000, fn(i) { i }), { done: false, val: null }, fn(acc, _) {
+    if acc.done then acc
+    else exec_step(ir, globals, stack)
+  }) in
+  r.val
+}
+
+fn exec_step(ir, globals, stack) {
+  if array.len(stack) == 0 then { done: true, val: null }
+  else
+    let fi    = array.len(stack) - 1 in
+    let frame = array.get(stack, fi) in
+    let code  = frame.fn_def.code in
+    let pc    = frame.pc in
+
+    if pc >= list.len(code) then
+      let _ = array.pop(stack) in
+      { done: false, val: null }
+    else
+      let instr = list.get(code, pc) in
+      let op    = instr.op in
+      let regs  = frame.regs in
+
+      if op == "return" then
+        let val = array.get(regs, instr.src) in
+        let _ = array.pop(stack) in
+        if array.len(stack) == 0 then { done: true, val: val }
+        else
+          let caller = array.get(stack, array.len(stack) - 1) in
+          if frame.ret_dst >= 0 then
+            let _ = array_set(caller.regs, frame.ret_dst, val) in
+            { done: false, val: null }
+          else { done: false, val: null }
+
+      else if op == "call" then
+        let f    = array.get(regs, instr.fn_r) in
+        let args = list.map(instr.args, fn(r) { array.get(regs, r) }) in
+        let _ = push_call(ir, globals, stack, fi, frame, f, args, instr.dst) in
+        { done: false, val: null }
+
+      else if op == "call_global" then
+        let f    = globals_get(globals, instr.name) in
+        let args = list.map(instr.args, fn(r) { array.get(regs, r) }) in
+        let _ = push_call(ir, globals, stack, fi, frame, f, args, instr.dst) in
+        { done: false, val: null }
+
+      else
+        let _ = exec_op(ir, globals, stack, fi, frame, regs, instr, op) in
+        { done: false, val: null }
+}
+
+fn advance_pc(stack, fi, frame) {
+  array_set(stack, fi,
+    { regs: frame.regs, fn_def: frame.fn_def, pc: frame.pc + 1, ret_dst: frame.ret_dst })
+}
+
+fn push_call(ir, globals, stack, caller_fi, caller_frame, f, args, dst) {
+  if f == null then null
+  else if f.t == "closure" then
+    let _ = advance_pc(stack, caller_fi, caller_frame) in
+    let new_frame = make_frame(f.fn_def, args, dst) in
+    array.push(stack, new_frame)
+  else if f.t == "native_fn" then
+    let val = call_native(f, args) in
+    if array.len(stack) > 0 then
+      let fi = array.len(stack) - 1 in
+      let frame = array.get(stack, fi) in
+      array_set(frame.regs, dst, val)
+    else null
+  else null
+}
+
+fn call_native(f, args) {
+  if list.len(args) == 0 then f.func([])
+  else if list.len(args) == 1 then f.func1(list.get(args, 0))
+  else if list.len(args) == 2 then f.func2(list.get(args, 0), list.get(args, 1))
+  else if list.len(args) == 3 then f.func3(list.get(args, 0), list.get(args, 1), list.get(args, 2))
+  else null
+}
+
+fn exec_op(ir, globals, stack, fi, frame, regs, instr, op) {
+  let next_pc = frame.pc + 1 in
+
+  if op == "const" then
+    let _ = array_set(regs, instr.dst, instr.val) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "load" then
+    let v = array.get(regs, instr.src) in
+    let _ = array_set(regs, instr.dst, v) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "global_load" then
+    let v = globals_get(globals, instr.name) in
+    let _ = array_set(regs, instr.dst, v) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "global_store" then
+    let v = array.get(regs, instr.src) in
+    let _ = globals_set(globals, instr.name, v) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "add" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) + array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "sub" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) - array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "mul" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) * array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "div" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) / array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "mod" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) % array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "neg" then
+    let _ = array_set(regs, instr.dst, 0 - array.get(regs, instr.src)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "eq" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) == array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "ne" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) != array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "lt" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) < array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "le" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) <= array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "gt" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) > array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "ge" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) >= array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "and" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) && array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "or" then
+    let _ = array_set(regs, instr.dst, array.get(regs, instr.a) || array.get(regs, instr.b)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "not" then
+    let _ = array_set(regs, instr.dst, !array.get(regs, instr.src)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "make_list" then
+    let items = list.map(instr.items, fn(r) { array.get(regs, r) }) in
+    let _ = array_set(regs, instr.dst, items) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "make_rec" then
+    let r = list.fold(instr.fields, {}, fn(acc, f) {
+      rec.set(acc, f.key, array.get(regs, f.src))
+    }) in
+    let _ = array_set(regs, instr.dst, r) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "get_field" then
+    let obj = array.get(regs, instr.obj) in
+    let v   = if rec.has(obj, instr.field) then rec.get(obj, instr.field) else null in
+    let _ = array_set(regs, instr.dst, v) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "get_index" then
+    let obj = array.get(regs, instr.obj) in
+    let idx = array.get(regs, instr.idx) in
+    let _ = array_set(regs, instr.dst, list.get(obj, idx)) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "make_closure" then
+    let fn_def2 = list.get(ir.fns, instr.fn_id) in
+    let closure = { t: "closure", fn_def: fn_def2 } in
+    let _ = array_set(regs, instr.dst, closure) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "branch" then
+    let cond = array.get(regs, instr.cond) in
+    let tgt  = if cond then instr.then_t else instr.else_t in
+    array_set(stack, fi,
+      { regs: frame.regs, fn_def: frame.fn_def, pc: tgt, ret_dst: frame.ret_dst })
+
+  else if op == "jump" then
+    array_set(stack, fi,
+      { regs: frame.regs, fn_def: frame.fn_def, pc: instr.target, ret_dst: frame.ret_dst })
+
+  else if op == "import" then
+    let mod = get_stdlib_mod(instr.path) in
+    let _ = array_set(regs, instr.dst, mod) in
+    let _ = globals_set(globals, instr.alias, mod) in
+    advance_pc(stack, fi, frame)
+
+  else if op == "patch_branch" || op == "patch_jump" || op == "nop" then
+    advance_pc(stack, fi, frame)
+
+  else
+    advance_pc(stack, fi, frame)
+}
+
+// ── Stdlib ────────────────────────────────────────────────────────────────────
+
+fn get_stdlib_mod(path) {
+  if path == "std/list" then {
+    len:    fn(xs)         { list.len(xs) },
+    get:    fn(xs, i)      { list.get(xs, i) },
+    tail:   fn(xs)         { list.tail(xs) },
+    append: fn(xs, v)      { list.append(xs, v) },
+    reverse: fn(xs)        { list.reverse(xs) }
+  }
+  else if path == "std/str" then {
+    len:    fn(s)       { str.len(s) },
+    concat: fn(a, b)    { str.concat(a, b) },
+    split:  fn(s, sep)  { str.split(s, sep) },
+    join:   fn(xs, sep) { str.join(xs, sep) }
+  }
+  else if path == "std/cast" then {
+    int:  fn(v) { cast.int(v) },
+    text: fn(v) { int.to_text(v) }
+  }
+  else null
+}
+
+{ run: run }

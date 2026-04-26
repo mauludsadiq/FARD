@@ -357,7 +357,7 @@ fn build_param_env(params, env, ctx, i) {
 // ── Module lowering ───────────────────────────────────────────────────────────
 
 fn lower_module_items(items, env, code, ctx) {
-  if list.len(items) == 0 then null
+  if list.len(items) == 0 then 0
   else
     let item = list.get(items, 0) in
     let rest = list.tail(items) in
@@ -382,8 +382,9 @@ fn lower_module_items(items, env, code, ctx) {
       lower_module_items(rest, env, code, ctx)
 
     else if t == "expr_item" then
-      let _ = lower_expr(item.expr, env, code, ctx) in
-      lower_module_items(rest, env, code, ctx)
+      let r = lower_expr(item.expr, env, code, ctx) in
+      if list.len(rest) == 0 then r
+      else lower_module_items(rest, env, code, ctx)
 
     else
       lower_module_items(rest, env, code, ctx)
@@ -393,8 +394,8 @@ fn lower_program(ast) {
   let ctx  = make_ctx() in
   let code = array.new() in
   let env  = lenv_new(null) in
-  let _    = lower_module_items(ast.items, env, code, ctx) in
-  let _ = emit(code, instr_return(0)) in
+  let ret  = lower_module_items(ast.items, env, code, ctx) in
+  let _ = emit(code, instr_return(ret)) in
   let entry_fn = {
     name:   "__main__",
     arity:  0,

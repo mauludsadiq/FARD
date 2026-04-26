@@ -727,7 +727,7 @@ fn main() -> Result<()> {
     // Spawn on a large stack to support deep recursive FARD programs
     // (parser self-hosting, deeply nested expressions, etc.)
     let result = std::thread::Builder::new()
-        .stack_size(64 * 1024 * 1024) // 64MB
+        .stack_size(512 * 1024 * 1024) // 512MB
         .spawn(main_inner)?
         .join()
         .map_err(|_| anyhow::anyhow!("thread panicked"))?;
@@ -4144,7 +4144,7 @@ enum Builtin {
     DateTimeNow, DateTimeFormat, DateTimeParse, DateTimeAdd, DateTimeSub, DateTimeField,
     ListParMap,
     CellNew, CellGet, CellSet,
-    ArrayNew, ArrayPush, ArrayPop, ArrayGet, ArrayLen, ArrayToList, ArrayFromList,
+    ArrayNew, ArrayPush, ArrayPop, ArrayGet, ArraySet, ArrayLen, ArrayToList, ArrayFromList,
     LinalgTranspose,
     LinalgEigh,
     LinalgVecAdd,
@@ -10415,6 +10415,23 @@ fn call_builtin(
             }
             _ => bail!("array.push expects (array, value)"),
         }
+
+        Builtin::ArraySet => match args.as_slice() {
+            [Val::Mtx(m), Val::Int(i), val] => {
+                let mut guard = m.lock().unwrap();
+                if let Val::List(ref mut v) = *guard {
+                    let idx = *i as usize;
+                    if idx < v.len() {
+                        v[idx] = val.clone();
+                        Ok(Val::Unit)
+                    } else {
+                        bail!("array.set: index {} out of bounds (len {})", idx, v.len())
+                    }
+                } else { bail!("array.set: not an array") }
+            }
+            _ => bail!("array.set expects (array, int, value)"),
+        }
+
         Builtin::ArrayPop => match args.as_slice() {
             [Val::Mtx(m)] => {
                 let mut guard = m.lock().unwrap();
@@ -13062,6 +13079,7 @@ Ok(m)
                 m.insert("new".to_string(),       Val::Builtin(Builtin::ArrayNew));
                 m.insert("push".to_string(),      Val::Builtin(Builtin::ArrayPush));
                 m.insert("pop".to_string(),       Val::Builtin(Builtin::ArrayPop));
+                m.insert("set".to_string(),       Val::Builtin(Builtin::ArraySet));
                 m.insert("get".to_string(),       Val::Builtin(Builtin::ArrayGet));
                 m.insert("len".to_string(),       Val::Builtin(Builtin::ArrayLen));
                 m.insert("to_list".to_string(),   Val::Builtin(Builtin::ArrayToList));
