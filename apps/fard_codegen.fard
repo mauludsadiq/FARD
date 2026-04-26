@@ -1,0 +1,491 @@
+/// fard_codegen — IR to x86_64 native code generator
+///
+/// Takes FARD IR (from fard_lower) and emits x86_64 machine code.
+/// Phase 1: integers, arithmetic, comparisons, branches, function calls.
+/// Value layout: 16 bytes per local slot on stack (tag + payload).
+/// Tags: NULL=0 BOOL=1 INT=2
+
+import("fard_x86") as x86
+import("std/array")     as array
+import("std/list")      as list
+import("std/str")       as str
+
+// ── Tag constants ─────────────────────────────────────────────────────────────
+fn tag_null()  { 0 }
+fn tag_bool()  { 1 }
+fn tag_int()   { 2 }
+fn tag_clos()  { 7 }
+
+// ── Codegen context ───────────────────────────────────────────────────────────
+// ctx = { buf: array, fn_addrs: array, patches: array }
+// fn_addrs: list of byte offsets where each function starts
+// patches: list of { pos: int, fn_id: int } — call sites to patch
+
+fn make_ctx() {
+  { buf:      x86.buf_new(),
+    fn_addrs: array.new(),
+    patches:  array.new() }
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+
+fn frame_size(n_locals) {
+  // 16 bytes per local, aligned to 16
+  let raw = n_locals * 16 in
+  let aligned = if raw % 16 == 0 then raw else raw + 16 - raw % 16 in
+  if aligned < 16 then 16 else aligned
+}
+
+fn local_off(i) { x86.local_offset(i) }
+
+// Load local slot i: tag -> rax, payload -> rcx
+fn load_slot(buf, i) {
+  x86.load_local(buf, i)
+}
+
+// Store rax (tag), rcx (payload) into slot i
+fn store_slot(buf, i) {
+  x86.store_local_rax_rcx(buf, i)
+}
+
+// Load payload of slot i into rax
+fn load_payload(buf, i) {
+  x86.load_local_payload(buf, i)
+}
+
+// Set tag of slot i to constant tag
+fn set_tag(buf, i, tag) {
+  x86.set_local_tag(buf, i, tag)
+}
+
+// ── Emit const value into local slot ─────────────────────────────────────────
+
+fn emit_const_null(buf, dst) {
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_null()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 0) in
+  store_slot(buf, dst)
+}
+
+fn emit_const_bool(buf, dst, payload) {
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_bool()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), payload) in
+  store_slot(buf, dst)
+}
+
+fn emit_const_int(buf, dst, val) {
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_int()) in
+  let _ = x86.mov_reg_imm64(buf, x86.reg_rcx(), val) in
+  store_slot(buf, dst)
+}
+
+fn emit_const(buf, dst, val) {
+  if val == null then emit_const_null(buf, dst)
+  else if val == true then emit_const_bool(buf, dst, 1)
+  else if val == false then emit_const_bool(buf, dst, 0)
+  else emit_const_int(buf, dst, val)
+}
+
+// ── Emit arithmetic ───────────────────────────────────────────────────────────
+
+fn emit_arith_op(buf, op, a, b) {
+  if op == "add" then
+    let _ = load_payload(buf, a) in
+    let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+    let _ = load_payload(buf, b) in
+    x86.add_rr(buf, x86.reg_rbx(), x86.reg_rax())
+  else if op == "sub" then
+    let _ = load_payload(buf, a) in
+    let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+    let _ = load_payload(buf, b) in
+    x86.sub_rr(buf, x86.reg_rbx(), x86.reg_rax())
+  else if op == "mul" then
+    let _ = load_payload(buf, a) in
+    let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+    let _ = load_payload(buf, b) in
+    x86.imul_rr(buf, x86.reg_rbx(), x86.reg_rax())
+  else if op == "div" then
+    let _ = load_payload(buf, b) in
+    let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+    let _ = load_payload(buf, a) in
+    let _ = x86.cqo(buf) in
+    let _ = x86.idiv_rcx(buf) in
+    x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax())
+  else
+    let _ = load_payload(buf, b) in
+    let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+    let _ = load_payload(buf, a) in
+    let _ = x86.cqo(buf) in
+    let _ = x86.idiv_rcx(buf) in
+    x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rdx())
+}
+
+fn emit_arith(buf, op, dst, a, b) {
+  let _ = emit_arith_op(buf, op, a, b) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_int()) in
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rbx()) in
+  store_slot(buf, dst)
+}
+
+// ── Emit comparison ───────────────────────────────────────────────────────────
+
+fn emit_cmp_setcc(buf, op) {
+  if op == "eq" then x86.sete_al(buf)
+  else if op == "ne" then x86.setne_al(buf)
+  else if op == "lt" then x86.setl_al(buf)
+  else if op == "le" then x86.setle_al(buf)
+  else if op == "gt" then x86.setg_al(buf)
+  else x86.setge_al(buf)
+}
+
+fn emit_cmp(buf, op, dst, a, b) {
+  let _ = load_payload(buf, a) in
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  let _ = load_payload(buf, b) in
+  let _ = x86.cmp_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  let _ = emit_cmp_setcc(buf, op) in
+  let _ = x86.movzx_rax_al(buf) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), tag_bool()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst), x86.reg_rcx()) in
+  x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst) + 8, x86.reg_rax())
+}
+
+// ── Emit neg ─────────────────────────────────────────────────────────────────
+
+fn emit_neg(buf, dst, src) {
+  let _ = load_payload(buf, src) in
+  let _ = x86.neg_reg(buf, x86.reg_rax()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), tag_int()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst), x86.reg_rcx()) in
+  x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst) + 8, x86.reg_rax())
+}
+
+// ── Emit not ─────────────────────────────────────────────────────────────────
+
+fn emit_not(buf, dst, src) {
+  let _ = load_payload(buf, src) in
+  let _ = x86.xor_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), tag_bool()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst), x86.reg_rcx()) in
+  x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst) + 8, x86.reg_rax())
+}
+
+// ── Emit and/or ───────────────────────────────────────────────────────────────
+
+fn emit_logic(buf, op, dst, a, b) {
+  let _ = load_payload(buf, a) in
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  let _ = load_payload(buf, b) in
+  let _ = if op == "and" then x86.and_rr(buf, x86.reg_rbx(), x86.reg_rax())
+          else                x86.or_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), tag_bool()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst), x86.reg_rcx()) in
+  x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), local_off(dst) + 8, x86.reg_rbx())
+}
+
+// ── Emit branch ───────────────────────────────────────────────────────────────
+// Returns { then_patch: int, else_patch: int } — positions to patch
+
+fn emit_branch(buf, cond, then_t, else_t, offsets) {
+  // Load cond payload, test, conditional jump
+  let _ = load_payload(buf, cond) in
+  let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
+  // jz to else branch (cond == 0 means false)
+  let jz_pos = x86.buf_len(buf) in
+  let _ = x86.jz_rel32(buf, 0) in      // placeholder
+  // then branch falls through
+  // At end of then block we need a jump to after else
+  // For now emit jumps to absolute positions (patched later)
+  { jz_pos: jz_pos,
+    then_target: then_t,
+    else_target: else_t }
+}
+
+// ── Emit jump ────────────────────────────────────────────────────────────────
+
+fn emit_jump(buf, target) {
+  let pos = x86.buf_len(buf) in
+  let _ = x86.jmp_rel32(buf, 0) in  // placeholder
+  { pos: pos, target: target }
+}
+
+// ── Emit make_closure ────────────────────────────────────────────────────────
+// Store fn_id as closure tag+payload in local slot
+// Real closure would heap-allocate; for now store fn_id as payload
+
+fn emit_make_closure(buf, dst, fn_id) {
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_clos()) in
+  let _ = x86.mov_reg_imm64(buf, x86.reg_rcx(), fn_id) in
+  store_slot(buf, dst)
+}
+
+// ── Emit call ────────────────────────────────────────────────────────────────
+// Calls a closure stored in fn_r with args
+// Result goes to dst slot
+// For Phase 1: direct call by fn_id, args passed via stack
+
+fn emit_call(buf, ctx, dst, fn_r, args) {
+  // Push args right-to-left (each arg = 2 qwords: tag + payload)
+  let n = list.len(args) in
+  let _ = emit_push_args(buf, args, n - 1) in
+
+  // Load fn_id from closure slot
+  let _ = load_payload(buf, fn_r) in    // rax = fn_id
+  // Save fn_id in rbx
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+
+  // Emit call — we don't know the address yet, record patch
+  let call_pos = x86.buf_len(buf) in
+  let _ = x86.call_rel32(buf, 0) in    // placeholder
+
+  // Record patch: { pos: call_pos, fn_id_reg: rbx } 
+  // Actually: we need to call the function at fn_addrs[fn_id]
+  // For now emit indirect call via rbx as fn_id index
+  // We'll patch this after all functions are emitted
+  let _ = array.push(ctx.patches, { pos: call_pos, slot: fn_r, dst: dst }) in
+
+  // Clean up args from stack
+  let stack_args = n * 16 in  // each arg is 16 bytes
+  let _ = if stack_args > 0 then
+    x86.add_reg_imm32(buf, x86.reg_rsp(), stack_args)
+  else null in
+
+  // Result is in rax (tag) and rcx (payload) by convention
+  store_slot(buf, dst)
+}
+
+fn emit_push_args(buf, args, i) {
+  if i < 0 then null
+  else
+    let slot = list.get(args, i) in
+    // Push payload then tag (so tag is at lower address = first in struct)
+    let _ = load_slot(buf, slot) in          // rax=tag, rcx=payload
+    let _ = x86.push_reg(buf, x86.reg_rcx()) in  // push payload
+    let _ = x86.push_reg(buf, x86.reg_rax()) in  // push tag
+    emit_push_args(buf, args, i - 1)
+}
+
+// ── Emit return ───────────────────────────────────────────────────────────────
+
+fn emit_return(buf, src) {
+  // Return value: rax=tag, rcx=payload (caller reads these)
+  let _ = load_slot(buf, src) in   // rax=tag, rcx=payload
+  x86.epilogue(buf)
+}
+
+// ── Global load/store ─────────────────────────────────────────────────────────
+// Globals stored in BSS: glob_tags[256] + glob_vals[256]
+// For now: use a simple scheme — globals are indexed by name hash
+// We'll implement this properly in the ELF writer
+
+fn emit_global_load(buf, dst, name, globals_base_rel) {
+  // Placeholder: load null into dst
+  emit_const(buf, dst, null)
+}
+
+fn emit_global_store(buf, src, name, globals_base_rel) {
+  // Placeholder: no-op for now
+  null
+}
+
+// ── Emit one IR instruction ───────────────────────────────────────────────────
+
+fn emit_instr(buf, ctx, instr, offsets) {
+  let op = instr.op in
+
+  if op == "const" then
+    emit_const(buf, instr.dst, instr.val)
+
+  else if op == "load" then
+    let _ = load_slot(buf, instr.src) in
+    store_slot(buf, instr.dst)
+
+  else if op == "store" then
+    let _ = load_slot(buf, instr.src) in
+    store_slot(buf, instr.dst)
+
+  else if op == "add" || op == "sub" || op == "mul" ||
+          op == "div" || op == "mod" then
+    emit_arith(buf, op, instr.dst, instr.a, instr.b)
+
+  else if op == "neg" then
+    emit_neg(buf, instr.dst, instr.src)
+
+  else if op == "eq" || op == "ne" || op == "lt" ||
+          op == "le" || op == "gt" || op == "ge" then
+    emit_cmp(buf, op, instr.dst, instr.a, instr.b)
+
+  else if op == "and" || op == "or" then
+    emit_logic(buf, op, instr.dst, instr.a, instr.b)
+
+  else if op == "not" then
+    emit_not(buf, instr.dst, instr.src)
+
+  else if op == "make_closure" then
+    emit_make_closure(buf, instr.dst, instr.fn_id)
+
+  else if op == "call" then
+    emit_call(buf, ctx, instr.dst, instr.fn_r, instr.args)
+
+  else if op == "return" then
+    emit_return(buf, instr.src)
+
+  else if op == "branch" then
+    // Emit: load cond, jz to else_target, fallthrough to then_target
+    let _ = load_payload(buf, instr.cond) in
+    let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
+    let else_byte = if instr.else_t < list.len(offsets)
+                    then list.get(offsets, instr.else_t) else 0 in
+    let then_byte = if instr.then_t < list.len(offsets)
+                    then list.get(offsets, instr.then_t) else 0 in
+    // jz else_target (relative from end of jz instruction)
+    let cur = x86.buf_len(buf) + 6 in  // after jz_rel32
+    let _ = x86.jz_rel32(buf, else_byte - cur) in
+    // jmp then_target
+    let cur2 = x86.buf_len(buf) + 5 in
+    x86.jmp_rel32(buf, then_byte - cur2)
+
+  else if op == "jump" then
+    let tgt_byte = if instr.target < list.len(offsets)
+                   then list.get(offsets, instr.target) else 0 in
+    let cur = x86.buf_len(buf) + 5 in
+    x86.jmp_rel32(buf, tgt_byte - cur)
+
+  else if op == "nop" || op == "patch_branch" || op == "patch_jump" then
+    null
+
+  else if op == "global_load" then
+    emit_global_load(buf, instr.dst, instr.name, 0)
+
+  else if op == "global_store" then
+    emit_global_store(buf, instr.src, instr.name, 0)
+
+  else if op == "make_list" then
+    // Phase 1: emit null for now
+    emit_const(buf, instr.dst, null)
+
+  else if op == "make_rec" then
+    emit_const(buf, instr.dst, null)
+
+  else if op == "get_field" then
+    emit_const(buf, instr.dst, null)
+
+  else if op == "import" then
+    emit_const(buf, instr.dst, null)
+
+  else
+    null
+}
+
+// ── Emit one IR function ──────────────────────────────────────────────────────
+
+fn emit_function(ctx, fn_def) {
+  let buf     = ctx.buf in
+  let n_loc   = fn_def.locals in
+  let fsz     = frame_size(n_loc) in
+  let code    = fn_def.code in
+  let n       = list.len(code) in
+
+  // Record this function's start address
+  let fn_start = x86.buf_len(buf) in
+  let _ = array.push(ctx.fn_addrs, fn_start) in
+
+  // Prologue
+  let _ = x86.prologue(buf, fsz) in
+
+  // Copy args from stack into local slots
+  // Args were pushed: tag then payload for each arg, right to left
+  // After prologue: [rbp+16] = ret addr, [rbp+24] = caller rbp
+  // Actually: [rbp+16] = arg0.tag, [rbp+24] = arg0.payload, etc.
+  // Wait - push order was right-to-left, so last arg first on stack
+  // [rbp+16] = argN-1.tag, [rbp+18] = argN-1.payload ...
+  // For simplicity, pass args in registers for small arg counts
+  // Phase 1: args passed on stack above frame
+  let _ = copy_args_from_stack(buf, fn_def.arity, 0) in
+
+  // Compute byte offsets for each IR instruction (for branch targets)
+  // We need a two-pass approach: first compute offsets, then emit
+  // For Phase 1: use instruction index directly (approximate)
+  let offsets = compute_ir_offsets(buf, code, 0, n, fn_start, []) in
+
+  // Emit instructions
+  let _ = emit_instrs(buf, ctx, code, 0, n, offsets) in
+
+  // If last instruction wasn't a return, add one
+  null
+}
+
+fn copy_args_from_stack(buf, arity, i) {
+  if i >= arity then null
+  else
+    // Arg i is at [rbp + 16 + (arity-1-i)*16] (right-to-left push)
+    let stack_off = 16 + (arity - 1 - i) * 16 in
+    // Load tag from stack
+    let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rax(), x86.reg_rbp(), stack_off) in
+    let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbp(), stack_off + 8) in
+    // Store into local slot i
+    let _ = store_slot(buf, i) in
+    copy_args_from_stack(buf, arity, i + 1)
+}
+
+fn compute_ir_offsets(buf, code, i, n, base, acc) {
+  if i >= n then acc
+  else
+    let off = x86.buf_len(buf) - base in
+    compute_ir_offsets(buf, code, i + 1, n, base, list.append(acc, off))
+}
+
+fn emit_instrs(buf, ctx, code, i, n, offsets) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    let _     = emit_instr(buf, ctx, instr, offsets) in
+    emit_instrs(buf, ctx, code, i + 1, n, offsets)
+}
+
+// ── Emit all functions ────────────────────────────────────────────────────────
+
+fn emit_all_fns(ctx, fns, i, n) {
+  if i >= n then null
+  else
+    let fn_def = list.get(fns, i) in
+    let _ = emit_function(ctx, fn_def) in
+    emit_all_fns(ctx, fns, i + 1, n)
+}
+
+// ── Patch call sites ──────────────────────────────────────────────────────────
+// After all functions emitted, patch call instructions with real addresses
+
+fn apply_patches(ctx) {
+  let n = array.len(ctx.patches) in
+  apply_patches_acc(ctx, 0, n)
+}
+
+fn apply_patches_acc(ctx, i, n) {
+  if i >= n then null
+  else
+    let patch = array.get(ctx.patches, i) in
+    // patch.pos = position of call instruction's rel32 operand + 1
+    // We need to know fn_id to get fn_addrs[fn_id]
+    // For now: skip (fn_id lookup requires runtime dispatch)
+    apply_patches_acc(ctx, i + 1, n)
+}
+
+// ── Main codegen entry point ──────────────────────────────────────────────────
+
+fn codegen(ir) {
+  let ctx = make_ctx() in
+  let fns = ir.fns in
+  let n   = list.len(fns) in
+
+  // Emit all functions
+  let _ = emit_all_fns(ctx, fns, 0, n) in
+
+  // Apply patches
+  let _ = apply_patches(ctx) in
+
+  { buf:      ctx.buf,
+    fn_addrs: ctx.fn_addrs,
+    entry:    ir.entry }
+}
+
+{ codegen: codegen, frame_size: frame_size }
