@@ -1,0 +1,420 @@
+/// fard_x86 — x86_64 instruction emitter
+///
+/// Emits raw x86_64 machine code bytes into a byte buffer (array of ints).
+/// Each function takes a buffer and appends instruction bytes.
+/// All instructions target Linux x86_64 System V ABI.
+
+import("std/array") as array
+import("std/list")  as list
+import("std/str")   as str
+
+// ── Buffer helpers ────────────────────────────────────────────────────────────
+
+fn buf_new()        { array.new() }
+fn buf_len(buf)     { array.len(buf) }
+fn emit8(buf, b)    { array.push(buf, b % 256) }
+fn emit_bytes(buf, bs) { list.fold(bs, null, fn(_, b) { emit8(buf, b) }) }
+
+fn emit16_le(buf, v) {
+  let _ = emit8(buf, v % 256) in
+  emit8(buf, (v / 256) % 256)
+}
+
+fn emit32_le(buf, v) {
+  let _ = emit8(buf, v % 256) in
+  let _ = emit8(buf, (v / 256) % 256) in
+  let _ = emit8(buf, (v / 65536) % 256) in
+  emit8(buf, (v / 16777216) % 256)
+}
+
+fn emit64_le(buf, v) {
+  let _ = emit8(buf, v % 256) in
+  let _ = emit8(buf, (v / 256) % 256) in
+  let _ = emit8(buf, (v / 65536) % 256) in
+  let _ = emit8(buf, (v / 16777216) % 256) in
+  let _ = emit8(buf, (v / 4294967296) % 256) in
+  let _ = emit8(buf, (v / 1099511627776) % 256) in
+  let _ = emit8(buf, (v / 281474976710656) % 256) in
+  emit8(buf, (v / 72057594037927936) % 256)
+}
+
+// Patch a 32-bit value at position pos in buf
+fn patch32(buf, pos, v) {
+  let _ = array.set(buf, pos,     v % 256) in
+  let _ = array.set(buf, pos + 1, (v / 256) % 256) in
+  let _ = array.set(buf, pos + 2, (v / 65536) % 256) in
+  array.set(buf, pos + 3, (v / 16777216) % 256)
+}
+
+// ── Register encodings ────────────────────────────────────────────────────────
+// rax=0 rcx=1 rdx=2 rbx=3 rsp=4 rbp=5 rsi=6 rdi=7
+// r8=8  r9=9  r10=10 r11=11 r12=12 r13=13 r14=14 r15=15
+
+fn reg_rax() { 0 }
+fn reg_rcx() { 1 }
+fn reg_rdx() { 2 }
+fn reg_rbx() { 3 }
+fn reg_rsp() { 4 }
+fn reg_rbp() { 5 }
+fn reg_rsi() { 6 }
+fn reg_rdi() { 7 }
+fn reg_r8()  { 8 }
+fn reg_r9()  { 9 }
+fn reg_r10() { 10 }
+fn reg_r11() { 11 }
+fn reg_r12() { 12 }
+fn reg_r13() { 13 }
+fn reg_r14() { 14 }
+fn reg_r15() { 15 }
+
+// REX prefix
+fn rex_w()        { 72 }   // REX.W (64-bit operand)
+fn rex_wr(r)      { if r >= 8 then 76 else 72 }  // REX.W + REX.R
+fn rex_wb(b)      { if b >= 8 then 73 else 72 }  // REX.W + REX.B
+fn rex_wrb(r, b)  { 72 + (if r >= 8 then 4 else 0) + (if b >= 8 then 1 else 0) }
+
+fn reg3(r) { r % 8 }   // lower 3 bits
+
+// ModRM byte: mod=11 (register), reg, rm
+fn modrm_rr(reg, rm) { 192 + reg3(reg) * 8 + reg3(rm) }
+// ModRM byte: mod=00 (memory), reg, rm=rbp needs special handling
+fn modrm_mr(reg, rm) { 0 + reg3(reg) * 8 + reg3(rm) }
+// ModRM byte: mod=10 (memory+disp32), reg, rm
+fn modrm_disp32(reg, rm) { 128 + reg3(reg) * 8 + reg3(rm) }
+
+// ── Core instructions ─────────────────────────────────────────────────────────
+
+// push reg
+fn push_reg(buf, r) {
+  if r >= 8 then let _ = emit8(buf, 65) in emit8(buf, 80 + reg3(r))
+  else emit8(buf, 80 + r)
+}
+
+// pop reg
+fn pop_reg(buf, r) {
+  if r >= 8 then let _ = emit8(buf, 65) in emit8(buf, 88 + reg3(r))
+  else emit8(buf, 88 + r)
+}
+
+// ret
+fn ret(buf) { emit8(buf, 195) }
+
+// nop
+fn nop(buf) { emit8(buf, 144) }
+
+// mov reg, imm64
+fn mov_reg_imm64(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 184 + reg3(r)) in
+  emit64_le(buf, imm)
+}
+
+// mov reg, imm32 (sign-extended to 64)
+fn mov_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 199) in
+  let _ = emit8(buf, 192 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// mov dst_reg, src_reg
+fn mov_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 137) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// Emit SIB byte if base is rsp/r12 (reg encoding 4)
+fn emit_sib_if_needed(buf, base) {
+  if base % 8 == 4 then emit8(buf, 36) else null
+}
+
+// mov reg, [base + disp32]
+fn mov_reg_mem_disp32(buf, dst, base, disp) {
+  let _ = emit8(buf, rex_wrb(dst, base)) in
+  let _ = emit8(buf, 139) in
+  let _ = emit8(buf, modrm_disp32(dst, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  emit32_le(buf, disp)
+}
+
+// mov [base + disp32], reg
+fn mov_mem_disp32_reg(buf, base, disp, src) {
+  let _ = emit8(buf, rex_wrb(src, base)) in
+  let _ = emit8(buf, 137) in
+  let _ = emit8(buf, modrm_disp32(src, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  emit32_le(buf, disp)
+}
+
+// mov [base + disp32], imm32
+fn mov_mem_disp32_imm32(buf, base, disp, imm) {
+  let _ = emit8(buf, rex_wb(base)) in
+  let _ = emit8(buf, 199) in
+  let _ = emit8(buf, modrm_disp32(0, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  let _ = emit32_le(buf, disp) in
+  emit32_le(buf, imm)
+}
+
+// add dst, src (reg + reg)
+fn add_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 1) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// add reg, imm32
+fn add_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 192 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// sub dst, src
+fn sub_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 41) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// sub reg, imm32
+fn sub_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 232 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// imul dst, src (signed multiply)
+fn imul_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(dst, src)) in
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 175) in
+  emit8(buf, modrm_rr(dst, src))
+}
+
+// idiv rcx (rax = rax / rcx, rdx = rax % rcx — needs cqo first)
+fn cqo(buf) {
+  let _ = emit8(buf, 72) in
+  emit8(buf, 153)
+}
+
+fn idiv_rcx(buf) {
+  let _ = emit8(buf, 72) in
+  let _ = emit8(buf, 247) in
+  emit8(buf, 249)
+}
+
+// neg reg
+fn neg_reg(buf, r) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 247) in
+  emit8(buf, 216 + reg3(r))
+}
+
+// cmp dst, src
+fn cmp_rr(buf, a, b) {
+  let _ = emit8(buf, rex_wrb(b, a)) in
+  let _ = emit8(buf, 57) in
+  emit8(buf, modrm_rr(b, a))
+}
+
+// cmp reg, imm32
+fn cmp_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 248 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// setcc al (condition codes)
+fn sete_al(buf)  { let _ = emit8(buf, 15) in let _ = emit8(buf, 148) in emit8(buf, 192) }
+fn setne_al(buf) { let _ = emit8(buf, 15) in let _ = emit8(buf, 149) in emit8(buf, 192) }
+fn setl_al(buf)  { let _ = emit8(buf, 15) in let _ = emit8(buf, 156) in emit8(buf, 192) }
+fn setle_al(buf) { let _ = emit8(buf, 15) in let _ = emit8(buf, 158) in emit8(buf, 192) }
+fn setg_al(buf)  { let _ = emit8(buf, 15) in let _ = emit8(buf, 159) in emit8(buf, 192) }
+fn setge_al(buf) { let _ = emit8(buf, 15) in let _ = emit8(buf, 157) in emit8(buf, 192) }
+
+// movzx rax, al (zero-extend byte to qword)
+fn movzx_rax_al(buf) {
+  let _ = emit8(buf, 72) in
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 182) in
+  emit8(buf, 192)
+}
+
+// and dst, src
+fn and_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 33) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// or dst, src
+fn or_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 9) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// xor dst, src
+fn xor_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 49) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// xor reg, imm32
+fn xor_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 240 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// jmp rel32 (relative to next instruction)
+fn jmp_rel32(buf, rel) {
+  let _ = emit8(buf, 233) in
+  emit32_le(buf, rel)
+}
+
+// jz rel32
+fn jz_rel32(buf, rel) {
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 132) in
+  emit32_le(buf, rel)
+}
+
+// jnz rel32
+fn jnz_rel32(buf, rel) {
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 133) in
+  emit32_le(buf, rel)
+}
+
+// call rel32
+fn call_rel32(buf, rel) {
+  let _ = emit8(buf, 232) in
+  emit32_le(buf, rel)
+}
+
+// syscall
+fn syscall(buf) {
+  let _ = emit8(buf, 15) in
+  emit8(buf, 5)
+}
+
+// lea reg, [base + disp32]
+fn lea_reg_mem_disp32(buf, dst, base, disp) {
+  let _ = emit8(buf, rex_wrb(dst, base)) in
+  let _ = emit8(buf, 141) in
+  let _ = emit8(buf, modrm_disp32(dst, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  emit32_le(buf, disp)
+}
+
+// Function prologue: push rbp, mov rbp rsp, sub rsp N
+fn prologue(buf, frame_size) {
+  let _ = push_reg(buf, reg_rbp()) in
+  let _ = mov_rr(buf, reg_rbp(), reg_rsp()) in
+  sub_reg_imm32(buf, reg_rsp(), frame_size)
+}
+
+// Function epilogue: mov rsp rbp, pop rbp, ret
+fn epilogue(buf) {
+  let _ = mov_rr(buf, reg_rsp(), reg_rbp()) in
+  let _ = pop_reg(buf, reg_rbp()) in
+  ret(buf)
+}
+
+// Local variable offset from rbp: slot i -> -(i+1)*16
+fn local_offset(i) { 0 - (i + 1) * 16 }
+
+// Load local i into rax (tag) and rcx (payload)
+fn load_local(buf, i) {
+  let off = local_offset(i) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), off) in
+  mov_reg_mem_disp32(buf, reg_rcx(), reg_rbp(), off + 8)
+}
+
+// Store rax (tag) and rcx (payload) into local i
+fn store_local_rax_rcx(buf, i) {
+  let off = local_offset(i) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), off, reg_rax()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), off + 8, reg_rcx())
+}
+
+// Load payload of local i into rax
+fn load_local_payload(buf, i) {
+  mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), local_offset(i) + 8)
+}
+
+// Store rax as payload of local i (tag already set)
+fn store_local_payload(buf, i) {
+  mov_mem_disp32_reg(buf, reg_rbp(), local_offset(i) + 8, reg_rax())
+}
+
+// Set tag of local i to imm
+fn set_local_tag(buf, i, tag) {
+  mov_mem_disp32_imm32(buf, reg_rbp(), local_offset(i), tag)
+}
+
+{
+  buf_new: buf_new,
+  buf_len: buf_len,
+  emit8: emit8,
+  emit32_le: emit32_le,
+  emit64_le: emit64_le,
+  patch32: patch32,
+  mov_reg_imm64: mov_reg_imm64,
+  mov_reg_imm32: mov_reg_imm32,
+  mov_rr: mov_rr,
+  mov_reg_mem_disp32: mov_reg_mem_disp32,
+  mov_mem_disp32_reg: mov_mem_disp32_reg,
+  mov_mem_disp32_imm32: mov_mem_disp32_imm32,
+  add_rr: add_rr,
+  add_reg_imm32: add_reg_imm32,
+  sub_rr: sub_rr,
+  sub_reg_imm32: sub_reg_imm32,
+  imul_rr: imul_rr,
+  cqo: cqo,
+  idiv_rcx: idiv_rcx,
+  neg_reg: neg_reg,
+  cmp_rr: cmp_rr,
+  cmp_reg_imm32: cmp_reg_imm32,
+  sete_al: sete_al,
+  setne_al: setne_al,
+  setl_al: setl_al,
+  setle_al: setle_al,
+  setg_al: setg_al,
+  setge_al: setge_al,
+  movzx_rax_al: movzx_rax_al,
+  and_rr: and_rr,
+  or_rr: or_rr,
+  xor_rr: xor_rr,
+  xor_reg_imm32: xor_reg_imm32,
+  jmp_rel32: jmp_rel32,
+  jz_rel32: jz_rel32,
+  jnz_rel32: jnz_rel32,
+  call_rel32: call_rel32,
+  syscall: syscall,
+  lea_reg_mem_disp32: lea_reg_mem_disp32,
+  push_reg: push_reg,
+  pop_reg: pop_reg,
+  ret: ret,
+  nop: nop,
+  prologue: prologue,
+  epilogue: epilogue,
+  local_offset: local_offset,
+  load_local: load_local,
+  store_local_rax_rcx: store_local_rax_rcx,
+  load_local_payload: load_local_payload,
+  store_local_payload: store_local_payload,
+  set_local_tag: set_local_tag,
+  reg_rax: reg_rax, reg_rcx: reg_rcx, reg_rdx: reg_rdx,
+  reg_rbx: reg_rbx, reg_rsp: reg_rsp, reg_rbp: reg_rbp,
+  reg_rsi: reg_rsi, reg_rdi: reg_rdi,
+  reg_r8: reg_r8, reg_r9: reg_r9, reg_r10: reg_r10, reg_r11: reg_r11
+}
