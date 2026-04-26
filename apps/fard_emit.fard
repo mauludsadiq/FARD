@@ -184,14 +184,88 @@ fn op_import()       { 112 }
 // We emit load/store around each instruction to simulate registers.
 
 fn emit_ir_fn(fn_def, consts, names, func_idx) {
-  let buf   = buf_new() in
-  let code  = fn_def.code in
-  let n     = list.len(code) in
-  let _     = emit_ir_instrs(buf, code, 0, n, consts, names) in
+  let code    = apply_patches(fn_def.code) in
+  let n       = list.len(code) in
+  // First pass: compute byte offset of each IR instruction
+  let offsets = compute_offsets(code, 0, n, 0, []) in
+  let buf     = buf_new() in
+  let _       = emit_ir_instrs_with_offsets(buf, code, 0, n, consts, names, offsets) in
   { name_idx: name_pool_add(names, fn_def.name),
     arity:    fn_def.arity,
     n_locals: fn_def.locals,
     code_buf: buf }
+}
+
+fn apply_patches(code) {
+  apply_patches_loop(code, 0, list.len(code), [])
+}
+
+fn find_branch_patch(code, idx) {
+  find_patch_loop(code, 0, list.len(code), idx, "patch_branch")
+}
+
+fn find_jump_patch(code, idx) {
+  find_patch_loop(code, 0, list.len(code), idx, "patch_jump")
+}
+
+fn find_patch_loop(code, i, n, idx, kind) {
+  if i >= n then null
+  else
+    let p = list.get(code, i) in
+    if p.op == kind && p.idx == idx then p
+    else find_patch_loop(code, i + 1, n, idx, kind)
+}
+
+fn apply_patches_loop(code, i, n, acc) {
+  if i >= n then acc
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "patch_branch" || instr.op == "patch_jump" then
+      apply_patches_loop(code, i + 1, n, acc)
+    else if instr.op == "branch" then
+      let p = find_branch_patch(code, i) in
+      let out = if p == null then instr else { op: "branch", cond: instr.cond, then_t: p.then_t, else_t: p.else_t } in
+      apply_patches_loop(code, i + 1, n, list.append(acc, out))
+    else if instr.op == "jump" then
+      let p = find_jump_patch(code, i) in
+      let out = if p == null then instr else { op: "jump", target: p.target } in
+      apply_patches_loop(code, i + 1, n, list.append(acc, out))
+    else
+      apply_patches_loop(code, i + 1, n, list.append(acc, instr))
+}
+
+fn compute_offsets(code, i, n, byte_off, acc) {
+  if i >= n then acc
+  else
+    let instr = list.get(code, i) in
+    let sz    = ir_instr_byte_size(instr) in
+    compute_offsets(code, i + 1, n, byte_off + sz, list.append(acc, byte_off))
+}
+
+fn ir_instr_byte_size(instr) {
+  let op = instr.op in
+  if op == "const"        then 7   // CONST(1) + u32(4) + STORE(1) + u8(1)
+  else if op == "load"    then 4   // LOAD(1) + u8(1) + STORE(1) + u8(1)
+  else if op == "store"   then 4
+  else if op == "global_load"  then 7  // GLOBAL_LOAD(1) + u32(4) + STORE(1) + u8(1)
+  else if op == "global_store" then 7  // LOAD(1) + u8(1) + GLOBAL_STORE(1) + u32(4) - wait
+  else if op == "add" || op == "sub" || op == "mul" || op == "div" || op == "mod" then 8
+  else if op == "neg"     then 4
+  else if op == "eq" || op == "ne" || op == "lt" || op == "le" || op == "gt" || op == "ge" then 4
+  else if op == "and" || op == "or" then 4
+  else if op == "not"     then 4
+  else if op == "make_closure" then 7  // MAKE_CLOSURE(1) + u32(4) + STORE(1) + u8(1)
+  else if op == "call"    then 6 + 2 * list.len(instr.args)
+  // LOAD fn(2) + LOAD*nargs(2*n) + CALL(1)+nargs(1) + STORE(1)+dst(1)
+  else if op == "get_field" then 8     // LOAD(2) + GET_FIELD(1)+u32(4) + STORE(2) -- wrong
+  else if op == "get_index" then 6
+  else if op == "make_list" then 2 * list.len(instr.items) + 2 + 2
+  else if op == "make_rec" then 6 * list.len(instr.fields) + 2 + 2
+  else if op == "branch"  then 8   // LOAD(2) + JUMP_IF(3) + JUMP(3)
+  else if op == "jump"    then 3   // JUMP(1) + i16(2)
+  else if op == "import"  then 7
+  else if op == "nop" || op == "patch_branch" || op == "patch_jump" then 1
+  else 1
 }
 
 fn emit_ir_instrs(buf, code, i, n, consts, names) {
@@ -200,6 +274,33 @@ fn emit_ir_instrs(buf, code, i, n, consts, names) {
     let instr = list.get(code, i) in
     let _     = emit_ir_instr(buf, instr, consts, names) in
     emit_ir_instrs(buf, code, i + 1, n, consts, names)
+}
+
+fn emit_ir_instrs_with_offsets(buf, code, i, n, consts, names, offsets) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    let _     = emit_ir_instr_off(buf, instr, consts, names, offsets) in
+    emit_ir_instrs_with_offsets(buf, code, i + 1, n, consts, names, offsets)
+}
+
+fn emit_ir_instr_off(buf, instr, consts, names, offsets) {
+  let op = instr.op in
+  if op == "branch" then
+    let then_off = if instr.then_t < list.len(offsets) then list.get(offsets, instr.then_t) + 3 else 0 in
+    let else_off = if instr.else_t < list.len(offsets) then list.get(offsets, instr.else_t) + 3 else 0 in
+    let _ = buf_u8(buf, op_load()) in
+    let _ = buf_u8(buf, instr.cond) in
+    let _ = buf_u8(buf, op_jump_if()) in
+    let _ = buf_i16_le(buf, then_off) in
+    let _ = buf_u8(buf, op_jump()) in
+    buf_i16_le(buf, else_off)
+  else if op == "jump" then
+    let tgt_off = if instr.target < list.len(offsets) then list.get(offsets, instr.target) else 0 in
+    let _ = buf_u8(buf, op_jump()) in
+    buf_i16_le(buf, tgt_off)
+  else
+    emit_ir_instr(buf, instr, consts, names)
 }
 
 fn emit_ir_instr(buf, instr, consts, names) {
