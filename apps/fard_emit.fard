@@ -1,0 +1,437 @@
+/// fard_emit — FARD IR to bytecode emitter
+///
+/// Produces binary bytecode per spec/fard_bytecode.md
+/// Output is a Bytes value ready to write to disk.
+
+import("std/str")   as str
+import("std/list")  as list
+import("std/array") as array
+import("std/bytes") as bytes
+import("std/type")  as type
+
+// ── Byte buffer ───────────────────────────────────────────────────────────────
+
+fn buf_new() { array.new() }
+
+fn buf_u8(buf, v) {
+  array.push(buf, v % 256)
+}
+
+fn buf_u16_le(buf, v) {
+  let _ = buf_u8(buf, v % 256) in
+  buf_u8(buf, (v / 256) % 256)
+}
+
+fn buf_u32_le(buf, v) {
+  let _ = buf_u8(buf, v % 256) in
+  let _ = buf_u8(buf, (v / 256) % 256) in
+  let _ = buf_u8(buf, (v / 65536) % 256) in
+  buf_u8(buf, (v / 16777216) % 256)
+}
+
+fn buf_i16_le(buf, v) {
+  let v2 = if v < 0 then v + 65536 else v in
+  buf_u16_le(buf, v2)
+}
+
+fn buf_i64_le(buf, v) {
+  // Write 8 bytes little-endian
+  let _ = buf_u8(buf, v % 256) in
+  let _ = buf_u8(buf, (v / 256) % 256) in
+  let _ = buf_u8(buf, (v / 65536) % 256) in
+  let _ = buf_u8(buf, (v / 16777216) % 256) in
+  let _ = buf_u8(buf, (v / 4294967296) % 256) in
+  let _ = buf_u8(buf, (v / 1099511627776) % 256) in
+  let _ = buf_u8(buf, (v / 281474976710656) % 256) in
+  buf_u8(buf, (v / 72057594037927936) % 256)
+}
+
+fn buf_str(buf, s) {
+  let bs = bytes.of_str(s) in
+  let n  = bytes.len(bs) in
+  let _  = buf_u32_le(buf, n) in
+  buf_bytes(buf, bs, 0, n)
+}
+
+fn buf_bytes(buf, bs, i, n) {
+  if i >= n then null
+  else
+    let _ = buf_u8(buf, bytes.get(bs, i)) in
+    buf_bytes(buf, bs, i + 1, n)
+}
+
+fn buf_to_bytes(buf) {
+  bytes.of_list(array.to_list(buf))
+}
+
+// ── Constant pool ─────────────────────────────────────────────────────────────
+
+fn make_const_pool() {
+  { entries: array.new(), index: array.new() }
+}
+
+fn const_pool_add(pool, val) {
+  let n = array.len(pool.entries) in
+  let _ = array.push(pool.entries, val) in
+  n
+}
+
+fn emit_const_pool(buf, pool) {
+  let n = array.len(pool.entries) in
+  let _ = buf_u32_le(buf, n) in
+  emit_const_entries(buf, pool.entries, 0, n)
+}
+
+fn emit_const_entries(buf, entries, i, n) {
+  if i >= n then null
+  else
+    let _ = emit_const_entry(buf, array.get(entries, i)) in
+    emit_const_entries(buf, entries, i + 1, n)
+}
+
+fn emit_const_entry(buf, val) {
+  if val == null then
+    buf_u8(buf, 0)
+  else if val == true || val == false then
+    let _ = buf_u8(buf, 1) in
+    buf_u8(buf, if val then 1 else 0)
+  else if is_int(val) then
+    let _ = buf_u8(buf, 2) in
+    buf_i64_le(buf, val)
+  else if is_float(val) then
+    let _ = buf_u8(buf, 3) in
+    buf_i64_le(buf, float_bits(val))
+  else
+    let _ = buf_u8(buf, 4) in
+    buf_str(buf, val)
+}
+
+fn is_int(v)   { type.of(v) == "int" }
+fn is_float(v) { type.of(v) == "float" }
+fn float_bits(v) { v }  // placeholder — needs native float->bits
+
+// ── Name pool ─────────────────────────────────────────────────────────────────
+
+fn make_name_pool() { array.new() }
+
+fn name_pool_add(names, s) {
+  let n = array.len(names) in
+  let idx = find_name(names, s, 0, n) in
+  if idx >= 0 then idx
+  else
+    let _ = array.push(names, s) in
+    n
+}
+
+fn find_name(names, s, i, n) {
+  if i >= n then -1
+  else if array.get(names, i) == s then i
+  else find_name(names, s, i + 1, n)
+}
+
+fn emit_name_pool(buf, names) {
+  let n = array.len(names) in
+  let _ = buf_u32_le(buf, n) in
+  emit_names(buf, names, 0, n)
+}
+
+fn emit_names(buf, names, i, n) {
+  if i >= n then null
+  else
+    let _ = buf_str(buf, array.get(names, i)) in
+    emit_names(buf, names, i + 1, n)
+}
+
+// ── Opcode constants ──────────────────────────────────────────────────────────
+
+fn op_nop()          { 0 }
+fn op_const()        { 1 }
+fn op_load()         { 2 }
+fn op_store()        { 3 }
+fn op_global_load()  { 4 }
+fn op_global_store() { 5 }
+fn op_pop()          { 6 }
+fn op_dup()          { 7 }
+fn op_add()          { 16 }
+fn op_sub()          { 17 }
+fn op_mul()          { 18 }
+fn op_div()          { 19 }
+fn op_mod()          { 20 }
+fn op_neg()          { 21 }
+fn op_eq()           { 32 }
+fn op_ne()           { 33 }
+fn op_lt()           { 34 }
+fn op_le()           { 35 }
+fn op_gt()           { 36 }
+fn op_ge()           { 37 }
+fn op_and()          { 48 }
+fn op_or()           { 49 }
+fn op_not()          { 50 }
+fn op_jump()         { 64 }
+fn op_jump_if()      { 65 }
+fn op_jump_ifnot()   { 66 }
+fn op_return()       { 67 }
+fn op_make_list()    { 80 }
+fn op_make_rec()     { 81 }
+fn op_get_field()    { 82 }
+fn op_get_index()    { 83 }
+fn op_make_closure() { 96 }
+fn op_call()         { 97 }
+fn op_import()       { 112 }
+
+// ── IR to bytecode lowering ───────────────────────────────────────────────────
+// IR uses registers; bytecode uses stack.
+// We emit load/store around each instruction to simulate registers.
+
+fn emit_ir_fn(fn_def, consts, names, func_idx) {
+  let buf   = buf_new() in
+  let code  = fn_def.code in
+  let n     = list.len(code) in
+  let _     = emit_ir_instrs(buf, code, 0, n, consts, names) in
+  { name_idx: name_pool_add(names, fn_def.name),
+    arity:    fn_def.arity,
+    n_locals: fn_def.locals,
+    code_buf: buf }
+}
+
+fn emit_ir_instrs(buf, code, i, n, consts, names) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    let _     = emit_ir_instr(buf, instr, consts, names) in
+    emit_ir_instrs(buf, code, i + 1, n, consts, names)
+}
+
+fn emit_ir_instr(buf, instr, consts, names) {
+  let op = instr.op in
+
+  if op == "const" then
+    let idx = const_pool_add(consts, instr.val) in
+    let _ = buf_u8(buf, op_const()) in
+    let _ = buf_u32_le(buf, idx) in
+    buf_u8(buf, op_store())
+    // store to dst — need dst as u8
+    // buf_u8(buf, instr.dst)  -- deferred
+
+  else if op == "nop" || op == "patch_branch" || op == "patch_jump" then
+    buf_u8(buf, op_nop())
+
+  else if op == "return" then
+    let _ = buf_u8(buf, op_load()) in
+    let _ = buf_u8(buf, instr.src) in
+    buf_u8(buf, op_return())
+
+  else if op == "load" then
+    let _ = buf_u8(buf, op_load()) in
+    let _ = buf_u8(buf, instr.src) in
+    let _ = buf_u8(buf, op_store()) in
+    buf_u8(buf, instr.dst)
+
+  else if op == "add" || op == "sub" || op == "mul" || op == "div" || op == "mod" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.a) in
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.b) in
+    let _ = buf_u8(buf, arith_op(op)) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "eq" || op == "ne" || op == "lt" || op == "le" || op == "gt" || op == "ge" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.a) in
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.b) in
+    let _ = buf_u8(buf, cmp_op(op)) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "and" || op == "or" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.a) in
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.b) in
+    let _ = buf_u8(buf, logic_op(op)) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "not" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.src) in
+    let _ = buf_u8(buf, op_not()) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "neg" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.src) in
+    let _ = buf_u8(buf, op_neg()) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "global_load" then
+    let idx = name_pool_add(names, instr.name) in
+    let _ = buf_u8(buf, op_global_load()) in
+    let _ = buf_u32_le(buf, idx) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "global_store" then
+    let idx = name_pool_add(names, instr.name) in
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.src) in
+    let _ = buf_u8(buf, op_global_store()) in
+    buf_u32_le(buf, idx)
+
+  else if op == "make_closure" then
+    let _ = buf_u8(buf, op_make_closure()) in
+    let _ = buf_u32_le(buf, instr.fn_id) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "call" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.fn_r) in
+    let _ = emit_call_args(buf, instr.args) in
+    let _ = buf_u8(buf, op_call()) in
+    let _ = buf_u8(buf, list.len(instr.args)) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "get_field" then
+    let idx = name_pool_add(names, instr.field) in
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.obj) in
+    let _ = buf_u8(buf, op_get_field()) in
+    let _ = buf_u32_le(buf, idx) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "get_index" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.obj) in
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.idx) in
+    let _ = buf_u8(buf, op_get_index()) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "make_list" then
+    let _ = emit_load_list(buf, instr.items) in
+    let _ = buf_u8(buf, op_make_list()) in
+    let _ = buf_u8(buf, list.len(instr.items)) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "make_rec" then
+    let _ = emit_rec_fields(buf, instr.fields, names) in
+    let _ = buf_u8(buf, op_make_rec()) in
+    let _ = buf_u8(buf, list.len(instr.fields)) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else if op == "branch" then
+    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.cond) in
+    let _ = buf_u8(buf, op_jump_if()) in
+    let _ = buf_i16_le(buf, instr.then_t) in
+    let _ = buf_u8(buf, op_jump()) in
+    buf_i16_le(buf, instr.else_t)
+
+  else if op == "jump" then
+    let _ = buf_u8(buf, op_jump()) in
+    buf_i16_le(buf, instr.target)
+
+  else if op == "import" then
+    let idx = name_pool_add(names, instr.path) in
+    let _ = buf_u8(buf, op_import()) in
+    let _ = buf_u32_le(buf, idx) in
+    let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
+
+  else
+    buf_u8(buf, op_nop())
+}
+
+fn arith_op(op) {
+  if op == "add" then op_add()
+  else if op == "sub" then op_sub()
+  else if op == "mul" then op_mul()
+  else if op == "div" then op_div()
+  else op_mod()
+}
+
+fn cmp_op(op) {
+  if op == "eq" then op_eq()
+  else if op == "ne" then op_ne()
+  else if op == "lt" then op_lt()
+  else if op == "le" then op_le()
+  else if op == "gt" then op_gt()
+  else op_ge()
+}
+
+fn logic_op(op) {
+  if op == "and" then op_and() else op_or()
+}
+
+fn emit_call_args(buf, args) {
+  if list.len(args) == 0 then null
+  else
+    let _ = buf_u8(buf, op_load()) in
+    let _ = buf_u8(buf, list.get(args, 0)) in
+    emit_call_args(buf, list.tail(args))
+}
+
+fn emit_load_list(buf, regs) {
+  if list.len(regs) == 0 then null
+  else
+    let _ = buf_u8(buf, op_load()) in
+    let _ = buf_u8(buf, list.get(regs, 0)) in
+    emit_load_list(buf, list.tail(regs))
+}
+
+fn emit_rec_fields(buf, fields, names) {
+  if list.len(fields) == 0 then null
+  else
+    let f   = list.get(fields, 0) in
+    let idx = name_pool_add(names, f.key) in
+    let _ = buf_u8(buf, op_const()) in
+    let _ = buf_u32_le(buf, idx) in
+    let _ = buf_u8(buf, op_load()) in
+    let _ = buf_u8(buf, f.src) in
+    emit_rec_fields(buf, list.tail(fields), names)
+}
+
+// ── Top-level emitter ─────────────────────────────────────────────────────────
+
+fn emit(ir) {
+  let consts = make_const_pool() in
+  let names  = make_name_pool() in
+  let fns    = emit_fns(ir.fns, consts, names, 0, []) in
+  let buf    = buf_new() in
+
+  // Magic + version
+  let _ = buf_u8(buf, 70) in   // F
+  let _ = buf_u8(buf, 65) in   // A
+  let _ = buf_u8(buf, 82) in   // R
+  let _ = buf_u8(buf, 68) in   // D
+  let _ = buf_u32_le(buf, 1) in // version 1
+
+  // Const pool
+  let _ = emit_const_pool(buf, consts) in
+
+  // Name pool
+  let _ = emit_name_pool(buf, names) in
+
+  // Function table
+  let _ = buf_u32_le(buf, list.len(fns)) in
+  let _ = emit_fn_table(buf, fns) in
+
+  // Entry point
+  let _ = buf_u32_le(buf, ir.entry) in
+
+  buf_to_bytes(buf)
+}
+
+fn emit_fns(fns, consts, names, i, acc) {
+  if i >= list.len(fns) then acc
+  else
+    let fn_def = list.get(fns, i) in
+    let emitted = emit_ir_fn(fn_def, consts, names, i) in
+    emit_fns(fns, consts, names, i + 1, list.append(acc, emitted))
+}
+
+fn emit_fn_table(buf, fns) {
+  if list.len(fns) == 0 then null
+  else
+    let f = list.get(fns, 0) in
+    let code_bytes = array.to_list(f.code_buf) in
+    let n = list.len(code_bytes) in
+    let _ = buf_u32_le(buf, f.name_idx) in
+    let _ = buf_u32_le(buf, f.arity) in
+    let _ = buf_u32_le(buf, f.n_locals) in
+    let _ = buf_u32_le(buf, n) in
+    let _ = emit_code_bytes(buf, code_bytes, 0, n) in
+    emit_fn_table(buf, list.tail(fns))
+}
+
+fn emit_code_bytes(buf, code, i, n) {
+  if i >= n then null
+  else
+    let _ = buf_u8(buf, list.get(code, i)) in
+    emit_code_bytes(buf, code, i + 1, n)
+}
+
+{ emit: emit }
