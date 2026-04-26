@@ -39,3 +39,11 @@ editors/vscode/node_modules/
 editors/vscode/package-lock.json
 test_*.png
 test_*.fard
+
+# Build artifacts
+bootstrap/vm.o
+bootstrap/fardvm
+fardc_out*/
+fardc_self_out/
+output.bin
+*.fardc
