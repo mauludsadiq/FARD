@@ -35,34 +35,54 @@ curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
 
 ## Self-hosting
 
-FARD's doc generator is written in FARD.
+Goal: eliminate Rust entirely. FARD compiles to native machine code with no
+foreign runtime. See [ROADMAP.md](ROADMAP.md) for the full plan.
 
-    fardrun run --program apps/farddoc.fard -- --program my_module.fard --out docs/
+**Current status: Stage 1 of 6 complete.**
 
-The entire FARD toolchain is now self-hosted in pure FARD.
-4,209 lines of Rust replaced with 1,308 lines of FARD (69% reduction).
-
-| App | Lines |
+| Metric | Value |
 |---|---|
-| `farddoc` | 200 |
-| `fardfmt` | 171 |
-| `fardregistry` | 193 |
-| `fard-build` | 183 |
-| `fardbundle` | 160 |
-| `fardlock` | 161 |
-| `fardcheck` | 240 |
+| Rust host | 13,632 lines |
+| FARD implementation | 3,163 lines |
+| Rust replaced so far | 23% |
 
-Parser self-hosting — FARD parser written in FARD:
+### Language pipeline — written in FARD
 
 | File | Lines | Description |
 |---|---|---|
-| `apps/fardlex2.fard` | 141 | Full FARD lexer — span-annotated tokens |
-| `apps/fardparse.fard` | 500 | Recursive descent parser — typed AST records |
+| `apps/fardlex2.fard` | 141 | Lexer — span-annotated tokens |
+| `apps/fardparse.fard` | 501 | Recursive descent parser — typed AST |
+| `apps/fardeval.fard` | 466 | Tree-walking evaluator with stdlib |
+| `apps/fard_lower.fard` | 417 | AST to IR lowering pass |
+| `apps/fard_ir_interp.fard` | 360 | Iterative IR interpreter (explicit call stack) |
 
-`fardparse.fard` parses itself: 5031 tokens → 43 AST items in 1.4s using `str.lex_tokens` + `array.from_list`.
+`fardparse.fard` parses itself: 5031 tokens → 43 AST items in 1.4s.
+`fib(10) = 55` through the full pipeline in 3.6s (debug binary).
 
-New builtins (v1.7.0): `str.lex_tokens`, `str.fold_chars`, `str.char_at`, `std/array`,
-`png.encode`, `png.encode_palette`, `fs.write_bytes`, `process.capture`.
+### Toolchain — written in FARD
+
+| File | Lines |
+|---|---|
+| `apps/farddoc.fard` | 227 |
+| `apps/fardfmt.fard` | 171 |
+| `apps/fardregistry.fard` | 138 |
+| `apps/fard-build.fard` | 183 |
+| `apps/fardbundle.fard` | 159 |
+| `apps/fardlock.fard` | 160 |
+| `apps/fardcheck.fard` | 240 |
+
+### Roadmap
+
+| Stage | Description | Status |
+|---|---|---|
+| 0 | Lexer, parser, evaluator, toolchain in FARD | done |
+| 1 | Canonical IR + lowering + IR interpreter | done |
+| 2 | Deterministic bytecode + emitter | next |
+| 3 | Tiny seed VM in assembly | planned |
+| 4 | Self-hosting compiler in FARD | planned |
+| 5 | Native x86_64 ELF backend | planned |
+| 6 | FARD-native production compiler | planned |
+
 -----
 
 ## Quick Start
