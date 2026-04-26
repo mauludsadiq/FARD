@@ -1,0 +1,401 @@
+/// fard_bc_interp — FARD bytecode interpreter
+///
+/// Reads binary bytecode produced by fard_emit and executes it.
+/// Implements the stack machine defined in spec/fard_bytecode.md
+
+import("std/str")   as str
+import("std/list")  as list
+import("std/array") as array
+import("std/bytes") as bytes
+import("std/cast")  as cast
+import("std/int")   as int
+
+// ── Byte reader ───────────────────────────────────────────────────────────────
+
+fn read_u8(bc, pos) {
+  { val: bytes.get(bc, pos), pos: pos + 1 }
+}
+
+fn read_u32(bc, pos) {
+  let b0 = bytes.get(bc, pos) in
+  let b1 = bytes.get(bc, pos + 1) in
+  let b2 = bytes.get(bc, pos + 2) in
+  let b3 = bytes.get(bc, pos + 3) in
+  { val: b0 + b1 * 256 + b2 * 65536 + b3 * 16777216, pos: pos + 4 }
+}
+
+fn read_i16(bc, pos) {
+  let b0 = bytes.get(bc, pos) in
+  let b1 = bytes.get(bc, pos + 1) in
+  let raw = b0 + b1 * 256 in
+  let val = if raw >= 32768 then raw - 65536 else raw in
+  { val: val, pos: pos + 2 }
+}
+
+fn read_i64(bc, pos) {
+  let b0 = bytes.get(bc, pos) in
+  let b1 = bytes.get(bc, pos + 1) in
+  let b2 = bytes.get(bc, pos + 2) in
+  let b3 = bytes.get(bc, pos + 3) in
+  let b4 = bytes.get(bc, pos + 4) in
+  let b5 = bytes.get(bc, pos + 5) in
+  let b6 = bytes.get(bc, pos + 6) in
+  let b7 = bytes.get(bc, pos + 7) in
+  let val = b0 + b1*256 + b2*65536 + b3*16777216 +
+            b4*4294967296 + b5*1099511627776 +
+            b6*281474976710656 + b7*72057594037927936 in
+  { val: val, pos: pos + 8 }
+}
+
+fn read_str(bc, pos) {
+  let r = read_u32(bc, pos) in
+  let n = r.val in
+  let s = bytes.to_str(bytes.slice(bc, r.pos, r.pos + n)) in
+  { val: s, pos: r.pos + n }
+}
+
+// ── Load bytecode ─────────────────────────────────────────────────────────────
+
+fn load(bc) {
+  // Magic check
+  let p = 4 in
+  let r_ver = read_u32(bc, p) in
+  let p = r_ver.pos in
+
+  // Const pool
+  let r_cp = load_const_pool(bc, p) in
+  let consts = r_cp.val in
+  let p = r_cp.pos in
+
+  // Name pool
+  let r_np = load_name_pool(bc, p) in
+  let names = r_np.val in
+  let p = r_np.pos in
+
+  // Function table
+  let r_fn = read_u32(bc, p) in
+  let n_fns = r_fn.val in
+  let p = r_fn.pos in
+  let r_fns = load_fns(bc, p, n_fns, consts, names, []) in
+  let fns = r_fns.val in
+  let p = r_fns.pos in
+
+  // Entry
+  let r_entry = read_u32(bc, p) in
+  { fns: fns, entry: r_entry.val, consts: consts, names: names }
+}
+
+fn load_const_pool(bc, pos) {
+  let r = read_u32(bc, pos) in
+  let n = r.val in
+  load_consts(bc, r.pos, n, [])
+}
+
+fn load_consts(bc, pos, n, acc) {
+  if n == 0 then { val: acc, pos: pos }
+  else
+    let r = load_const(bc, pos) in
+    load_consts(bc, r.pos, n - 1, list.append(acc, r.val))
+}
+
+fn load_const(bc, pos) {
+  let tag = bytes.get(bc, pos) in
+  let p   = pos + 1 in
+  if tag == 0 then { val: null, pos: p }
+  else if tag == 1 then
+    let b = bytes.get(bc, p) in
+    { val: b != 0, pos: p + 1 }
+  else if tag == 2 then
+    let r = read_i64(bc, p) in
+    { val: r.val, pos: r.pos }
+  else if tag == 3 then
+    let r = read_i64(bc, p) in
+    { val: r.val, pos: r.pos }  // float as bits for now
+  else
+    let r = read_str(bc, p) in
+    { val: r.val, pos: r.pos }
+}
+
+fn load_name_pool(bc, pos) {
+  let r = read_u32(bc, pos) in
+  let n = r.val in
+  load_names(bc, r.pos, n, [])
+}
+
+fn load_names(bc, pos, n, acc) {
+  if n == 0 then { val: acc, pos: pos }
+  else
+    let r = read_str(bc, pos) in
+    load_names(bc, r.pos, n - 1, list.append(acc, r.val))
+}
+
+fn load_fns(bc, pos, n, consts, names, acc) {
+  if n == 0 then { val: acc, pos: pos }
+  else
+    let r = load_fn(bc, pos, consts, names) in
+    load_fns(bc, r.pos, n - 1, consts, names, list.append(acc, r.val))
+}
+
+fn load_fn(bc, pos, consts, names) {
+  let r_name  = read_u32(bc, pos) in
+  let name    = list.get(names, r_name.val) in
+  let r_arity = read_u32(bc, r_name.pos) in
+  let r_locals= read_u32(bc, r_arity.pos) in
+  let r_n     = read_u32(bc, r_locals.pos) in
+  let n_bytes = r_n.val in
+  let code    = bytes.slice(bc, r_n.pos, r_n.pos + n_bytes) in
+  { val: { name: name, arity: r_arity.val, locals: r_locals.val, code: code },
+    pos: r_n.pos + n_bytes }
+}
+
+// ── VM execution ──────────────────────────────────────────────────────────────
+
+fn make_frame(fn_def, args, ret_reg) {
+  let regs = array.new() in
+  let _ = init_regs(regs, fn_def.locals) in
+  let _ = set_args(regs, args, 0) in
+  { regs: regs, fn_def: fn_def, pc: 0, ret_reg: ret_reg, vstack: array.new() }
+}
+
+fn init_regs(regs, n) {
+  if n == 0 then null
+  else let _ = array.push(regs, null) in init_regs(regs, n - 1)
+}
+
+fn set_args(regs, args, i) {
+  if i >= list.len(args) then null
+  else
+    let _ = array.set(regs, i, list.get(args, i)) in
+    set_args(regs, args, i + 1)
+}
+
+fn vpush(frame, v) { array.push(frame.vstack, v) }
+fn vpop(frame)     { let v = array.get(frame.vstack, array.len(frame.vstack) - 1) in let _ = array.pop(frame.vstack) in v }
+fn vpeek(frame)    { array.get(frame.vstack, array.len(frame.vstack) - 1) }
+
+fn run(bc_bytes) {
+  let prog   = load(bc_bytes) in
+  let globals= array.new() in
+  let entry  = list.get(prog.fns, prog.entry) in
+  let stack  = array.new() in
+  let frame0 = make_frame(entry, [], -1) in
+  let _ = array.push(stack, frame0) in
+  exec(prog, globals, stack)
+}
+
+fn exec(prog, globals, stack) {
+  let r = exec_step(prog, globals, stack) in
+  if r.done then r.val
+  else exec(prog, globals, stack)
+}
+
+fn exec_step(prog, globals, stack) {
+  if array.len(stack) == 0 then { done: true, val: null }
+  else
+    let fi    = array.len(stack) - 1 in
+    let frame = array.get(stack, fi) in
+    let bc    = frame.fn_def.code in
+    let pc    = frame.pc in
+
+    if pc >= bytes.len(bc) then
+      let _ = array.pop(stack) in
+      { done: array.len(stack) == 0, val: null }
+    else
+      let op = bytes.get(bc, pc) in
+      dispatch(prog, globals, stack, fi, frame, bc, pc, op)
+}
+
+fn set_pc(stack, fi, frame, new_pc) {
+  array.set(stack, fi,
+    { regs: frame.regs, fn_def: frame.fn_def, pc: new_pc,
+      ret_reg: frame.ret_reg, vstack: frame.vstack })
+}
+
+fn next_pc(stack, fi, frame, n) {
+  set_pc(stack, fi, frame, frame.pc + n)
+}
+
+fn dispatch(prog, globals, stack, fi, frame, bc, pc, op) {
+  if op == 0 then  // NOP
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 1 then  // CONST u32
+    let r   = read_u32(bc, pc + 1) in
+    let val = list.get(prog.consts, r.val) in
+    let _ = vpush(frame, val) in
+    let _ = next_pc(stack, fi, frame, 5) in { done: false, val: null }
+
+  else if op == 2 then  // LOAD u8
+    let slot = bytes.get(bc, pc + 1) in
+    let val  = array.get(frame.regs, slot) in
+    let _ = vpush(frame, val) in
+    let _ = next_pc(stack, fi, frame, 2) in { done: false, val: null }
+
+  else if op == 3 then  // STORE u8
+    let slot = bytes.get(bc, pc + 1) in
+    let val  = vpop(frame) in
+    let _ = array.set(frame.regs, slot, val) in
+    let _ = next_pc(stack, fi, frame, 2) in { done: false, val: null }
+
+  else if op == 4 then  // GLOBAL_LOAD u32
+    let r   = read_u32(bc, pc + 1) in
+    let name= list.get(prog.names, r.val) in
+    let val = global_get(globals, name) in
+    let _ = vpush(frame, val) in
+    let _ = next_pc(stack, fi, frame, 5) in { done: false, val: null }
+
+  else if op == 5 then  // GLOBAL_STORE u32
+    let r    = read_u32(bc, pc + 1) in
+    let name = list.get(prog.names, r.val) in
+    let val  = vpop(frame) in
+    let _ = global_set(globals, name, val) in
+    let _ = next_pc(stack, fi, frame, 5) in { done: false, val: null }
+
+  else if op == 6 then  // POP
+    let _ = vpop(frame) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 7 then  // DUP
+    let v = vpeek(frame) in
+    let _ = vpush(frame, v) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op >= 16 && op <= 20 then  // ADD SUB MUL DIV MOD
+    let b = vpop(frame) in
+    let a = vpop(frame) in
+    let r = if op == 16 then a + b
+            else if op == 17 then a - b
+            else if op == 18 then a * b
+            else if op == 19 then a / b
+            else a % b in
+    let _ = vpush(frame, r) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 21 then  // NEG
+    let v = vpop(frame) in
+    let _ = vpush(frame, 0 - v) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op >= 32 && op <= 37 then  // EQ NE LT LE GT GE
+    let b = vpop(frame) in
+    let a = vpop(frame) in
+    let r = if op == 32 then a == b
+            else if op == 33 then a != b
+            else if op == 34 then a < b
+            else if op == 35 then a <= b
+            else if op == 36 then a > b
+            else a >= b in
+    let _ = vpush(frame, r) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 48 then  // AND
+    let b = vpop(frame) in
+    let a = vpop(frame) in
+    let _ = vpush(frame, a && b) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 49 then  // OR
+    let b = vpop(frame) in
+    let a = vpop(frame) in
+    let _ = vpush(frame, a || b) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 50 then  // NOT
+    let v = vpop(frame) in
+    let _ = vpush(frame, !v) in
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+
+  else if op == 64 then  // JUMP i16
+    let r = read_i16(bc, pc + 1) in
+    let _ = set_pc(stack, fi, frame, r.val) in
+    { done: false, val: null }
+
+  else if op == 65 then  // JUMP_IF i16
+    let r    = read_i16(bc, pc + 1) in
+    let cond = vpop(frame) in
+    let _ = if cond then set_pc(stack, fi, frame, r.val)
+            else next_pc(stack, fi, frame, 3) in
+    { done: false, val: null }
+
+  else if op == 66 then  // JUMP_IFNOT i16
+    let r    = read_i16(bc, pc + 1) in
+    let cond = vpop(frame) in
+    let _ = if !cond then set_pc(stack, fi, frame, r.val)
+            else next_pc(stack, fi, frame, 3) in
+    { done: false, val: null }
+
+  else if op == 67 then  // RETURN
+    let val = vpop(frame) in
+    let _ = array.pop(stack) in
+    if array.len(stack) == 0 then { done: true, val: val }
+    else
+      let caller_fi = array.len(stack) - 1 in
+      let caller    = array.get(stack, caller_fi) in
+      let _ = if frame.ret_reg >= 0 then
+        let _ = array.set(caller.regs, frame.ret_reg, val) in
+        vpush(caller, val)
+      else null in
+      { done: false, val: null }
+
+  else if op == 96 then  // MAKE_CLOSURE u32
+    let r      = read_u32(bc, pc + 1) in
+    let fn_def = list.get(prog.fns, r.val) in
+    let _ = vpush(frame, { t: "closure", fn_def: fn_def }) in
+    let _ = next_pc(stack, fi, frame, 5) in { done: false, val: null }
+
+  else if op == 97 then  // CALL u8
+    let n_args = bytes.get(bc, pc + 1) in
+    let args   = pop_args(frame, n_args, []) in
+    let f      = vpop(frame) in
+    // Advance caller past CALL(2 bytes) + STORE(2 bytes) = 4 bytes
+    let _ = next_pc(stack, fi, frame, 4) in
+    // Get dst slot from STORE instruction after CALL
+    let dst_slot = bytes.get(bc, pc + 3) in
+    let _ = push_call(stack, prog, f, args, dst_slot) in
+    { done: false, val: null }
+
+  else
+    let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
+}
+
+fn pop_args(frame, n, acc) {
+  if n == 0 then acc
+  else
+    let v = vpop(frame) in
+    pop_args(frame, n - 1, list.concat([[v], acc]))
+}
+
+fn push_call(stack, prog, f, args, ret_reg) {
+  if f == null then null
+  else if f.t == "closure" then
+    let new_frame = make_frame(f.fn_def, args, ret_reg) in
+    array.push(stack, new_frame)
+  else null
+}
+
+fn global_get(globals, name) {
+  search_globals(globals, name, array.len(globals) - 1)
+}
+
+fn search_globals(globals, name, i) {
+  if i < 0 then null
+  else
+    let e = array.get(globals, i) in
+    if e.name == name then e.val
+    else search_globals(globals, name, i - 1)
+}
+
+fn global_set(globals, name, val) {
+  let n = array.len(globals) in
+  let found = find_global_idx(globals, name, 0, n) in
+  if found >= 0 then array.set(globals, found, { name: name, val: val })
+  else array.push(globals, { name: name, val: val })
+}
+
+fn find_global_idx(globals, name, i, n) {
+  if i >= n then -1
+  else if array.get(globals, i).name == name then i
+  else find_global_idx(globals, name, i + 1, n)
+}
+
+{ run: run, load: load }

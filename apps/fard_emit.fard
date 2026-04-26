@@ -209,9 +209,8 @@ fn emit_ir_instr(buf, instr, consts, names) {
     let idx = const_pool_add(consts, instr.val) in
     let _ = buf_u8(buf, op_const()) in
     let _ = buf_u32_le(buf, idx) in
-    buf_u8(buf, op_store())
-    // store to dst — need dst as u8
-    // buf_u8(buf, instr.dst)  -- deferred
+    let _ = buf_u8(buf, op_store()) in
+    buf_u8(buf, instr.dst)
 
   else if op == "nop" || op == "patch_branch" || op == "patch_jump" then
     buf_u8(buf, op_nop())
