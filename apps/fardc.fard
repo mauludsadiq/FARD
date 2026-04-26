@@ -1,0 +1,73 @@
+/// fardc — FARD compiler driver
+///
+/// Usage: fardrun run --program apps/fardc.fard -- --in src.fard --out out.fardc
+///
+/// Reads a FARD source file, compiles to bytecode, writes .fardc file.
+/// Pipeline: source -> lex -> parse -> IR lower -> bytecode emit -> write
+
+import("fardparse")  as par
+import("fard_lower") as lower
+import("fard_emit")  as emit
+import("std/str")   as str
+import("std/fs")    as fs
+import("std/list")  as list
+import("std/bytes")   as bytes
+import("std/env")     as env
+
+// ── CLI argument parsing ───────────────────────────────────────────────────
+
+fn find_separator(args, i, n) {
+  if i >= n then n
+  else if list.get(args, i) == "--" then i + 1
+  else find_separator(args, i + 1, n)
+}
+
+fn find_arg(args, flag) {
+  let n   = list.len(args) in
+  let sep = find_separator(args, 0, n) in
+  find_arg_acc(args, flag, sep, n)
+}
+
+fn find_arg_acc(args, flag, i, n) {
+  if i >= n then null
+  else if list.get(args, i) == flag then
+    if i + 1 < n then list.get(args, i + 1) else null
+  else find_arg_acc(args, flag, i + 1, n)
+}
+
+// ── Compiler pipeline ──────────────────────────────────────────────────────
+
+fn compile(src) {
+  let tokens = str.lex_tokens(src) in
+  let parsed = par.parse_module(tokens, 0) in
+  if !parsed.ok then { ok: false, err: parsed.err, bc: null }
+  else
+    let ir = lower.lower_program(parsed.node) in
+    let bc = emit.emit(ir) in
+    { ok: true, err: null, bc: bc }
+}
+
+fn compile_file(in_path, out_path) {
+  let src    = fs.read_text(in_path) in
+  let result = compile(src) in
+  if !result.ok then
+    { ok: false, err: str.concat("Parse error: ", result.err) }
+  else
+    let _ = fs.write_bytes(out_path, result.bc) in
+    { ok: true, err: null,
+      in_path: in_path, out_path: out_path,
+      bc_size: bytes.len(result.bc) }
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
+
+let args    = env.args()
+let in_path = find_arg(args, "--in")
+let out_path = find_arg(args, "--out")
+
+if in_path == null then
+  { ok: false, err: "missing --in argument" }
+else if out_path == null then
+  { ok: false, err: "missing --out argument" }
+else
+  compile_file(in_path, out_path)
