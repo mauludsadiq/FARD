@@ -20,11 +20,14 @@ fn emit16_le(buf, v) {
   emit8(buf, (v / 256) % 256)
 }
 
+fn u32_norm(v) { if v < 0 then v + 4294967296 else v }
+
 fn emit32_le(buf, v) {
-  let _ = emit8(buf, v % 256) in
-  let _ = emit8(buf, (v / 256) % 256) in
-  let _ = emit8(buf, (v / 65536) % 256) in
-  emit8(buf, (v / 16777216) % 256)
+  let vv = u32_norm(v) in
+  let _ = emit8(buf, vv % 256) in
+  let _ = emit8(buf, (vv / 256) % 256) in
+  let _ = emit8(buf, (vv / 65536) % 256) in
+  emit8(buf, (vv / 16777216) % 256)
 }
 
 fn emit64_le(buf, v) {
@@ -40,10 +43,11 @@ fn emit64_le(buf, v) {
 
 // Patch a 32-bit value at position pos in buf
 fn patch32(buf, pos, v) {
-  let _ = array.set(buf, pos,     v % 256) in
-  let _ = array.set(buf, pos + 1, (v / 256) % 256) in
-  let _ = array.set(buf, pos + 2, (v / 65536) % 256) in
-  array.set(buf, pos + 3, (v / 16777216) % 256)
+  let vv = u32_norm(v) in
+  let _ = array.set(buf, pos,     vv % 256) in
+  let _ = array.set(buf, pos + 1, (vv / 256) % 256) in
+  let _ = array.set(buf, pos + 2, (vv / 65536) % 256) in
+  array.set(buf, pos + 3, (vv / 16777216) % 256)
 }
 
 // ── Register encodings ────────────────────────────────────────────────────────
@@ -319,11 +323,13 @@ fn lea_reg_mem_disp32(buf, dst, base, disp) {
 fn prologue(buf, frame_size) {
   let _ = push_reg(buf, reg_rbp()) in
   let _ = mov_rr(buf, reg_rbp(), reg_rsp()) in
+  let _ = push_reg(buf, reg_rbx()) in
   sub_reg_imm32(buf, reg_rsp(), frame_size)
 }
 
 // Function epilogue: mov rsp rbp, pop rbp, ret
 fn epilogue(buf) {
+  let _ = mov_reg_mem_disp32(buf, reg_rbx(), reg_rbp(), -8) in
   let _ = mov_rr(buf, reg_rsp(), reg_rbp()) in
   let _ = pop_reg(buf, reg_rbp()) in
   ret(buf)
@@ -363,6 +369,7 @@ fn set_local_tag(buf, i, tag) {
 
 {
   buf_new: buf_new,
+  emit16_le: emit16_le,
   buf_len: buf_len,
   emit8: emit8,
   emit32_le: emit32_le,

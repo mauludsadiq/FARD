@@ -24,7 +24,21 @@ fn tag_clos()  { 7 }
 fn make_ctx() {
   { buf:      x86.buf_new(),
     fn_addrs: array.new(),
-    patches:  array.new() }
+    patches:  array.new(),
+    slot_fn:  array.new(),
+    globals:  array.new() }
+}
+
+fn find_global_slot_acc(globals, name, i, n) {
+  if i >= n then -1
+  else
+    let e = array.get(globals, i) in
+    if e.name == name then e.slot
+    else find_global_slot_acc(globals, name, i + 1, n)
+}
+
+fn find_global_slot(ctx, name) {
+  find_global_slot_acc(ctx.globals, name, 0, array.len(ctx.globals))
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
@@ -212,7 +226,7 @@ fn emit_jump(buf, target) {
 // Store fn_id as closure tag+payload in local slot
 // Real closure would heap-allocate; for now store fn_id as payload
 
-fn emit_make_closure(buf, dst, fn_id) {
+fn emit_make_closure(buf, ctx, dst, fn_id) {
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_clos()) in
   let _ = x86.mov_reg_imm64(buf, x86.reg_rcx(), fn_id) in
   store_slot(buf, dst)
@@ -223,33 +237,15 @@ fn emit_make_closure(buf, dst, fn_id) {
 // Result goes to dst slot
 // For Phase 1: direct call by fn_id, args passed via stack
 
-fn emit_call(buf, ctx, dst, fn_r, args) {
-  // Push args right-to-left (each arg = 2 qwords: tag + payload)
-  let n = list.len(args) in
+fn emit_call(buf, ctx, dst, fn_id, args) {
+  let n     = list.len(args) in
+  let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
   let _ = emit_push_args(buf, args, n - 1) in
-
-  // Load fn_id from closure slot
-  let _ = load_payload(buf, fn_r) in    // rax = fn_id
-  // Save fn_id in rbx
-  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
-
-  // Emit call — we don't know the address yet, record patch
   let call_pos = x86.buf_len(buf) in
-  let _ = x86.call_rel32(buf, 0) in    // placeholder
-
-  // Record patch: { pos: call_pos, fn_id_reg: rbx } 
-  // Actually: we need to call the function at fn_addrs[fn_id]
-  // For now emit indirect call via rbx as fn_id index
-  // We'll patch this after all functions are emitted
-  let _ = array.push(ctx.patches, { pos: call_pos, slot: fn_r, dst: dst }) in
-
-  // Clean up args from stack
-  let stack_args = n * 16 in  // each arg is 16 bytes
-  let _ = if stack_args > 0 then
-    x86.add_reg_imm32(buf, x86.reg_rsp(), stack_args)
-  else null in
-
-  // Result is in rax (tag) and rcx (payload) by convention
+  let _ = x86.call_rel32(buf, 0) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id, dst: dst }) in
+  let stack_args = n * 16 + 8 in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), stack_args) in
   store_slot(buf, dst)
 }
 
@@ -277,14 +273,20 @@ fn emit_return(buf, src) {
 // For now: use a simple scheme — globals are indexed by name hash
 // We'll implement this properly in the ELF writer
 
-fn emit_global_load(buf, dst, name, globals_base_rel) {
-  // Placeholder: load null into dst
-  emit_const(buf, dst, null)
+fn emit_global_load(buf, ctx, dst, name) {
+  let slot = find_global_slot(ctx, name) in
+  if slot < 0 then emit_const(buf, dst, null)
+  else
+    let _ = load_slot(buf, slot) in
+    store_slot(buf, dst)
 }
 
-fn emit_global_store(buf, src, name, globals_base_rel) {
-  // Placeholder: no-op for now
-  null
+fn emit_global_store(buf, ctx, src, name) {
+  let slot = find_global_slot(ctx, name) in
+  if slot < 0 then null  // unregistered global, skip
+  else
+    let _ = load_slot(buf, src) in
+    store_slot(buf, slot)
 }
 
 // ── Emit one IR instruction ───────────────────────────────────────────────────
@@ -321,10 +323,10 @@ fn emit_instr(buf, ctx, instr, offsets) {
     emit_not(buf, instr.dst, instr.src)
 
   else if op == "make_closure" then
-    emit_make_closure(buf, instr.dst, instr.fn_id)
+    emit_make_closure(buf, ctx, instr.dst, instr.fn_id)
 
   else if op == "call" then
-    emit_call(buf, ctx, instr.dst, instr.fn_r, instr.args)
+    emit_call(buf, ctx, instr.dst, instr.fn_id, instr.args)
 
   else if op == "return" then
     emit_return(buf, instr.src)
@@ -354,10 +356,10 @@ fn emit_instr(buf, ctx, instr, offsets) {
     null
 
   else if op == "global_load" then
-    emit_global_load(buf, instr.dst, instr.name, 0)
+    emit_global_load(buf, ctx, instr.dst, instr.name)
 
   else if op == "global_store" then
-    emit_global_store(buf, instr.src, instr.name, 0)
+    emit_global_store(buf, ctx, instr.src, instr.name)
 
   else if op == "make_list" then
     // Phase 1: emit null for now
@@ -381,7 +383,7 @@ fn emit_instr(buf, ctx, instr, offsets) {
 fn emit_function(ctx, fn_def) {
   let buf     = ctx.buf in
   let n_loc   = fn_def.locals in
-  let fsz     = frame_size(n_loc) in
+  let fsz     = frame_size(256) in  // large frame for globals too
   let code    = fn_def.code in
   let n       = list.len(code) in
 
@@ -417,8 +419,9 @@ fn emit_function(ctx, fn_def) {
 fn copy_args_from_stack(buf, arity, i) {
   if i >= arity then null
   else
-    // Arg i is at [rbp + 16 + (arity-1-i)*16] (right-to-left push)
-    let stack_off = 16 + (arity - 1 - i) * 16 in
+    // Args pushed right-to-left: last arg first on stack
+    // After prologue: [rbp+16] = arg0.tag, [rbp+24] = arg0.payload, ...
+    let stack_off = 16 + i * 16 in
     // Load tag from stack
     let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rax(), x86.reg_rbp(), stack_off) in
     let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbp(), stack_off + 8) in
@@ -444,6 +447,33 @@ fn emit_instrs(buf, ctx, code, i, n, offsets) {
 
 // ── Emit all functions ────────────────────────────────────────────────────────
 
+fn scan_globals(ctx, fns, next_slot) {
+  scan_globals_fns(ctx, fns, 0, list.len(fns), next_slot)
+}
+
+fn scan_globals_fns(ctx, fns, i, n, next_slot) {
+  if i >= n then next_slot
+  else
+    let fn_def = list.get(fns, i) in
+    let ns = scan_globals_code(ctx, fn_def.code, 0, list.len(fn_def.code), next_slot) in
+    scan_globals_fns(ctx, fns, i + 1, n, ns)
+}
+
+fn scan_globals_code(ctx, code, i, n, next_slot) {
+  if i >= n then next_slot
+  else
+    let instr = list.get(code, i) in
+    let op = instr.op in
+    let ns = if op == "global_store" || op == "global_load" then
+      let existing = find_global_slot(ctx, instr.name) in
+      if existing >= 0 then next_slot
+      else
+        let _ = array.push(ctx.globals, { name: instr.name, slot: next_slot }) in
+        next_slot + 1
+    else next_slot in
+    scan_globals_code(ctx, code, i + 1, n, ns)
+}
+
 fn emit_all_fns(ctx, fns, i, n) {
   if i >= n then null
   else
@@ -463,10 +493,19 @@ fn apply_patches(ctx) {
 fn apply_patches_acc(ctx, i, n) {
   if i >= n then null
   else
-    let patch = array.get(ctx.patches, i) in
-    // patch.pos = position of call instruction's rel32 operand + 1
-    // We need to know fn_id to get fn_addrs[fn_id]
-    // For now: skip (fn_id lookup requires runtime dispatch)
+    let patch   = array.get(ctx.patches, i) in
+    // patch.slot = IR local slot holding the closure (fn_id as payload)
+    // patch.pos  = byte position of the call rel32 operand in buf
+    // patch.dst  = dst slot
+    // We need fn_id from the closure slot — but we don't have locals here
+    // Instead: during emit_call we should save fn_id directly
+    // For now patches have fn_id stored directly
+    let fn_id   = patch.fn_id in
+    let call_pos = patch.pos in
+    let fn_addr = array.get(ctx.fn_addrs, fn_id) in
+    let call_after = call_pos + 5 in  // after call rel32
+    let rel = fn_addr - call_after in
+    let _ = x86.patch32(ctx.buf, call_pos + 1, rel) in
     apply_patches_acc(ctx, i + 1, n)
 }
 
@@ -476,6 +515,11 @@ fn codegen(ir) {
   let ctx = make_ctx() in
   let fns = ir.fns in
   let n   = list.len(fns) in
+
+  // Pre-scan globals to assign slots (using high slot numbers)
+  let max_locals = list.fold(fns, 0, fn(acc, f) { if f.locals > acc then f.locals else acc }) in
+  let global_base = max_locals + 10 in
+  let _ = scan_globals(ctx, fns, global_base) in
 
   // Emit all functions
   let _ = emit_all_fns(ctx, fns, 0, n) in
