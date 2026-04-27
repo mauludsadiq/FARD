@@ -9,6 +9,7 @@ import("fard_x86") as x86
 import("std/array")     as array
 import("std/list")      as list
 import("std/str")       as str
+import("std/bytes")     as bytes
 
 // ── Tag constants ─────────────────────────────────────────────────────────────
 fn tag_null()  { 0 }
@@ -391,14 +392,13 @@ fn emit_instr(buf, ctx, instr, offsets) {
     emit_global_store(buf, ctx, instr.src, instr.name)
 
   else if op == "make_list" then
-    // Phase 1: emit null for now
-    emit_const(buf, instr.dst, null)
+    emit_make_list_native(buf, ctx, instr.dst, instr.items)
 
   else if op == "make_rec" then
-    emit_const(buf, instr.dst, null)
+    emit_make_rec(buf, ctx, instr.dst, instr.fields)
 
   else if op == "get_field" then
-    emit_const(buf, instr.dst, null)
+    emit_get_field(buf, ctx, instr.dst, instr.obj, instr.field)
 
   else if op == "import" then
     emit_const(buf, instr.dst, null)
@@ -671,8 +671,213 @@ fn codegen(ir) {
   let _ = apply_patches(ctx) in
 
   { buf:      ctx.buf,
-    fn_addrs: ctx.fn_addrs,
-    entry:    ir.entry }
+    fn_addrs:  ctx.fn_addrs,
+    patches:   ctx.patches,
+    entry:     ir.entry }
 }
+
+
+// ── Record and list codegen ───────────────────────────────────────────────────
+
+fn emit_str_bytes(buf, s) {
+  let n = str.len(s) in
+  let _ = emit_str_bytes_acc(buf, s, 0, n) in
+  x86.emit8(buf, 0)
+}
+
+fn emit_str_bytes_acc(buf, s, i, n) {
+  if i >= n then null
+  else
+    let c  = str.char_at(s, i) in
+    let bs = bytes.of_str(c) in
+    let b  = bytes.get(bs, 0) in
+    let _ = x86.emit8(buf, b) in
+    emit_str_bytes_acc(buf, s, i + 1, n)
+}
+
+fn emit_call_alloc_val(buf, ctx) {
+  // Inline bump allocator: rax = r12; r12 += rdi
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in
+  x86.emit8(buf, 252)
+}
+
+fn emit_make_rec(buf, ctx, dst, fields) {
+  let n    = list.len(fields) in
+  let size = 8 + n * 24 in
+  // Inline alloc: mov rdi,size; mov rax,r12; add r12,rdi
+  let _ = x86.mov_reg_imm64(buf, x86.reg_rdi(), size) in
+  let _ = emit_call_alloc_val(buf, ctx) in
+  // rax = record ptr, save to rbx
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  // Store n at [rbx+0]
+  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rbx(), 0, n) in
+  // Fill fields
+  let _ = emit_rec_fields_native(buf, ctx, fields, 0, n) in
+  // dst.tag = TAG_REC(6), dst.payload = rbx
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 6) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst), x86.reg_rax()) in
+  x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst) + 8, x86.reg_rbx())
+}
+
+fn emit_rec_fields_native(buf, ctx, fields, i, n) {
+  if i >= n then null
+  else
+    let f        = list.get(fields, i) in
+    let base_off = 8 + i * 24 in
+    // Emit key string inline, load addr into rax via rip-relative lea
+    let jmp_pos = x86.buf_len(buf) in
+    let _ = x86.jmp_rel32(buf, 0) in
+    let str_pos = x86.buf_len(buf) in
+    let _ = emit_str_bytes(buf, f.key) in
+    let after = x86.buf_len(buf) in
+    let _ = x86.patch32(buf, jmp_pos + 1, after - (jmp_pos + 5)) in
+    // lea rax, [rip + str_pos - (here+7)]
+    let here = x86.buf_len(buf) in
+    let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 141) in let _ = x86.emit8(buf, 5) in
+    let _ = x86.emit32_le(buf, str_pos - (here + 7)) in
+    // Store key ptr at [rbx + base_off]
+    let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), base_off, x86.reg_rax()) in
+    // Load field value from local slot
+    let _ = x86.load_local(buf, f.src) in  // rax=tag, rcx=payload
+    // Store tag at [rbx + base_off + 8]
+    let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), base_off + 8, x86.reg_rax()) in
+    // Store payload at [rbx + base_off + 16]
+    let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), base_off + 16, x86.reg_rcx()) in
+    emit_rec_fields_native(buf, ctx, fields, i + 1, n)
+}
+
+fn emit_make_list_native(buf, ctx, dst, items) {
+  let n    = list.len(items) in
+  let size = 8 + n * 16 in
+  let _ = x86.mov_reg_imm64(buf, x86.reg_rdi(), size) in
+  let _ = emit_call_alloc_val(buf, ctx) in
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rbx(), 0, n) in
+  let _ = emit_list_items_native(buf, items, 0, n) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in  // TAG_LIST
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst), x86.reg_rax()) in
+  x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst) + 8, x86.reg_rbx())
+}
+
+fn emit_list_items_native(buf, items, i, n) {
+  if i >= n then null
+  else
+    let slot     = list.get(items, i) in
+    let item_off = 8 + i * 16 in
+    let _ = x86.load_local(buf, slot) in
+    let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), item_off, x86.reg_rax()) in
+    let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), item_off + 8, x86.reg_rcx()) in
+    emit_list_items_native(buf, items, i + 1, n)
+}
+
+fn emit_get_field(buf, ctx, dst, obj, field) {
+  // Load record ptr into rbx
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rbx(), x86.reg_rbp(), x86.local_offset(obj) + 8) in
+  // Load n_fields into rcx
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbx(), 0) in
+  // Emit field name string
+  let jmp_pos = x86.buf_len(buf) in
+  let _ = x86.jmp_rel32(buf, 0) in
+  let str_pos = x86.buf_len(buf) in
+  let _ = emit_str_bytes(buf, field) in
+  let after = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jmp_pos + 1, after - (jmp_pos + 5)) in
+  // rsi = field name ptr
+  let here = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 141) in let _ = x86.emit8(buf, 53) in
+  let _ = x86.emit32_le(buf, str_pos - (here + 7)) in
+  // r8 = loop counter = 0
+  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
+  // Loop: compare r8 vs rcx (n_fields)
+  let loop_pos = x86.buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_r8(), x86.reg_rcx()) in
+  let jge_pos = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  // Compute field offset in r10: r8*24 + 8
+  // Use: lea r10, [r8 + r8*2] -> r10 = r8*3, then imul by 8? No.
+  // Simpler: mov r10d, r8d; imul r10, 24; add r10, 8
+  let _ = x86.mov_rr(buf, x86.reg_r10(), x86.reg_r8()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_r11(), 24) in
+  let _ = x86.imul_rr(buf, x86.reg_r10(), x86.reg_r11()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_r10(), 8) in
+  // r10 = offset of field i
+  // rdi = key_ptr = rbx + r10
+  // lea rdi, [rbx + r10]
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in
+  let _ = x86.add_rr(buf, x86.reg_rdi(), x86.reg_r10()) in
+  // rdi = ptr to field entry; key_ptr is at [rdi]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdi(), x86.reg_rdi(), 0) in
+  // Compare strings: rdi=key, rsi=target
+  let _ = emit_strcmp_inline(buf) in
+  // if rax==0 -> found
+  let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
+  let jeq_pos = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 132) in let _ = x86.emit32_le(buf, 0) in
+  // Not found: inc r8, loop
+  let _ = x86.emit8(buf, 77) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 192) in
+  let _ = x86.jmp_rel32(buf, loop_pos - (x86.buf_len(buf) + 5)) in
+  // Found: load val from rbx + r10 + 8 (tag) and + 16 (payload)
+  let found = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jeq_pos + 2, found - (jeq_pos + 6)) in
+  // lea rdi, [rbx + r10]
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in
+  let _ = x86.add_rr(buf, x86.reg_rdi(), x86.reg_r10()) in
+  // rax = [rdi + 8] (tag), rcx = [rdi + 16] (payload)
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rax(), x86.reg_rdi(), 8) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rdi(), 16) in
+  let _ = x86.store_local_rax_rcx(buf, dst) in
+  let skip = x86.buf_len(buf) in
+  let _ = x86.jmp_rel32(buf, 0) in
+  // Not found
+  let nf = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jge_pos + 2, nf - (jge_pos + 6)) in
+  let _ = emit_const(buf, dst, null) in
+  let end = x86.buf_len(buf) in
+  x86.patch32(buf, skip + 1, end - (skip + 5))
+}
+
+fn emit_strcmp_inline(buf) {
+  // Compare null-terminated strings: rdi vs rsi
+  // Result: rax = 0 if equal
+  // Uses: rax, rcx — clobbers both
+  // Save rsi and rcx since we use rcx for n_fields
+  let _ = x86.push_reg(buf, x86.reg_rsi()) in
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in
+  let loop_pos = x86.buf_len(buf) in
+  // al = [rdi]
+  let _ = x86.emit8(buf, 138) in let _ = x86.emit8(buf, 7) in   // mov al, [rdi]
+  // cl = [rsi]
+  let _ = x86.emit8(buf, 138) in let _ = x86.emit8(buf, 14) in  // mov cl, [rsi]
+  // cmp al, cl
+  let _ = x86.emit8(buf, 56) in let _ = x86.emit8(buf, 200) in  // cmp al, cl
+  // jne done
+  let jne = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 117) in let _ = x86.emit8(buf, 0) in
+  // test al, al (null?)
+  let _ = x86.emit8(buf, 132) in let _ = x86.emit8(buf, 192) in
+  // jz done (both null = equal)
+  let jz = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 116) in let _ = x86.emit8(buf, 0) in
+  // inc rdi, inc rsi, loop
+  let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 199) in
+  let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 198) in
+  let back = loop_pos - (x86.buf_len(buf) + 2) in
+  let _ = x86.emit8(buf, 235) in let _ = x86.emit8(buf, back % 256) in
+  // done:
+  let done = x86.buf_len(buf) in
+  let _ = array.set(buf, jne + 1, done - (jne + 2)) in
+  let _ = array.set(buf, jz + 1, done - (jz + 2)) in
+  // rax = al - cl (0 if equal)
+  let _ = x86.emit8(buf, 40) in let _ = x86.emit8(buf, 200) in  // sub al, cl
+  let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 182) in let _ = x86.emit8(buf, 192) in  // movzx rax,al
+  // Restore
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in
+  x86.pop_reg(buf, x86.reg_rsi())
+}
+
+
+
+{ codegen: codegen, frame_size: frame_size }
 
 { codegen: codegen, frame_size: frame_size }

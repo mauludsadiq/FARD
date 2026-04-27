@@ -171,6 +171,22 @@ fn emit_exit(buf) {
 
 // print_i64: print integer in rdi to stdout
 // Full implementation
+
+fn emit_alloc_val_fn(buf) {
+  // alloc_val(rdi=size) -> rax=ptr
+  // r12 = heap_ptr (bump allocator)
+  // push rbp; mov rbp,rsp
+  let _ = emit8(buf, 85) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 137) in let _ = emit8(buf, 229) in
+  // mov rax, r12  (4C 89 E0)
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  // add r12, rdi  (4C 01 FC)
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // leave; ret
+  let _ = emit8(buf, 201) in
+  emit8(buf, 195)
+}
+
 fn emit_print_i64_fn(buf) {
   // Function: print_i64(rdi=value)
   // push rbp; mov rbp,rsp; sub rsp,32
@@ -270,10 +286,24 @@ fn emit_phdr(buf, ptype, flags, offset, vaddr, paddr, filesz, memsz, align) {
 
 // ── Main ELF builder ──────────────────────────────────────────────────────────
 
+
+fn patch_alloc_val_calls(text_buf, patches, alloc_val_abs, code_start) {
+  list.fold(patches, null, fn(_, p) {
+    if p.fn_id == -2 then
+      let call_pos = p.pos in
+      let call_abs = code_start + call_pos in
+      let call_after = call_abs + 5 in
+      let rel = alloc_val_abs - call_after in
+      patch32(text_buf, call_pos + 1, rel)
+    else null
+  })
+}
+
 fn build_elf(codegen_result) {
-  let code_buf  = codegen_result.buf in
-  let fn_addrs  = codegen_result.fn_addrs in
-  let entry_idx = codegen_result.entry in
+  let code_buf       = codegen_result.buf in
+  let fn_addrs       = codegen_result.fn_addrs in
+  let entry_idx      = codegen_result.entry in
+  let cg_res_patches = array.to_list(codegen_result.patches) in
   let entry_off = array.get(fn_addrs, entry_idx) in
 
   // Layout:
@@ -316,6 +346,10 @@ fn build_elf(codegen_result) {
   let _ = emit8(text_buf, 0) in let _ = emit8(text_buf, 0) in
   let _ = emit8(text_buf, 15) in let _ = emit8(text_buf, 5) in
 
+  // alloc_val function
+  let alloc_val_pos = buf_len(text_buf) in
+  let _ = emit_alloc_val_fn(text_buf) in
+
   // print_i64 function
   let print_fn_pos = buf_len(text_buf) in
   let _ = emit_print_i64_fn(text_buf) in
@@ -332,6 +366,8 @@ fn build_elf(codegen_result) {
   let call_after = code_start + call_main_pos + 5 in
   let main_rel = (load_addr() + main_abs) - (load_addr() + call_after) in
   let _ = patch32(text_buf, call_main_pos + 1, main_rel) in
+
+  // alloc_val is now inlined, no patches needed
 
   // Patch call to print_i64
   let print_abs = code_start + print_fn_pos in
