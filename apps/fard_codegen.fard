@@ -106,9 +106,85 @@ fn get_dispatch_id(module_name, method) {
   else -1
 }
 
+fn emit_list_fold_inline(buf, ctx, dst, args) {
+  // list.fold(list, init, closure) -> acc
+  // Inline loop: for each item, call closure(acc, item)
+  let list_slot = list.get(args, 0) in
+  let init_slot = list.get(args, 1) in
+  let clos_slot = list.get(args, 2) in
+  // acc_slot = dst (use dst as accumulator)
+  // Copy init -> dst
+  let _ = x86.load_local(buf, init_slot) in
+  let _ = x86.store_local_rax_rcx(buf, dst) in
+  // rbx = list ptr
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rbx(), x86.reg_rbp(), x86.local_offset(list_slot) + 8) in
+  // rcx = n = [rbx]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbx(), 0) in
+  // r9 = i = 0
+  let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
+  // loop: while i < n
+  let loop_pos = x86.buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_r9(), x86.reg_rcx()) in
+  let jge_pos = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  // Save n and i on stack (rbx is callee-saved, rcx/r9 might be clobbered by call)
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in  // n
+  let _ = x86.push_reg(buf, x86.reg_r9()) in   // i
+  let _ = x86.push_reg(buf, x86.reg_rbx()) in  // list ptr
+  // Load item[i]: offset = 8 + i*16
+  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r9()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rbx()) in
+  // rax = ptr to item slot; load tag -> rcx, payload -> rdx
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rax(), 0) in   // item tag
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdx(), x86.reg_rax(), 8) in   // item payload
+  // Load acc tag -> rsi, payload -> rdi
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rbp(), x86.local_offset(dst)) in      // acc tag
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdi(), x86.reg_rbp(), x86.local_offset(dst) + 8) in  // acc payload
+  // Push right-to-left: arg1=item first, then arg0=acc
+  // arg1 (item): push payload then tag
+  let _ = x86.push_reg(buf, x86.reg_rdx()) in  // item payload
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in  // item tag
+  // arg0 (acc): push payload then tag
+  let _ = x86.push_reg(buf, x86.reg_rdi()) in  // acc payload
+  let _ = x86.push_reg(buf, x86.reg_rsi()) in  // acc tag
+  // Call closure
+  // Try slot lookup first, then check if clos_slot itself is the fn_id
+  let fn_id_from_slot = find_fn_id(ctx.slot_fn, clos_slot) in
+  let fn_id = if fn_id_from_slot >= 0 then fn_id_from_slot
+              else find_fn_name_direct(ctx.fn_names, "add", 99, 0) in
+  let call_pos = x86.buf_len(buf) in
+  let _ = x86.call_rel32(buf, 0) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id, dst: dst }) in
+  // Clean up: 4*8 args = 32
+  let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), 32) in
+  // Save result before restoring registers: rax=tag, rcx=payload
+  // Use r8/r9 temporarily (r9 will be restored from stack)
+  let _ = x86.mov_rr(buf, x86.reg_r8(), x86.reg_rax()) in   // r8 = tag
+  let _ = x86.mov_rr(buf, x86.reg_r10(), x86.reg_rcx()) in  // r10 = payload (temp)
+  // Restore i, n, list ptr
+  let _ = x86.pop_reg(buf, x86.reg_rbx()) in   // list ptr
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in   // i (into rax temp)
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in   // n
+  // Store result to dst using r8(tag) and r9(payload)
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst), x86.reg_r8()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst) + 8, x86.reg_r10()) in
+  // Restore i into r9
+  let _ = x86.mov_rr(buf, x86.reg_r9(), x86.reg_rax()) in
+  // i++
+  let _ = x86.add_reg_imm32(buf, x86.reg_r9(), 1) in
+  let _ = x86.jmp_rel32(buf, loop_pos - (x86.buf_len(buf) + 5)) in
+  let done = x86.buf_len(buf) in
+  x86.patch32(buf, jge_pos + 2, done - (jge_pos + 6))
+}
+
 fn emit_stdlib_call(buf, ctx, dst, fn_slot, args) {
   let m = find_slot_meth(ctx, fn_slot) in
   if m == null then emit_const(buf, ctx, dst, null)
+  else if m.module_name == "list" && m.method == "fold" then
+    emit_list_fold_inline(buf, ctx, dst, args)
   else
     let did = get_dispatch_id(m.module_name, m.method) in
     if did < 0 then emit_const(buf, ctx, dst, null)
@@ -359,7 +435,8 @@ fn emit_jump(buf, target) {
 fn emit_make_closure(buf, ctx, dst, fn_id) {
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), tag_clos()) in
   let _ = x86.mov_reg_imm64(buf, x86.reg_rcx(), fn_id) in
-  store_slot(buf, dst)
+  let _ = store_slot(buf, dst) in
+  array.push(ctx.slot_fn, { slot: dst, fn_id: fn_id })
 }
 
 // ── Emit call ────────────────────────────────────────────────────────────────
