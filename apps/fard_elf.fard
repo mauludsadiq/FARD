@@ -290,14 +290,11 @@ fn emit_phdr(buf, ptype, flags, offset, vaddr, paddr, filesz, memsz, align) {
 
 
 fn find_stdlib_addr(addrs, id, i, n) {
-  if id == 0 then 0
-  else if id == 1 then 36
-  else if id == 2 then 92
-  else if id == 3 then 132
-  else if id == 4 then 168
-  else if id == 5 then 204
-  else if id == 6 then 240
-  else -1
+  if i >= n then -1
+  else
+    let e = list.get(addrs, i) in
+    if e.id == id then e.off
+    else find_stdlib_addr(addrs, id, i + 1, n)
 }
 
 fn patch_stdlib_calls(text_buf, patches, stdlib_addrs, stdlib_base, code_start, fard_code_start) {
@@ -309,10 +306,11 @@ fn patch_stdlib_calls(text_buf, patches, stdlib_addrs, stdlib_base, code_start, 
     if fn_off < 0 then null
     else
       // call is in the fard code section
-      let call_abs  = fard_code_start + call_pos in
-      let fn_abs    = stdlib_base + fn_off in
-      let rel       = fn_abs - (call_abs + 5) in
-      patch32(text_buf, fard_code_start + call_pos + 1, rel)
+      // fn_off is absolute offset in text_buf (emit_all_stdlib appends to text_buf)
+      let call_text_off = fard_code_start + call_pos in
+      let fn_text_off   = fn_off in  // already absolute in text_buf
+      let rel = fn_text_off - (call_text_off + 5) in
+      patch32(text_buf, call_text_off + 1, rel)
   })
 }
 

@@ -80,12 +80,10 @@ fn buf_len(buf)           { x86.buf_len(buf) }
 fn prologue(buf) {
   let _ = x86.push_reg(buf, x86.reg_rbp()) in
   let _ = x86.mov_rr(buf, x86.reg_rbp(), x86.reg_rsp()) in
-  let _ = x86.push_reg(buf, x86.reg_rbx()) in
-  x86.push_reg(buf, x86.reg_r12())
+  x86.push_reg(buf, x86.reg_rbx())
 }
 
 fn epilogue(buf) {
-  let _ = x86.pop_reg(buf, x86.reg_r12()) in
   let _ = x86.pop_reg(buf, x86.reg_rbx()) in
   let _ = x86.pop_reg(buf, x86.reg_rbp()) in
   x86.ret(buf)
@@ -192,7 +190,8 @@ fn emit_list_append(buf) {
   let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rsp(), 24) in  // size
   let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in               // PROT_RW
   let _ = x86.mov_reg_imm64(buf, x86.reg_r10(), 34) in              // MAP_ANON|MAP_PRIVATE
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r8(), 4294967295) in       // fd=-1 (lower 32 bits)
+  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1       // fd=-1 (lower 32 bits)
   let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in            // offset=0
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in               // SYS_MMAP
   let _ = x86.syscall(buf) in
@@ -295,24 +294,15 @@ fn emit_list_concat(buf) {
 
 fn emit_array_new(buf) {
   let _ = prologue(buf) in
-  // Allocate array with initial capacity 8
-  // size = 8 + 8 + 8*16 = 144 bytes
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rdi(), 144) in
-  // mmap
-  let _ = x86.xor_rr(buf, x86.reg_rdi(), x86.reg_rdi()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rsi(), 144) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 34) in
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r8(), 4294967295) in
-  let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in
-  let _ = x86.syscall(buf) in
-  // rax = ptr; store capacity=8 at [rax], len=0 at [rax+8]
-  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rax(), 0, 8) in   // capacity
-  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rax(), 8, 0) in   // len=0
-  // return TAG_ARR(10), payload=rax
+  // Use r12 bump allocator (heap_ptr set by _start)
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdi(), 2064) in
+  // mov rax, r12; add r12, rdi
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in let _ = x86.emit8(buf, 252) in
+  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rax(), 0, 128) in  // capacity
+  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rax(), 8, 0) in    // len=0
   let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 10) in  // TAG_ARR
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 10) in
   epilogue(buf)
 }
 
@@ -330,30 +320,31 @@ fn emit_array_len(buf) {
 
 fn emit_array_push(buf) {
   let _ = prologue(buf) in
-  // rbx = array ptr
+  // rbx = arr ptr
   let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in
-  // r12 = len = [rbx+8]
-  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_r12(), x86.reg_rbx(), 8) in
-  // item offset = 16 + len*16
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
+  // rax = len = [rbx+8]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rax(), x86.reg_rbx(), 8) in
+  // compute item slot ptr: rbx + 16 + len*16
   let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
   let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
   let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 16) in
-  // ptr to item slot = rbx + rax
   let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rbx()) in
-  // store tag and payload of arg1
+  // rax = item slot ptr; push to save
+  let _ = x86.push_reg(buf, x86.reg_rax()) in
+  // load arg1 tag -> rcx, payload -> rdx
   let _ = load_arg_tag(buf, 1) in
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rax(), 0, x86.reg_rcx()) in  // wrong regs
-  // Redo with rbx as item ptr
-  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in  // rbx = item slot ptr
-  let _ = load_arg_tag(buf, 1) in           // rax = tag
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 0, x86.reg_rax()) in
-  let _ = load_arg_payload(buf, 1) in       // rax = payload
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 8, x86.reg_rax()) in
-  // Reload arr ptr and increment len
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+  let _ = load_arg_payload(buf, 1) in
+  let _ = x86.mov_rr(buf, x86.reg_rdx(), x86.reg_rax()) in
+  // restore slot ptr
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rax(), 0, x86.reg_rcx()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rax(), 8, x86.reg_rdx()) in
+  // increment len: reload arr ptr, inc [rbx+8]
   let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in
-  let _ = x86.add_reg_imm32(buf, x86.reg_r12(), 1) in
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 8, x86.reg_r12()) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rax(), x86.reg_rbx(), 8) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 8, x86.reg_rax()) in
   ret_null(buf)
 }
 
@@ -481,7 +472,8 @@ fn emit_str_concat(buf) {
   let _ = x86.xor_rr(buf, x86.reg_rdi(), x86.reg_rdi()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 34) in
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r8(), 4294967295) in
+  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1
   let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in
   let _ = x86.syscall(buf) in
@@ -518,7 +510,8 @@ fn emit_str_char_at(buf) {
   let _ = x86.mov_reg_imm32(buf, x86.reg_rsi(), 2) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 34) in
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r8(), 4294967295) in
+  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1
   let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in
   let _ = x86.syscall(buf) in
@@ -571,7 +564,8 @@ fn emit_bytes_of_str(buf) {
   let _ = x86.mov_rr(buf, x86.reg_rsi(), x86.reg_rax()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 34) in
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r8(), 4294967295) in
+  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1
   let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in
   let _ = x86.syscall(buf) in
@@ -652,7 +646,8 @@ fn emit_cast_text(buf) {
   let _ = x86.mov_reg_imm32(buf, x86.reg_rsi(), 21) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 34) in
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r8(), 4294967295) in
+  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1
   let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in
   let _ = x86.syscall(buf) in
