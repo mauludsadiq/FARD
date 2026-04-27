@@ -10,6 +10,7 @@ import("std/array")     as array
 import("std/list")      as list
 import("std/str")       as str
 import("std/bytes")     as bytes
+import("std/type")      as typ
 import("fard_stdlib") as fstdlib
 
 // ── Tag constants ─────────────────────────────────────────────────────────────
@@ -107,10 +108,10 @@ fn get_dispatch_id(module_name, method) {
 
 fn emit_stdlib_call(buf, ctx, dst, fn_slot, args) {
   let m = find_slot_meth(ctx, fn_slot) in
-  if m == null then emit_const(buf, dst, null)
+  if m == null then emit_const(buf, ctx, dst, null)
   else
     let did = get_dispatch_id(m.module_name, m.method) in
-    if did < 0 then emit_const(buf, dst, null)
+    if did < 0 then emit_const(buf, ctx, dst, null)
     else
       let n = list.len(args) in
       let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
@@ -196,10 +197,35 @@ fn emit_const_int(buf, dst, val) {
   store_slot(buf, dst)
 }
 
-fn emit_const(buf, dst, val) {
+fn emit_const_str(buf, dst, s) {
+  // Emit string inline: jmp past data, data bytes, lea rcx,[rip+offset]
+  let jmp_pos = x86.buf_len(buf) in
+  let _ = x86.jmp_rel32(buf, 0) in
+  let str_pos = x86.buf_len(buf) in
+  let _ = emit_str_bytes(buf, s) in
+  let after = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jmp_pos + 1, after - (jmp_pos + 5)) in
+  // lea rcx, [rip + offset_to_str]
+  let here = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 141) in let _ = x86.emit8(buf, 13) in
+  let _ = x86.emit32_le(buf, str_pos - (here + 7)) in
+  // rax = TAG_STR(3), rcx = str ptr
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 3) in
+  store_slot(buf, dst)
+}
+
+fn is_str_val(val) {
+  if val == null then false
+  else if val == true then false
+  else if val == false then false
+  else typ.of(val) == "text"
+}
+
+fn emit_const(buf, ctx, dst, val) {
   if val == null then emit_const_null(buf, dst)
   else if val == true then emit_const_bool(buf, dst, 1)
   else if val == false then emit_const_bool(buf, dst, 0)
+  else if is_str_val(val) then emit_const_str(buf, dst, val)
   else emit_const_int(buf, dst, val)
 }
 
@@ -391,7 +417,7 @@ fn emit_return(buf, src) {
 
 fn emit_global_load(buf, ctx, dst, name) {
   let slot = find_global_slot(ctx, name) in
-  if slot < 0 then emit_const(buf, dst, null)
+  if slot < 0 then emit_const(buf, ctx, dst, null)
   else
     let _ = load_slot(buf, slot) in
     store_slot(buf, dst)
@@ -411,7 +437,7 @@ fn emit_instr(buf, ctx, instr, offsets) {
   let op = instr.op in
 
   if op == "const" then
-    emit_const(buf, instr.dst, instr.val)
+    emit_const(buf, ctx, instr.dst, instr.val)
 
   else if op == "load" then
     let _ = load_slot(buf, instr.src) in
@@ -495,13 +521,13 @@ fn emit_instr(buf, ctx, instr, offsets) {
     else if op == "get_field" then
       let mod_entry = find_slot_mod(ctx, instr.obj) in
       if mod_entry != null then
-        let _ = emit_const(buf, instr.dst, null) in
+        let _ = emit_const(buf, ctx, instr.dst, null) in
         array.push(ctx.slot_meth, { slot: instr.dst, module_name: mod_entry.module_name, method: instr.field })
       else
         emit_get_field(buf, ctx, instr.dst, instr.obj, instr.field)
 
   else if op == "import" then
-    emit_const(buf, instr.dst, null)
+    emit_const(buf, ctx, instr.dst, null)
 
   else
     null
@@ -933,7 +959,7 @@ fn emit_get_field(buf, ctx, dst, obj, field) {
   // Not found
   let nf = x86.buf_len(buf) in
   let _ = x86.patch32(buf, jge_pos + 2, nf - (jge_pos + 6)) in
-  let _ = emit_const(buf, dst, null) in
+  let _ = emit_const(buf, ctx, dst, null) in
   let end = x86.buf_len(buf) in
   x86.patch32(buf, skip + 1, end - (skip + 5))
 }
@@ -964,7 +990,7 @@ fn emit_strcmp_inline(buf) {
   let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 199) in
   let _ = x86.emit8(buf, 72) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 198) in
   let back = loop_pos - (x86.buf_len(buf) + 2) in
-  let _ = x86.emit8(buf, 235) in let _ = x86.emit8(buf, back % 256) in
+  let _ = x86.emit8(buf, 235) in let _ = x86.emit8(buf, (256 + back) % 256) in
   // done:
   let done = x86.buf_len(buf) in
   let _ = array.set(buf, jne + 1, done - (jne + 2)) in

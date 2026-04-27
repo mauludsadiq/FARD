@@ -428,7 +428,7 @@ fn emit_str_len(buf) {
   let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
   let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in  // inc rax
   let back = loop_pos - (buf_len(buf) + 2) in
-  let _ = emit8(buf, 235) in let _ = emit8(buf, back % 256) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + back) % 256) in
   let done = buf_len(buf) in
   let _ = array.set(buf, jz + 1, done - (jz + 2)) in
   ret_int(buf)
@@ -451,7 +451,7 @@ fn emit_str_concat(buf) {
   let jza = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
   let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in
   let ba = la - (buf_len(buf) + 2) in
-  let _ = emit8(buf, 235) in let _ = emit8(buf, ba % 256) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + ba) % 256) in
   let da = buf_len(buf) in let _ = array.set(buf, jza + 1, da - (jza + 2)) in
   let _ = x86.mov_rr(buf, x86.reg_r12(), x86.reg_rax()) in  // r12 = len_a
   // inline strlen b: rax = len
@@ -462,7 +462,7 @@ fn emit_str_concat(buf) {
   let jzb = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
   let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in
   let bb = lb - (buf_len(buf) + 2) in
-  let _ = emit8(buf, 235) in let _ = emit8(buf, bb % 256) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bb) % 256) in
   let db = buf_len(buf) in let _ = array.set(buf, jzb + 1, db - (jzb + 2)) in
   let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in  // rbx = len_b
   // alloc: size = len_a + len_b + 1
@@ -551,7 +551,7 @@ fn emit_bytes_of_str(buf) {
   let jzs = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
   let _ = emit8(buf, 73) in let _ = emit8(buf, 255) in let _ = emit8(buf, 196) in  // inc r12
   let bs2 = ls - (buf_len(buf) + 2) in
-  let _ = emit8(buf, 235) in let _ = emit8(buf, bs2 % 256) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bs2) % 256) in
   let ds = buf_len(buf) in let _ = array.set(buf, jzs + 1, ds - (jzs + 2)) in
   // r12 = len; alloc 8 + len*16 bytes
   let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
@@ -671,7 +671,7 @@ fn emit_cast_text(buf) {
   let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
   let _ = emit8(buf, 117) in
   let back3 = lp3 - (buf_len(buf) + 1) in
-  let _ = emit8(buf, back3 % 256) in
+  let _ = emit8(buf, (256 + back3) % 256) in
   // null terminate at [rdi+20]
   let _ = emit8(buf, 198) in let _ = emit8(buf, 71) in let _ = emit8(buf, 20) in let _ = emit8(buf, 0) in
   // return ptr to [rdi+rcx] (start of digits)
