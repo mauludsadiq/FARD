@@ -12,7 +12,8 @@ import("std/cast")  as cast
 // ── Local counter (per function) ─────────────────────────────────────────────
 
 fn make_ctx() {
-  { next_local: array.new(), fns: array.new(), globals: array.new() }
+  { next_local: array.new(), fns: array.new(), globals: array.new(),
+    fn_names: array.new() }
 }
 
 fn alloc_local(ctx) {
@@ -76,7 +77,8 @@ fn instr_make_rec(dst, fields) { { op: "make_rec", dst: dst, fields: fields } }
 fn instr_get_field(dst, obj, field) { { op: "get_field", dst: dst, obj: obj, field: field } }
 fn instr_get_index(dst, obj, idx)   { { op: "get_index", dst: dst, obj: obj, idx: idx } }
 fn instr_make_closure(dst, fn_id, captures) { { op: "make_closure", dst: dst, fn_id: fn_id, captures: captures } }
-fn instr_call(dst, fn_r, args) { { op: "call", dst: dst, fn_r: fn_r, args: args } }
+fn instr_call(dst, fn_r, args) { { op: "call", dst: dst, fn_r: fn_r, args: args, fn_id: -1 } }
+fn instr_call_direct(dst, fn_id, args) { { op: "call", dst: dst, fn_r: -1, args: args, fn_id: fn_id } }
 fn instr_call_global(dst, name, args) { { op: "call_global", dst: dst, name: name, args: args } }
 fn instr_get_method(dst, obj, method) { { op: "get_method", dst: dst, obj: obj, method: method } }
 fn instr_import(dst, path, alias) { { op: "import", dst: dst, path: path, alias: alias } }
@@ -290,11 +292,21 @@ fn lower_fn_expr(node, env, code, ctx) {
 }
 
 fn lower_call(node, env, code, ctx) {
-  let fn_r = lower_expr(node.fn_n, env, code, ctx) in
-  let args = lower_args(node.args, env, code, ctx) in
-  let dst  = alloc_local(ctx) in
-  let _ = emit(code, instr_call(dst, fn_r, args)) in
-  dst
+  // If fn_n is a direct var reference to a known function, use direct call
+  let fn_name = if node.fn_n.t == "var" then node.fn_n.v else "" in
+  let fn_id   = if fn_name != "" then lookup_fn_name(ctx.fn_names, fn_name) else -1 in
+  
+  if fn_id >= 0 then
+    let args = lower_args(node.args, env, code, ctx) in
+    let dst  = alloc_local(ctx) in
+    let _ = emit(code, instr_call_direct(dst, fn_id, args)) in
+    dst
+  else
+    let fn_r = lower_expr(node.fn_n, env, code, ctx) in
+    let args = lower_args(node.args, env, code, ctx) in
+    let dst  = alloc_local(ctx) in
+    let _ = emit(code, instr_call(dst, fn_r, args)) in
+    dst
 }
 
 fn lower_match(node, env, code, ctx) {
@@ -365,6 +377,7 @@ fn lower_module_items(items, env, code, ctx) {
 
     if t == "fn_item" then
       let fn_id = lower_function(item.name, item.params, item.body, env, ctx) in
+      let _     = register_fn_name(ctx, item.name, fn_id) in
       let dst   = alloc_local(ctx) in
       let _ = emit(code, instr_make_closure(dst, fn_id, [])) in
       let _ = emit(code, instr_global_store(item.name, dst)) in
@@ -388,6 +401,23 @@ fn lower_module_items(items, env, code, ctx) {
 
     else
       lower_module_items(rest, env, code, ctx)
+}
+
+fn register_fn_name(ctx, name, fn_id) {
+  let _ = array.push(ctx.fn_names, { name: name, fn_id: fn_id }) in
+  null
+}
+
+fn lookup_fn_name(fn_names, name) {
+  lookup_fn_name_acc(fn_names, name, array.len(fn_names) - 1)
+}
+
+fn lookup_fn_name_acc(fn_names, name, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(fn_names, i) in
+    if e.name == name then e.fn_id
+    else lookup_fn_name_acc(fn_names, name, i - 1)
 }
 
 fn lower_program(ast) {

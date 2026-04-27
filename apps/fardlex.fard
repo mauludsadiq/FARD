@@ -40,13 +40,14 @@ fn peek(chars, i) {
 }
 
 fn scan_line_comment(chars, n, idx) {
-  list.fold(list.build(n - idx, fn(j) { j }), { end: idx }, fn(a, j) {
+  let r = list.fold(list.build(n - idx, fn(j) { j }), { end: idx, done: false }, fn(a, j) {
+    if a.done then a else
     let ci = idx + j in
-    if ci < n && list.get(chars, ci) != "\n" then { end: ci + 1 }
-    else a
-  }).end
+    if ci < n && list.get(chars, ci) != "\n" then { end: ci + 1, done: false }
+    else { end: ci, done: true }
+  }) in
+  r.end
 }
-
 fn scan_string(chars, n, idx, src) {
   let r = list.fold(list.build(n - idx - 1, fn(j) { j }), { done: false, end: idx + 1, esc: false }, fn(a, j) {
     if a.done then a else
