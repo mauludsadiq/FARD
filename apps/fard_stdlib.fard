@@ -640,67 +640,52 @@ fn emit_str_lex_tokens(buf) {
 // Bytes layout: same as list but tag=TAG_BYTES(11), items are ints
 
 fn emit_bytes_of_str(buf) {
+  // bytes.of_str(s) -> bytes (list of int byte values)
+  // rbx=bytes_ptr rsi=str_ptr rcx=len rax=i rdx=byte
   let _ = prologue(buf) in
   let _ = load_arg_payload_to(buf, 0, x86.reg_rsi()) in  // rsi = str ptr
-  // strlen first
-  let _ = x86.xor_rr(buf, x86.reg_r12(), x86.reg_r12()) in
-  let ls = buf_len(buf) in
-  let _ = emit8(buf, 128) in let _ = emit8(buf, 60) in let _ = emit8(buf, 54) in let _ = emit8(buf, 0) in  // cmp [rsi+r12], 0
-  let jzs = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
-  let _ = emit8(buf, 73) in let _ = emit8(buf, 255) in let _ = emit8(buf, 196) in  // inc r12
-  let bs2 = ls - (buf_len(buf) + 2) in
-  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bs2) % 256) in
-  let ds = buf_len(buf) in let _ = array.set(buf, jzs + 1, ds - (jzs + 2)) in
-  // r12 = len; alloc 8 + len*16 bytes
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
-  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
-  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
-  let _ = x86.push_reg(buf, x86.reg_rax()) in  // save size
-  let _ = x86.push_reg(buf, x86.reg_rsi()) in  // save str ptr
-  let _ = x86.xor_rr(buf, x86.reg_rdi(), x86.reg_rdi()) in
-  let _ = x86.mov_rr(buf, x86.reg_rsi(), x86.reg_rax()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 34) in
-  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
-  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1
-  let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in
-  let _ = x86.syscall(buf) in
-  // rax = bytes ptr
-  let _ = x86.pop_reg(buf, x86.reg_rsi()) in  // rsi = str ptr
-  let _ = x86.pop_reg(buf, x86.reg_rbx()) in  // discard size
-  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in  // rbx = bytes ptr
-  // store n at [rbx]
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 0, x86.reg_r12()) in
-  // fill bytes: for i in 0..n: bytes[i] = (int)(s[i])
-  let _ = x86.xor_rr(buf, x86.reg_rcx(), x86.reg_rcx()) in  // i = 0
-  let loop2 = buf_len(buf) in
-  // if i >= r12 goto done
-  let _ = x86.cmp_rr(buf, x86.reg_rcx(), x86.reg_r12()) in
-  let jge2 = buf_len(buf) in
-  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32(buf, 0) in
-  // rax = (int)[rsi+rcx] (byte)
+  // strlen: rcx = 0; while str[rcx] != 0: rcx++
+  let _ = x86.xor_rr(buf, x86.reg_rcx(), x86.reg_rcx()) in
+  let sl = buf_len(buf) in
+  // movzx rax, byte [rsi+rcx]: 48 0F B6 04 0E
   let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 4) in let _ = emit8(buf, 14) in
-  // offset = 8 + i*16
-  let _ = x86.push_reg(buf, x86.reg_rcx()) in
-  let _ = x86.push_reg(buf, x86.reg_rax()) in  // save byte value
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
-  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
-  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
-  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rbx()) in  // ptr to slot
-  let _ = x86.pop_reg(buf, x86.reg_rdx()) in  // rdx = byte value
-  let _ = x86.pop_reg(buf, x86.reg_rcx()) in  // rcx = i
-  // store TAG_INT=2 at [rax], byte at [rax+8]
-  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rax(), 0, 2) in
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rax(), 8, x86.reg_rdx()) in
-  // i++, loop
+  let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
+  let jzl = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
   let _ = x86.add_reg_imm32(buf, x86.reg_rcx(), 1) in
-  let _ = x86.jmp_rel32(buf, loop2 - (buf_len(buf) + 5)) in
-  let done2 = buf_len(buf) in
-  let _ = patch32(buf, jge2 + 2, done2 - (jge2 + 6)) in
-  // return TAG_BYTES(11), payload=rbx
+  let bsl = sl - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bsl) % 256) in
+  let dl = buf_len(buf) in let _ = array.set(buf, jzl + 1, dl - (jzl + 2)) in
+  // rcx = len; alloc 8 + len*16
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 0, x86.reg_rcx()) in
+  // loop: rax=i=0
+  let _ = x86.xor_rr(buf, x86.reg_rax(), x86.reg_rax()) in
+  let lp = buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let jge = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32(buf, 0) in
+  // rdx = str[rax]: movzx rdx, byte [rsi+rax]: 48 0F B6 14 06
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 20) in let _ = emit8(buf, 6) in
+  // slot ptr r9 = rbx + 8 + rax*16
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 193) in  // mov r9, rax
+  let _ = x86.mov_reg_imm32(buf, x86.reg_r10(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_r9(), x86.reg_r10()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_r9(), 8) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 217) in    // add r9, rbx
+  // [r9] = 2 (TAG_INT)
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 199) in let _ = emit8(buf, 1) in let _ = emit32(buf, 2) in
+  // [r9+8] = rdx
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 81) in let _ = emit8(buf, 8) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.jmp_rel32(buf, lp - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  let _ = patch32(buf, jge + 2, done - (jge + 6)) in
   let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rbx()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 11) in
   epilogue(buf)
