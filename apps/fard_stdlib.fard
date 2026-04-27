@@ -158,91 +158,86 @@ fn emit_list_get(buf) {
 // Allocates new list with n+1 items, copies old + appends val
 
 fn emit_list_append(buf) {
+  // list.append(list, val) -> new_list
+  // rbx = old list ptr (preserved by prologue)
   let _ = prologue(buf) in
-  // rbx = old list ptr
   let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in
-  // r12 = n (old length)  -- r12 is callee-saved, we pushed it
-  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_r12(), x86.reg_rbx(), 0) in
-  // allocate new list: size = 8 + (n+1)*16
-  // rax = n+1
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
-  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
-  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
-  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
-  // rdi = size for alloc
+  // rcx = n = [rbx+0]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbx(), 0) in
+  // alloc (n+1)*16 + 8 bytes via bump allocator
+  // rdi = (n+1)*16 + 8
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 1) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
+  // rax = r12; r12 += rdi  (bump alloc)
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in let _ = x86.emit8(buf, 252) in
+  // rax = new_ptr; rdi = new_ptr; store n+1
   let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
-  // inline alloc: new_ptr = r13 (use r13 as second scratch)
-  // Actually use stack to save: push rax as size, then alloc
-  // mov r13_new = heap_ptr; advance heap by rdi
-  // We need heap_ptr from _start - it was stored in r12/r13 of _start
-  // but we overwrote r12... Use a BSS global for heap_ptr instead
-  // For now: use mmap per allocation (expensive but correct)
-  // mmap(0, rdi, PROT_RW=3, MAP_ANON=0x22, -1, 0) -> rax
-  let _ = x86.push_reg(buf, x86.reg_rdi()) in  // save size
-  let _ = x86.push_reg(buf, x86.reg_r12()) in  // save n
-  let _ = x86.push_reg(buf, x86.reg_rbx()) in  // save old ptr
-  // align stack
-  let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
-  // mmap args
-  let _ = x86.xor_rr(buf, x86.reg_rdi(), x86.reg_rdi()) in          // addr=0
-  // rsi = size (from stack)
-  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rsp(), 24) in  // size
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 3) in               // PROT_RW
-  let _ = x86.mov_reg_imm64(buf, x86.reg_r10(), 34) in              // MAP_ANON|MAP_PRIVATE
-  let _ = x86.xor_rr(buf, x86.reg_r8(), x86.reg_r8()) in
-  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 255) in let _ = x86.emit8(buf, 200) in  // dec r8 -> r8=-1       // fd=-1 (lower 32 bits)
-  let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in            // offset=0
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 9) in               // SYS_MMAP
-  let _ = x86.syscall(buf) in
-  // rax = new list ptr
-  let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), 8) in
-  let _ = x86.pop_reg(buf, x86.reg_rbx()) in   // old ptr
-  let _ = x86.pop_reg(buf, x86.reg_r12()) in   // n
-  let _ = x86.pop_reg(buf, x86.reg_rdi()) in   // size (discard)
-  // Save new ptr in rdi
-  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
-  // Store n+1 at [rdi]
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
+  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
   let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
   let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 0, x86.reg_rax()) in
-  // Copy n items from old list: memcpy [rdi+8] <- [rbx+8], n*16 bytes
-  // Use rep movsq: rsi=src, rdi_dst=dst, rcx=count
-  let _ = x86.push_reg(buf, x86.reg_rdi()) in  // save new ptr
-  let _ = x86.lea_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rbx(), 8) in  // src
-  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rdi()) in  // wrong - need new+8
-  let _ = x86.pop_reg(buf, x86.reg_rdi()) in
-  let _ = x86.push_reg(buf, x86.reg_rdi()) in
-  let _ = x86.lea_reg_mem_disp32(buf, x86.reg_rdi(), x86.reg_rdi(), 8) in  // dst = new+8
-  let _ = x86.lea_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rbx(), 8) in  // src = old+8
-  // rcx = n*2 (n qwords pairs = n*16 bytes = n*2 qwords)
-  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_r12()) in
-  let _ = x86.add_rr(buf, x86.reg_rcx(), x86.reg_r12()) in  // rcx = n*2
-  // rep movsq
-  let _ = emit8(buf, 243) in  // rep prefix
-  let _ = emit8(buf, 72) in   // REX.W
-  let _ = emit8(buf, 167) in  // movsq
-  // Append new item: load from arg1
-  let _ = x86.pop_reg(buf, x86.reg_rdi()) in  // restore new ptr
-  // offset of new item = 8 + n*16
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
-  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  // Copy loop: rcx=n (outer counter), rax=i=0
+  let _ = x86.xor_rr(buf, x86.reg_rax(), x86.reg_rax()) in  // i=0
+  let loop_pos = x86.buf_len(buf) in
+  // cmp i, n
+  let _ = x86.cmp_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let jge_pos = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  // offset = 8 + i*16; use rdx
+  let _ = x86.push_reg(buf, x86.reg_rax()) in  // save i
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in  // save n
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
   let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
-  // rax = offset; rdi+rax = ptr to new item
-  let _ = x86.add_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
-  // load arg1 tag and payload
-  let _ = load_arg_tag(buf, 1) in      // rax = tag
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 0, x86.reg_rax()) in
-  let _ = load_arg_payload(buf, 1) in  // rax = payload
-  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 8, x86.reg_rax()) in
-  // Restore rdi to new ptr base
-  let _ = x86.sub_rr(buf, x86.reg_rdi(), x86.reg_rdi()) in  // wrong - need to restore
-  // Just recalculate: sub by (8 + n*16)
-  let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in  // reload old ptr
-  // Return new list ptr - but we lost it. Use r13 instead.
-  // This is getting messy. Restart with cleaner approach using BSS heap ptr.
-  ret_null(buf)  // placeholder - fix after BSS heap
+  // copy [rbx+rax] -> [rdi+rax] (tag and payload)
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rbx()) in  // src
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdx(), x86.reg_rax(), 0) in   // tag
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rax(), 8) in   // payload
+  let _ = x86.sub_rr(buf, x86.reg_rax(), x86.reg_rbx()) in  // restore offset
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rdi()) in  // dst
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rax(), 0, x86.reg_rdx()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rax(), 8, x86.reg_rsi()) in
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in  // restore n
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in  // restore i
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.jmp_rel32(buf, loop_pos - (x86.buf_len(buf) + 5)) in
+  // done
+  let done_pos = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jge_pos + 2, done_pos - (jge_pos + 6)) in
+  // Append new item at [rdi + 8 + n*16]
+  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rdi()) in  // rax = new item slot
+  let _ = load_arg_tag(buf, 1) in      // rax clobbered!
+  // Fix: save slot ptr first
+  let _ = x86.push_reg(buf, x86.reg_rax()) in   // push slot ptr -- but rax was overwritten
+  // Redo cleanly:
+  // save slot offset in rdx, keep rdi=new_ptr
+  let _ = x86.pop_reg(buf, x86.reg_rsi()) in   // discard bad push
+  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
+  // rdx = slot offset from rdi
+  let _ = x86.mov_rr(buf, x86.reg_rdx(), x86.reg_rax()) in
+  // load arg1 tag -> rsi, payload -> rcx
+  let _ = load_arg_tag(buf, 1) in
+  let _ = x86.mov_rr(buf, x86.reg_rsi(), x86.reg_rax()) in
+  let _ = load_arg_payload(buf, 1) in
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+  // store at [rdi+rdx]: tag=rsi, payload=rcx
+  let _ = x86.add_rr(buf, x86.reg_rdx(), x86.reg_rdi()) in  // rdx = slot ptr
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdx(), 0, x86.reg_rsi()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdx(), 8, x86.reg_rcx()) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
+  epilogue(buf)
 }
 
 // ── list.tail ─────────────────────────────────────────────────────────────────

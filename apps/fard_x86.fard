@@ -12,7 +12,7 @@ import("std/str")   as str
 
 fn buf_new()        { array.new() }
 fn buf_len(buf)     { array.len(buf) }
-fn emit8(buf, b)    { array.push(buf, b % 256) }
+fn emit8(buf, b)    { array.push(buf, (b % 256 + 256) % 256) }
 fn emit_bytes(buf, bs) { list.fold(bs, null, fn(_, b) { emit8(buf, b) }) }
 
 fn emit16_le(buf, v) {
