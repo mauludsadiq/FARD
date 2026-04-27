@@ -36,54 +36,76 @@ curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
 ## Self-hosting
 
 Goal: eliminate Rust entirely. FARD compiles to native machine code with no
-foreign runtime. See [ROADMAP.md](ROADMAP.md) for the full plan.
+foreign runtime. See ROADMAP.md for the full plan.
 
-**Current status: Stage 1 of 6 complete.**
+Current status: Stage 5 in progress — native x86_64 backend working.
 
-| Metric | Value |
-|---|---|
-| Rust host | 13,632 lines |
-| FARD implementation | 3,163 lines |
-| Rust replaced so far | 23% |
+Rust host: 13,632 lines
+FARD implementation: 3,500+ lines
+Native backend: working for integer programs
 
-### Language pipeline — written in FARD
+### Pipeline
+
+    source -> fardlex2 -> fardparse -> fard_lower -> fard_codegen -> fard_elf -> native ELF
+
+All stages written in FARD. Native ELF runs without VM or interpreter.
+
+### Language pipeline
 
 | File | Lines | Description |
 |---|---|---|
-| `apps/fardlex2.fard` | 141 | Lexer — span-annotated tokens |
-| `apps/fardparse.fard` | 501 | Recursive descent parser — typed AST |
-| `apps/fardeval.fard` | 466 | Tree-walking evaluator with stdlib |
-| `apps/fard_lower.fard` | 417 | AST to IR lowering pass |
-| `apps/fard_ir_interp.fard` | 360 | Iterative IR interpreter (explicit call stack) |
+| apps/fardlex2.fard | 141 | Lexer |
+| apps/fardparse.fard | 501 | Recursive descent parser |
+| apps/fardeval.fard | 466 | Tree-walking evaluator |
+| apps/fard_lower.fard | 417 | AST to IR lowering |
+| apps/fard_ir_interp.fard | 360 | Iterative IR interpreter |
+| apps/fard_emit.fard | 446 | IR to bytecode emitter |
+| apps/fard_bc_interp.fard | 399 | Bytecode interpreter |
+| apps/fard_x86.fard | 415 | x86_64 instruction emitter |
+| apps/fard_codegen.fard | 550 | IR to native code generator |
+| apps/fard_elf.fard | 380 | Linux x86_64 ELF writer |
+| apps/fardc.fard | 75 | Compiler driver |
 
-`fardparse.fard` parses itself: 5031 tokens → 43 AST items in 1.4s.
-`fib(10) = 55` through the full pipeline in 3.6s (debug binary).
+### Verified results
 
-### Toolchain — written in FARD
+| Test | Result | Backend |
+|---|---|---|
+| add(3,4) | 7 | IR interpreter |
+| fib(10) | 55 | IR interpreter |
+| add(3,4) | 7 | Seed VM (bytecode) |
+| fib(10) | 55 | Seed VM (bytecode, under 1s) |
+| add(3,4) | 7 | Native ELF, no VM |
+| fib(10) | 55 | Native ELF, no VM, 0.5s incl Docker |
+
+### Toolchain
 
 | File | Lines |
 |---|---|
-| `apps/farddoc.fard` | 227 |
-| `apps/fardfmt.fard` | 171 |
-| `apps/fardregistry.fard` | 138 |
-| `apps/fard-build.fard` | 183 |
-| `apps/fardbundle.fard` | 159 |
-| `apps/fardlock.fard` | 160 |
-| `apps/fardcheck.fard` | 240 |
+| apps/farddoc.fard | 227 |
+| apps/fardfmt.fard | 171 |
+| apps/fardregistry.fard | 138 |
+| apps/fard-build.fard | 183 |
+| apps/fardbundle.fard | 159 |
+| apps/fardlock.fard | 160 |
+| apps/fardcheck.fard | 240 |
+
+### Bootstrap seed VM
+
+bootstrap/vm.asm is 1068 lines of x86_64 assembly. Executes FARD bytecode
+on Linux x86_64 with no libc dependency. Temporary bootstrap artifact
+displaced by the native backend.
 
 ### Roadmap
 
 | Stage | Description | Status |
 |---|---|---|
-| 0 | Lexer, parser, evaluator, toolchain in FARD | done |
-| 1 | Canonical IR + lowering + IR interpreter | done |
-| 2 | Deterministic bytecode + emitter | next |
-| 3 | Tiny seed VM in assembly | planned |
-| 4 | Self-hosting compiler in FARD | planned |
-| 5 | Native x86_64 ELF backend | planned |
+| 0 | Lexer, parser, evaluator, toolchain | done |
+| 1 | IR + lowering + IR interpreter | done |
+| 2 | Bytecode + emitter + interpreter | done |
+| 3 | Seed VM in x86_64 assembly | done |
+| 4 | Self-hosting compiler driver | done |
+| 5 | Native x86_64 ELF backend | in progress |
 | 6 | FARD-native production compiler | planned |
-
------
 
 ## Quick Start
 
