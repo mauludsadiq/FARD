@@ -244,22 +244,74 @@ fn emit_list_append(buf) {
 // list.tail(list) -> list (all but first element)
 
 fn emit_list_tail(buf) {
+  // list.tail(list) -> list (all but first element)
+  // Returns a new list with n-1 items, items[1..n-1]
   let _ = prologue(buf) in
-  // rbx = list ptr
-  let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in
-  // n = [rbx]
-  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_r12(), x86.reg_rbx(), 0) in
-  // if n == 0, return empty list (just return same ptr with n=0)
-  // For now: return ptr to [rbx+16] with n-1 (zero-copy tail - unsafe but fast)
-  // Actually proper: alloc new list of n-1 items, copy items 1..n-1
-  // Simplified: return a "view" - ptr to element 1 with adjusted n
-  // This works if we never mutate lists (FARD lists are immutable)
-  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r12()) in
-  let _ = x86.sub_reg_imm32(buf, x86.reg_rax(), 1) in  // n-1
-  // Store n-1 at [rbx+16] and return rbx+16 as new list ptr
-  // This overwrites the second element's tag! Not safe.
-  // Use mmap for correctness
-  ret_null(buf)  // placeholder
+  let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in  // rbx = list ptr
+  // rcx = n = [rbx]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbx(), 0) in
+  // if n == 0, return empty list (same ptr with n=0)
+  let _ = x86.cmp_reg_imm32(buf, x86.reg_rcx(), 0) in
+  let jz_pos = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 132) in let _ = x86.emit32_le(buf, 0) in
+  // n1 = n-1
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rcx()) in
+  let _ = x86.sub_reg_imm32(buf, x86.reg_rcx(), 1) in
+  // alloc 8 + n1*16
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in let _ = x86.emit8(buf, 252) in
+  // rax = new ptr
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  // store n1 at [rdi]
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 0, x86.reg_rcx()) in
+  // copy loop: i=0..n1, src=[rbx+8+16+(i*16)]=rbx+24+i*16, dst=[rdi+8+i*16]
+  let _ = x86.xor_rr(buf, x86.reg_rax(), x86.reg_rax()) in
+  let lp = x86.buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let jge2 = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  let _ = x86.push_reg(buf, x86.reg_rax()) in
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
+  // src = rbx + 24 + rax
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rbx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 24) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdx(), x86.reg_rax(), 0) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rax(), 8) in
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in
+  let _ = x86.push_reg(buf, x86.reg_rax()) in
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+  let _ = x86.add_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rcx(), 8) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rcx(), 0, x86.reg_rdx()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rcx(), 8, x86.reg_rsi()) in
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.jmp_rel32(buf, lp - (x86.buf_len(buf) + 5)) in
+  let done = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jge2 + 2, done - (jge2 + 6)) in
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
+  let skip = x86.buf_len(buf) in
+  let _ = x86.jmp_rel32(buf, 0) in
+  // empty list case
+  let empty = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jz_pos + 2, empty - (jz_pos + 6)) in
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rbx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
+  let end_pos = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, skip + 1, end_pos - (skip + 5)) in
+  epilogue(buf)
 }
 
 // ── list.fold ─────────────────────────────────────────────────────────────────
@@ -399,10 +451,61 @@ fn emit_array_pop(buf) {
 // array.to_list(arr) -> list
 // List and array have same layout (tag 5=list, 10=array) - just retag
 fn emit_array_to_list(buf) {
+  // Array: [capacity:8][len:8][tag:8,payload:8 ...]
+  // List:  [n:8][tag:8,payload:8 ...]
+  // Alloc new list, copy len + items
   let _ = prologue(buf) in
-  let _ = load_arg_payload(buf, 0) in  // rax = arr ptr
+  let _ = load_arg_payload_to(buf, 0, x86.reg_rbx()) in  // rbx = arr ptr
+  // rcx = len = [rbx+8]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rbx(), 8) in
+  // alloc 8 + len*16 via bump allocator
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in  // mov rax,r12
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in let _ = x86.emit8(buf, 252) in    // add r12,rdi
+  // rax = new list ptr; rdi = new ptr
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  // store len at [rdi]
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 0, x86.reg_rcx()) in
+  // copy loop: i=0..len, copy [rbx+16+i*16] -> [rdi+8+i*16]
+  let _ = x86.xor_rr(buf, x86.reg_rax(), x86.reg_rax()) in  // i=0
+  let loop_pos = x86.buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let jge_pos = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  // src offset = 16 + i*16; dst offset = 8 + i*16
+  let _ = x86.push_reg(buf, x86.reg_rax()) in  // save i
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in  // save len
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rdx()) in
+  // src = rbx + 16 + rax; dst = rdi + 8 + rax
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rbx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 16) in   // src
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdx(), x86.reg_rax(), 0) in  // tag
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rax(), 8) in  // payload
+  // dst = rdi + 8 + i*16
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in
+  let _ = x86.push_reg(buf, x86.reg_rax()) in
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in
   let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
-  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in  // TAG_LIST
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rcx(), x86.reg_rax()) in
+  let _ = x86.add_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rcx(), 8) in   // dst
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rcx(), 0, x86.reg_rdx()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rcx(), 8, x86.reg_rsi()) in
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in  // len
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in  // i
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.jmp_rel32(buf, loop_pos - (x86.buf_len(buf) + 5)) in
+  let done = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jge_pos + 2, done - (jge_pos + 6)) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
   epilogue(buf)
 }
 
