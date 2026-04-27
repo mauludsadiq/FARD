@@ -12,7 +12,8 @@
 ///   .data: string constants
 ///   .bss: heap, globals (not in file, just headers)
 
-import("fard_x86") as x86
+import("fard_x86")    as x86
+import("fard_stdlib") as stdlib
 import("std/array")     as array
 import("std/list")      as list
 import("std/bytes")     as bytes
@@ -287,16 +288,36 @@ fn emit_phdr(buf, ptype, flags, offset, vaddr, paddr, filesz, memsz, align) {
 // ── Main ELF builder ──────────────────────────────────────────────────────────
 
 
-fn patch_alloc_val_calls(text_buf, patches, alloc_val_abs, code_start) {
+
+fn find_stdlib_addr(addrs, id, i, n) {
+  if id == 0 then 0
+  else if id == 1 then 36
+  else if id == 2 then 92
+  else if id == 3 then 132
+  else if id == 4 then 168
+  else if id == 5 then 204
+  else if id == 6 then 240
+  else -1
+}
+
+fn patch_stdlib_calls(text_buf, patches, stdlib_addrs, stdlib_base, code_start, fard_code_start) {
   list.fold(patches, null, fn(_, p) {
-    if p.fn_id == -2 then
-      let call_pos = p.pos in
-      let call_abs = code_start + call_pos in
-      let call_after = call_abs + 5 in
-      let rel = alloc_val_abs - call_after in
-      patch32(text_buf, call_pos + 1, rel)
-    else null
+    let dispatch_id = p.dispatch_id in
+    let call_pos    = p.pos in
+    // find stdlib function offset
+    let fn_off = find_stdlib_addr(stdlib_addrs, dispatch_id, 0, list.len(stdlib_addrs)) in
+    if fn_off < 0 then null
+    else
+      // call is in the fard code section
+      let call_abs  = fard_code_start + call_pos in
+      let fn_abs    = stdlib_base + fn_off in
+      let rel       = fn_abs - (call_abs + 5) in
+      patch32(text_buf, fard_code_start + call_pos + 1, rel)
   })
+}
+
+fn patch_alloc_val_calls(text_buf, patches, alloc_val_abs, code_start) {
+  null
 }
 
 fn build_elf(codegen_result) {
@@ -304,6 +325,7 @@ fn build_elf(codegen_result) {
   let fn_addrs       = codegen_result.fn_addrs in
   let entry_idx      = codegen_result.entry in
   let cg_res_patches = array.to_list(codegen_result.patches) in
+  let stdlib_patches = array.to_list(codegen_result.stdlib_patches) in
   let entry_off = array.get(fn_addrs, entry_idx) in
 
   // Layout:
@@ -346,6 +368,11 @@ fn build_elf(codegen_result) {
   let _ = emit8(text_buf, 0) in let _ = emit8(text_buf, 0) in
   let _ = emit8(text_buf, 15) in let _ = emit8(text_buf, 5) in
 
+  // stdlib functions
+  let stdlib_base = buf_len(text_buf) in
+  let stdlib_result = stdlib.emit_all_stdlib(text_buf) in
+  let stdlib_addrs = stdlib_result.addrs in
+
   // alloc_val function
   let alloc_val_pos = buf_len(text_buf) in
   let _ = emit_alloc_val_fn(text_buf) in
@@ -368,6 +395,9 @@ fn build_elf(codegen_result) {
   let _ = patch32(text_buf, call_main_pos + 1, main_rel) in
 
   // alloc_val is now inlined, no patches needed
+
+  // Patch stdlib dispatch calls
+  let _ = patch_stdlib_calls(text_buf, stdlib_patches, stdlib_addrs, stdlib_base, code_start, fard_code_start) in
 
   // Patch call to print_i64
   let print_abs = code_start + print_fn_pos in

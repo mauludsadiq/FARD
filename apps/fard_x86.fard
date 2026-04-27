@@ -423,5 +423,6 @@ fn set_local_tag(buf, i, tag) {
   reg_rax: reg_rax, reg_rcx: reg_rcx, reg_rdx: reg_rdx,
   reg_rbx: reg_rbx, reg_rsp: reg_rsp, reg_rbp: reg_rbp,
   reg_rsi: reg_rsi, reg_rdi: reg_rdi,
-  reg_r8: reg_r8, reg_r9: reg_r9, reg_r10: reg_r10, reg_r11: reg_r11
+  reg_r8: reg_r8, reg_r9: reg_r9, reg_r10: reg_r10, reg_r11: reg_r11,
+  reg_r12: reg_r12, reg_r13: reg_r13, reg_r14: reg_r14, reg_r15: reg_r15
 }

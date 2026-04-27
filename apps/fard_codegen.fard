@@ -10,6 +10,7 @@ import("std/array")     as array
 import("std/list")      as list
 import("std/str")       as str
 import("std/bytes")     as bytes
+import("fard_stdlib") as fstdlib
 
 // ── Tag constants ─────────────────────────────────────────────────────────────
 fn tag_null()  { 0 }
@@ -23,12 +24,103 @@ fn tag_clos()  { 7 }
 // patches: list of { pos: int, fn_id: int } — call sites to patch
 
 fn make_ctx() {
-  { buf:      x86.buf_new(),
-    fn_addrs: array.new(),
-    fn_names: array.new(),
-    patches:  array.new(),
-    slot_fn:  array.new(),
-    globals:  array.new() }
+  { buf:            x86.buf_new(),
+    fn_addrs:       array.new(),
+    fn_names:       array.new(),
+    patches:        array.new(),
+    stdlib_patches: array.new(),
+    slot_fn:        array.new(),
+    globals:        array.new(),
+    slot_mod:       array.new(),
+    slot_meth:      array.new() }
+}
+
+
+fn is_stdlib_module(name) {
+  name == "list" || name == "array" || name == "str" ||
+  name == "bytes" || name == "fs" || name == "cast" || name == "int"
+}
+
+fn find_slot_mod(ctx, slot) {
+  find_slot_mod_acc(ctx.slot_mod, slot, array.len(ctx.slot_mod) - 1)
+}
+
+fn find_slot_mod_acc(xs, slot, i) {
+  if i < 0 then null
+  else
+    let e = array.get(xs, i) in
+    if e.slot == slot then e.module_name else find_slot_mod_acc(xs, slot, i - 1)
+}
+
+fn find_slot_meth(ctx, slot) {
+  find_slot_meth_acc(ctx.slot_meth, slot, array.len(ctx.slot_meth) - 1)
+}
+
+fn find_slot_meth_acc(xs, slot, i) {
+  if i < 0 then null
+  else
+    let e = array.get(xs, i) in
+    if e.slot == slot then e else find_slot_meth_acc(xs, slot, i - 1)
+}
+
+fn get_dispatch_id(module_name, method) {
+  if module_name == "list" then
+    if method == "len" then fstdlib.id_list_len()
+    else if method == "get" then fstdlib.id_list_get()
+    else if method == "append" then fstdlib.id_list_append()
+    else if method == "tail" then fstdlib.id_list_tail()
+    else if method == "fold" then fstdlib.id_list_fold()
+    else if method == "build" then fstdlib.id_list_build()
+    else if method == "concat" then fstdlib.id_list_concat()
+    else -1
+  else if module_name == "array" then
+    if method == "len" then fstdlib.id_array_len()
+    else if method == "new" then fstdlib.id_array_new()
+    else if method == "push" then fstdlib.id_array_push()
+    else if method == "get" then fstdlib.id_array_get()
+    else if method == "set" then fstdlib.id_array_set()
+    else if method == "pop" then fstdlib.id_array_pop()
+    else if method == "to_list" then fstdlib.id_array_to_list()
+    else -1
+  else if module_name == "str" then
+    if method == "len" then fstdlib.id_str_len()
+    else if method == "concat" then fstdlib.id_str_concat()
+    else if method == "lex_tokens" then fstdlib.id_str_lex_tokens()
+    else if method == "char_at" then fstdlib.id_str_char_at()
+    else -1
+  else if module_name == "bytes" then
+    if method == "len" then fstdlib.id_bytes_len()
+    else if method == "of_str" then fstdlib.id_bytes_of_str()
+    else if method == "get" then fstdlib.id_bytes_get()
+    else if method == "to_hex" then fstdlib.id_bytes_to_hex()
+    else -1
+  else if module_name == "fs" then
+    if method == "read_text" then fstdlib.id_fs_read_text()
+    else if method == "write_bytes" then fstdlib.id_fs_write_bytes()
+    else -1
+  else if module_name == "cast" then
+    if method == "text" then fstdlib.id_cast_text() else -1
+  else if module_name == "int" then
+    if method == "to_text" then fstdlib.id_int_to_text() else -1
+  else -1
+}
+
+fn emit_stdlib_call(buf, ctx, dst, fn_slot, args) {
+  let m = find_slot_meth(ctx, fn_slot) in
+  if m == null then emit_const(buf, dst, null)
+  else
+    let did = get_dispatch_id(m.module_name, m.method) in
+    if did < 0 then emit_const(buf, dst, null)
+    else
+      let n = list.len(args) in
+      let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
+      let _ = emit_push_args(buf, args, n - 1) in
+      let call_pos = x86.buf_len(buf) in
+      let _ = x86.call_rel32(buf, 0) in
+      let _ = array.push(ctx.stdlib_patches, { pos: call_pos, dispatch_id: did, dst: dst }) in
+      let stack_args = n * 16 + 8 in
+      let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), stack_args) in
+      store_slot(buf, dst)
 }
 
 fn find_fn_by_name(ctx, name) {
@@ -349,10 +441,13 @@ fn emit_instr(buf, ctx, instr, offsets) {
   else if op == "make_closure" then
     emit_make_closure(buf, ctx, instr.dst, instr.fn_id)
 
-  else if op == "call" then
-    let fn_id = if instr.fn_id >= 0 then instr.fn_id
-                else find_fn_id(ctx.slot_fn, instr.fn_r) in
-    emit_call(buf, ctx, instr.dst, fn_id, instr.args)
+    else if op == "call" then
+      let m = find_slot_meth(ctx, instr.fn_r) in
+      if m != null then emit_stdlib_call(buf, ctx, instr.dst, instr.fn_r, instr.args)
+      else
+        let fn_id = if instr.fn_id >= 0 then instr.fn_id
+                    else find_fn_id(ctx.slot_fn, instr.fn_r) in
+        emit_call(buf, ctx, instr.dst, fn_id, instr.args)
 
   else if op == "return" then
     emit_return(buf, instr.src)
@@ -381,12 +476,12 @@ fn emit_instr(buf, ctx, instr, offsets) {
   else if op == "nop" || op == "patch_branch" || op == "patch_jump" then
     null
 
-  else if op == "global_load" then
-    let _ = emit_global_load(buf, ctx, instr.dst, instr.name) in
-    // If this global holds a closure, record dst->fn_id mapping
-    let gfn = find_fn_by_name(ctx, instr.name) in
-    if gfn >= 0 then array.push(ctx.slot_fn, { slot: instr.dst, fn_id: gfn })
-    else null
+    else if op == "global_load" then
+      let _ = emit_global_load(buf, ctx, instr.dst, instr.name) in
+      let gfn = find_fn_by_name(ctx, instr.name) in
+      if gfn >= 0 then array.push(ctx.slot_fn, { slot: instr.dst, fn_id: gfn })
+      else if is_stdlib_module(instr.name) then array.push(ctx.slot_mod, { slot: instr.dst, module_name: instr.name })
+      else null
 
   else if op == "global_store" then
     emit_global_store(buf, ctx, instr.src, instr.name)
@@ -397,8 +492,13 @@ fn emit_instr(buf, ctx, instr, offsets) {
   else if op == "make_rec" then
     emit_make_rec(buf, ctx, instr.dst, instr.fields)
 
-  else if op == "get_field" then
-    emit_get_field(buf, ctx, instr.dst, instr.obj, instr.field)
+    else if op == "get_field" then
+      let modn = find_slot_mod(ctx, instr.obj) in
+      if modn != null then
+        let _ = emit_const(buf, instr.dst, null) in
+        array.push(ctx.slot_meth, { slot: instr.dst, module_name: modn, method: instr.field })
+      else
+        emit_get_field(buf, ctx, instr.dst, instr.obj, instr.field)
 
   else if op == "import" then
     emit_const(buf, instr.dst, null)
@@ -670,10 +770,11 @@ fn codegen(ir) {
   // Apply patches
   let _ = apply_patches(ctx) in
 
-  { buf:      ctx.buf,
-    fn_addrs:  ctx.fn_addrs,
-    patches:   ctx.patches,
-    entry:     ir.entry }
+  { buf:            ctx.buf,
+    fn_addrs:       ctx.fn_addrs,
+    patches:        ctx.patches,
+    stdlib_patches: ctx.stdlib_patches,
+    entry:          ir.entry }
 }
 
 
