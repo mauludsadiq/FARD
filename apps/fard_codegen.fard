@@ -49,7 +49,7 @@ fn find_slot_mod_acc(xs, slot, i) {
   if i < 0 then null
   else
     let e = array.get(xs, i) in
-    if e.slot == slot then e.module_name else find_slot_mod_acc(xs, slot, i - 1)
+    if e.slot == slot then e else find_slot_mod_acc(xs, slot, i - 1)
 }
 
 fn find_slot_meth(ctx, slot) {
@@ -493,10 +493,10 @@ fn emit_instr(buf, ctx, instr, offsets) {
     emit_make_rec(buf, ctx, instr.dst, instr.fields)
 
     else if op == "get_field" then
-      let modn = find_slot_mod(ctx, instr.obj) in
-      if modn != null then
+      let mod_entry = find_slot_mod(ctx, instr.obj) in
+      if mod_entry != null then
         let _ = emit_const(buf, instr.dst, null) in
-        array.push(ctx.slot_meth, { slot: instr.dst, module_name: modn, method: instr.field })
+        array.push(ctx.slot_meth, { slot: instr.dst, module_name: mod_entry.module_name, method: instr.field })
       else
         emit_get_field(buf, ctx, instr.dst, instr.obj, instr.field)
 
