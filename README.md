@@ -76,6 +76,11 @@ All stages written in FARD. Native ELF runs without VM or interpreter.
 | fib(10) | 55 | Seed VM (bytecode, under 1s) |
 | add(3,4) | 7 | Native ELF, no VM |
 | fib(10) | 55 | Native ELF, no VM, 0.5s incl Docker |
+| { x:3, y:4 }.x | 3 | Native ELF, records |
+| list.len([10,20,30]) | 3 | Native ELF, stdlib dispatch |
+| list.get([10,20,30],1) | 20 | Native ELF, stdlib dispatch |
+| array.new/push/get/len | correct | Native ELF, mutable arrays |
+| str.concat + str.len | 11 | Native ELF, string constants |
 
 ### Toolchain
 
@@ -104,7 +109,7 @@ displaced by the native backend.
 | 2 | Bytecode + emitter + interpreter | done |
 | 3 | Seed VM in x86_64 assembly | done |
 | 4 | Self-hosting compiler driver | done |
-| 5 | Native x86_64 ELF backend | in progress |
+| 5 | Native x86_64 ELF backend | in progress — integers, records, lists, strings, stdlib |
 | 6 | FARD-native production compiler | planned |
 
 ## Quick Start
