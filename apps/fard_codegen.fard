@@ -24,9 +24,20 @@ fn tag_clos()  { 7 }
 fn make_ctx() {
   { buf:      x86.buf_new(),
     fn_addrs: array.new(),
+    fn_names: array.new(),
     patches:  array.new(),
     slot_fn:  array.new(),
     globals:  array.new() }
+}
+
+fn find_fn_by_name(ctx, name) {
+  find_fn_name_direct(ctx.fn_names, name, 0, array.len(ctx.fn_names))
+}
+
+fn find_fn_name_direct(fn_names, name, i, n) {
+  if i >= n then -1
+  else if array.get(fn_names, i) == name then i
+  else find_fn_name_direct(fn_names, name, i + 1, n)
 }
 
 fn find_global_slot_acc(globals, name, i, n) {
@@ -237,6 +248,18 @@ fn emit_make_closure(buf, ctx, dst, fn_id) {
 // Result goes to dst slot
 // For Phase 1: direct call by fn_id, args passed via stack
 
+fn find_fn_id(slot_fn, slot) {
+  find_fn_id_acc(slot_fn, slot, array.len(slot_fn) - 1)
+}
+
+fn find_fn_id_acc(slot_fn, slot, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(slot_fn, i) in
+    if e.slot == slot then e.fn_id
+    else find_fn_id_acc(slot_fn, slot, i - 1)
+}
+
 fn emit_call(buf, ctx, dst, fn_id, args) {
   let n     = list.len(args) in
   let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
@@ -326,7 +349,9 @@ fn emit_instr(buf, ctx, instr, offsets) {
     emit_make_closure(buf, ctx, instr.dst, instr.fn_id)
 
   else if op == "call" then
-    emit_call(buf, ctx, instr.dst, instr.fn_id, instr.args)
+    let fn_id = if instr.fn_id >= 0 then instr.fn_id
+                else find_fn_id(ctx.slot_fn, instr.fn_r) in
+    emit_call(buf, ctx, instr.dst, fn_id, instr.args)
 
   else if op == "return" then
     emit_return(buf, instr.src)
@@ -356,7 +381,11 @@ fn emit_instr(buf, ctx, instr, offsets) {
     null
 
   else if op == "global_load" then
-    emit_global_load(buf, ctx, instr.dst, instr.name)
+    let _ = emit_global_load(buf, ctx, instr.dst, instr.name) in
+    // If this global holds a closure, record dst->fn_id mapping
+    let gfn = find_fn_by_name(ctx, instr.name) in
+    if gfn >= 0 then array.push(ctx.slot_fn, { slot: instr.dst, fn_id: gfn })
+    else null
 
   else if op == "global_store" then
     emit_global_store(buf, ctx, instr.src, instr.name)
@@ -378,42 +407,155 @@ fn emit_instr(buf, ctx, instr, offsets) {
     null
 }
 
+
+fn apply_ir_patches(code) {
+  apply_ir_patches_loop(code, 0, list.len(code), [])
+}
+
+fn find_ir_patch(code, idx, kind) {
+  find_ir_patch_loop(code, 0, list.len(code), idx, kind)
+}
+
+fn find_ir_patch_loop(code, i, n, idx, kind) {
+  if i >= n then null
+  else
+    let p = list.get(code, i) in
+    if p.op == kind && p.idx == idx then p
+    else find_ir_patch_loop(code, i + 1, n, idx, kind)
+}
+
+fn apply_ir_patches_loop(code, i, n, acc) {
+  if i >= n then acc
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "patch_branch" || instr.op == "patch_jump" then
+      apply_ir_patches_loop(code, i + 1, n, acc)
+    else if instr.op == "branch" then
+      let p = find_ir_patch(code, i, "patch_branch") in
+      let out = if p == null then instr else { op: "branch", cond: instr.cond, then_t: p.then_t, else_t: p.else_t } in
+      apply_ir_patches_loop(code, i + 1, n, list.append(acc, out))
+    else if instr.op == "jump" then
+      let p = find_ir_patch(code, i, "patch_jump") in
+      let out = if p == null then instr else { op: "jump", target: p.target } in
+      apply_ir_patches_loop(code, i + 1, n, list.append(acc, out))
+    else
+      apply_ir_patches_loop(code, i + 1, n, list.append(acc, instr))
+}
+
 // ── Emit one IR function ──────────────────────────────────────────────────────
 
 fn emit_function(ctx, fn_def) {
   let buf     = ctx.buf in
-  let n_loc   = fn_def.locals in
-  let fsz     = frame_size(256) in  // large frame for globals too
-  let code    = fn_def.code in
+  let fsz     = frame_size(256) in
+  let code    = apply_ir_patches(fn_def.code) in
   let n       = list.len(code) in
 
-  // Record this function's start address
+  // Record this function start
   let fn_start = x86.buf_len(buf) in
   let _ = array.push(ctx.fn_addrs, fn_start) in
+  let _ = array.push(ctx.fn_names, fn_def.name) in
 
   // Prologue
   let _ = x86.prologue(buf, fsz) in
 
-  // Copy args from stack into local slots
-  // Args were pushed: tag then payload for each arg, right to left
-  // After prologue: [rbp+16] = ret addr, [rbp+24] = caller rbp
-  // Actually: [rbp+16] = arg0.tag, [rbp+24] = arg0.payload, etc.
-  // Wait - push order was right-to-left, so last arg first on stack
-  // [rbp+16] = argN-1.tag, [rbp+18] = argN-1.payload ...
-  // For simplicity, pass args in registers for small arg counts
-  // Phase 1: args passed on stack above frame
+  // Copy args from stack
   let _ = copy_args_from_stack(buf, fn_def.arity, 0) in
 
-  // Compute byte offsets for each IR instruction (for branch targets)
-  // We need a two-pass approach: first compute offsets, then emit
-  // For Phase 1: use instruction index directly (approximate)
-  let offsets = compute_ir_offsets(buf, code, 0, n, fn_start, []) in
+  // Two-pass: collect offsets then emit
+  let br_patches = array.new() in
+  let offsets    = array.new() in
+  // Pre-resolve patch_branch/patch_jump
+  let code = resolve_ir_patches(code) in
+  let n    = list.len(code) in
+  let _ = emit_instrs_twopass(buf, ctx, code, 0, n, fn_start, offsets, br_patches) in
 
-  // Emit instructions
-  let _ = emit_instrs(buf, ctx, code, 0, n, offsets) in
-
-  // If last instruction wasn't a return, add one
+  // Pass 2: patch branch/jump targets
+  let _ = patch_branches(buf, br_patches, offsets, fn_start) in
   null
+}
+
+fn patch_branches(buf, patches, offsets, fn_start) {
+  patch_branches_acc(buf, patches, offsets, fn_start, 0, array.len(patches))
+}
+
+fn patch_branches_acc(buf, patches, offsets, fn_start, i, n) {
+  if i >= n then null
+  else
+    let p = array.get(patches, i) in
+    let op = p.op in
+    if op == "jz" then
+      let tgt_off = array.get(offsets, p.target) in
+      let tgt_abs = fn_start + tgt_off in
+      let after   = p.pos + 6 in  // jz rel32 = 6 bytes
+      let rel     = tgt_abs - after in
+      let _ = x86.patch32(buf, p.pos + 2, rel) in
+      patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+    else if op == "jmp" then
+      let tgt_off = array.get(offsets, p.target) in
+      let tgt_abs = fn_start + tgt_off in
+      let after   = p.pos + 5 in  // jmp rel32 = 5 bytes
+      let rel     = tgt_abs - after in
+      let _ = x86.patch32(buf, p.pos + 1, rel) in
+      patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+    else
+      patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+}
+
+
+fn resolve_ir_patches(code) {
+  let n   = list.len(code) in
+  let arr = array.from_list(code) in
+  let _   = resolve_patches_acc(arr, code, 0, n) in
+  array.to_list(arr)
+}
+
+fn resolve_patches_acc(arr, code, i, n) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "patch_branch" then
+      let orig = array.get(arr, instr.idx) in
+      let _ = array.set(arr, instr.idx,
+        { op: "branch", cond: orig.cond, then_t: instr.then_t, else_t: instr.else_t }) in
+      let _ = array.set(arr, i, { op: "nop" }) in
+      resolve_patches_acc(arr, code, i + 1, n)
+    else if instr.op == "patch_jump" then
+      let _ = array.set(arr, instr.idx, { op: "jump", target: instr.target }) in
+      let _ = array.set(arr, i, { op: "nop" }) in
+      resolve_patches_acc(arr, code, i + 1, n)
+    else
+      resolve_patches_acc(arr, code, i + 1, n)
+}
+
+fn emit_instrs_twopass(buf, ctx, code, i, n, fn_start, offsets, br_patches) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    let off   = x86.buf_len(buf) - fn_start in
+    let _ = array.push(offsets, off) in
+    let _ = emit_instr_twopass(buf, ctx, instr, offsets, br_patches) in
+    emit_instrs_twopass(buf, ctx, code, i + 1, n, fn_start, offsets, br_patches)
+}
+
+fn emit_instr_twopass(buf, ctx, instr, offsets, br_patches) {
+  let op = instr.op in
+  if op == "branch" then
+    let _ = load_payload(buf, instr.cond) in
+    let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
+    // jz to else_t (placeholder)
+    let jz_pos = x86.buf_len(buf) in
+    let _ = x86.jz_rel32(buf, 0) in
+    let _ = array.push(br_patches, { op: "jz", pos: jz_pos, target: instr.else_t }) in
+    // jmp to then_t (placeholder)
+    let jmp_pos = x86.buf_len(buf) in
+    let _ = x86.jmp_rel32(buf, 0) in
+    array.push(br_patches, { op: "jmp", pos: jmp_pos, target: instr.then_t })
+  else if op == "jump" then
+    let jmp_pos = x86.buf_len(buf) in
+    let _ = x86.jmp_rel32(buf, 0) in
+    array.push(br_patches, { op: "jmp", pos: jmp_pos, target: instr.target })
+  else
+    emit_instr(buf, ctx, instr, [])
 }
 
 fn copy_args_from_stack(buf, arity, i) {
@@ -502,6 +644,7 @@ fn apply_patches_acc(ctx, i, n) {
     // For now patches have fn_id stored directly
     let fn_id   = patch.fn_id in
     let call_pos = patch.pos in
+    if fn_id < 0 then apply_patches_acc(ctx, i + 1, n) else
     let fn_addr = array.get(ctx.fn_addrs, fn_id) in
     let call_after = call_pos + 5 in  // after call rel32
     let rel = fn_addr - call_after in
