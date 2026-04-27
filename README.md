@@ -86,6 +86,10 @@ All stages written in FARD. Native ELF runs without VM or interpreter.
 | array.to_list | correct | Native ELF |
 | str.concat + str.len | 11 | Native ELF, string constants |
 | str.char_at | correct | Native ELF |
+| bytes.of_str/get/len | correct | Native ELF |
+| fs.read_text | 19 chars | Native ELF, syscalls |
+| fs.write_bytes | correct | Native ELF, syscalls |
+| "1+2" → native ELF | 3 | Full pipeline: lex→parse→IR→codegen→ELF |
 
 ### Toolchain
 
@@ -114,7 +118,7 @@ displaced by the native backend.
 | 2 | Bytecode + emitter + interpreter | done |
 | 3 | Seed VM in x86_64 assembly | done |
 | 4 | Self-hosting compiler driver | done |
-| 5 | Native x86_64 ELF backend | in progress — integers, records, lists, arrays, strings, closures, stdlib |
+| 5 | Native x86_64 ELF backend | nearly complete — full pipeline verified: '1+2=3' compiled to native ELF |
 | 6 | FARD-native production compiler | planned |
 
 ## Quick Start
