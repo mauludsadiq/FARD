@@ -782,14 +782,114 @@ fn emit_cast_text(buf) {
 
 // ── fs.read_text ──────────────────────────────────────────────────────────────
 fn emit_fs_read_text(buf) {
+  // fs.read_text(path) -> str
+  // syscalls: open(path, O_RDONLY=0) -> fd
+  //           fstat or just read in a loop
+  //           read(fd, buf, size) -> n
+  //           close(fd)
+  // Simple: alloc 1MB buffer, read into it, null-terminate
   let _ = prologue(buf) in
-  ret_null(buf)  // TODO
+  // rdi = path string ptr
+  let _ = load_arg_payload_to(buf, 0, x86.reg_rdi()) in
+  // open(rdi, O_RDONLY=0, 0) -> fd in rax
+  let _ = x86.xor_rr(buf, x86.reg_rsi(), x86.reg_rsi()) in  // flags=0 (O_RDONLY)
+  let _ = x86.xor_rr(buf, x86.reg_rdx(), x86.reg_rdx()) in  // mode=0
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 2) in        // SYS_open=2
+  let _ = x86.syscall(buf) in
+  // rax = fd; save in rbx
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
+  // alloc 1MB read buffer via bump allocator
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdi(), 1048576) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in  // mov rax,r12
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in let _ = x86.emit8(buf, 252) in    // add r12,rdi
+  // rax = buf ptr; save in r12 temporarily -- but r12 IS heap ptr!
+  // Use stack: push buf ptr
+  let _ = x86.push_reg(buf, x86.reg_rax()) in  // buf ptr on stack
+  // read(fd=rbx, buf=rax, count=1MB-1)
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in  // fd
+  let _ = x86.mov_rr(buf, x86.reg_rsi(), x86.reg_rax()) in  // buf
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 1048575) in // count
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 0) in       // SYS_read=0
+  let _ = x86.syscall(buf) in
+  // rax = bytes read; null-terminate
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in  // rcx = buf ptr
+  // [rcx + rax] = 0
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let _ = x86.emit8(buf, 198) in let _ = x86.emit8(buf, 0) in let _ = x86.emit8(buf, 0) in  // mov byte [rax], 0
+  // close(fd=rbx)
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 3) in  // SYS_close=3
+  let _ = x86.syscall(buf) in
+  // return TAG_STR(3), payload=buf ptr (in rcx)
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 3) in
+  epilogue(buf)
 }
 
 // ── fs.write_bytes ────────────────────────────────────────────────────────────
 fn emit_fs_write_bytes(buf) {
+  // fs.write_bytes(path, bytes) -> null
+  // bytes is a TAG_BYTES value: payload=ptr to [n:8][tag:8,val:8 ...]
+  // We need to write raw bytes: extract values from bytes array
+  // For now: write the byte values as a string of raw bytes
   let _ = prologue(buf) in
-  ret_null(buf)  // TODO
+  // arg0=path ptr, arg1=bytes ptr
+  let _ = load_arg_payload_to(buf, 0, x86.reg_rdi()) in  // path
+  // open(path, O_WRONLY|O_CREAT|O_TRUNC = 1|64|512 = 577, 0644=420)
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rsi(), 577) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 420) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 2) in    // SYS_open
+  let _ = x86.syscall(buf) in
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in  // fd
+  // arg1 = bytes value: load ptr
+  let _ = load_arg_payload_to(buf, 1, x86.reg_rsi()) in  // bytes ptr
+  // n = [rsi+0]
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rsi(), 0) in
+  // Build raw byte buffer: alloc n bytes, fill from bytes array
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 1) in  // +1 for safety
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in let _ = x86.emit8(buf, 252) in
+  // rax = raw buf; save on stack along with n and bytes ptr
+  let _ = x86.push_reg(buf, x86.reg_rax()) in   // raw buf
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in   // n
+  let _ = load_arg_payload_to(buf, 1, x86.reg_rsi()) in  // reload bytes ptr
+  let _ = x86.push_reg(buf, x86.reg_rsi()) in   // bytes ptr
+  // fill loop: for i=0..n: raw[i] = bytes[i].payload (the byte value)
+  let _ = x86.xor_rr(buf, x86.reg_rax(), x86.reg_rax()) in  // i=0
+  let lp2 = x86.buf_len(buf) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rcx(), x86.reg_rsp(), 8) in  // n
+  let _ = x86.cmp_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let jge3 = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  // bytes[i].payload = [bytes_ptr + 8 + i*16 + 8] = [bytes_ptr + 16 + i*16]
+  let _ = x86.push_reg(buf, x86.reg_rax()) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rsp(), 8) in  // bytes ptr (offset by push)
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rsi()) in
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rdx(), x86.reg_rax(), 0) in  // byte val
+  // raw[i] = dl
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in   // i
+  let _ = x86.mov_reg_mem_disp32(buf, x86.reg_rsi(), x86.reg_rsp(), 16) in  // raw buf (now at +16)
+  let _ = x86.add_rr(buf, x86.reg_rsi(), x86.reg_rax()) in  // raw + i
+  let _ = x86.emit8(buf, 136) in let _ = x86.emit8(buf, 22) in  // mov [rsi], dl
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.jmp_rel32(buf, lp2 - (x86.buf_len(buf) + 5)) in
+  let done3 = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jge3 + 2, done3 - (jge3 + 6)) in
+  // write(fd=rbx, buf=raw_buf, n)
+  let _ = x86.pop_reg(buf, x86.reg_rsi()) in   // bytes ptr (discard)
+  let _ = x86.pop_reg(buf, x86.reg_rdx()) in   // n
+  let _ = x86.pop_reg(buf, x86.reg_rsi()) in   // raw buf
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in  // fd
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 1) in       // SYS_write
+  let _ = x86.syscall(buf) in
+  // close
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 3) in
+  let _ = x86.syscall(buf) in
+  ret_null(buf)
 }
 
 // ── int.to_text ───────────────────────────────────────────────────────────────
