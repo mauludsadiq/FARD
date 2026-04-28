@@ -1,0 +1,51 @@
+/// fardc_native — FARD native ELF compiler driver
+
+import("fardlex")      as lex
+import("fardparse")    as par
+import("fard_lower")   as lower
+import("fard_codegen") as cg
+import("fard_elf")     as elf
+import("std/str")    as str
+import("std/fs")     as fs
+import("std/bytes")  as bytes
+import("std/list")   as list
+import("std/env")    as env
+
+fn find_separator(args, i, n) {
+  if i >= n then n
+  else if list.get(args, i) == "--" then i + 1
+  else find_separator(args, i + 1, n)
+}
+
+fn find_arg(args, flag) {
+  let n   = list.len(args) in
+  let sep = find_separator(args, 0, n) in
+  find_arg_acc(args, flag, sep, n)
+}
+
+fn find_arg_acc(args, flag, i, n) {
+  if i >= n then null
+  else if list.get(args, i) == flag then
+    if i + 1 < n then list.get(args, i + 1) else null
+  else find_arg_acc(args, flag, i + 1, n)
+}
+
+fn compile_file(in_path, out_path) {
+  let src    = fs.read_text(in_path) in
+  let tokens = lex.tokenize(src) in
+  let parsed = par.parse_module(tokens, 0) in
+  if !parsed.ok then { ok: false, err: "parse error" }
+  else
+    let ir     = lower.lower_program(parsed.node) in
+    let cg_res = cg.codegen(ir) in
+    let binary = elf.build_elf(cg_res) in
+    let _      = fs.write_bytes(out_path, binary) in
+    { ok: true, bytes: bytes.len(binary) }
+}
+
+let in_path  = "/tmp/add12.fard"
+let out_path = "/tmp/add12_native"
+
+if in_path == null then { ok: false, err: "missing --in" }
+else if out_path == null then { ok: false, err: "missing --out" }
+else compile_file(in_path, out_path)

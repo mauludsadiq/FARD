@@ -190,7 +190,7 @@ fn emit_stdlib_call(buf, ctx, dst, fn_slot, args) {
     if did < 0 then emit_const(buf, ctx, dst, null)
     else
       let n = list.len(args) in
-      let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
+      let _ = x86.push_reg(buf, x86.reg_rax()) in
       let _ = emit_push_args(buf, args, n - 1) in
       let call_pos = x86.buf_len(buf) in
       let _ = x86.call_rel32(buf, 0) in
@@ -549,8 +549,9 @@ fn emit_instr(buf, ctx, instr, offsets) {
       if m != null then emit_stdlib_call(buf, ctx, instr.dst, instr.fn_r, instr.args)
       else
         let fn_id = if instr.fn_id >= 0 then instr.fn_id
-                    else find_fn_id(ctx.slot_fn, instr.fn_r) in
-        emit_call(buf, ctx, instr.dst, fn_id, instr.args)
+                      else find_fn_id(ctx.slot_fn, instr.fn_r) in
+          if fn_id < 0 then emit_const(buf, ctx, instr.dst, null)
+          else emit_call(buf, ctx, instr.dst, fn_id, instr.args)
 
   else if op == "return" then
     emit_return(buf, instr.src)
@@ -648,8 +649,9 @@ fn apply_ir_patches_loop(code, i, n, acc) {
 // ── Emit one IR function ──────────────────────────────────────────────────────
 
 fn emit_function(ctx, fn_def) {
+  let _dbg = { checkpoint: "emit_function_start", name: fn_def.name } in
   let buf     = ctx.buf in
-  let fsz     = frame_size(256) in
+  let fsz     = frame_size(1024) in
   let code    = apply_ir_patches(fn_def.code) in
   let n       = list.len(code) in
 
@@ -687,14 +689,22 @@ fn patch_branches_acc(buf, patches, offsets, fn_start, i, n) {
     let p = array.get(patches, i) in
     let op = p.op in
     if op == "jz" then
-      let tgt_off = array.get(offsets, p.target) in
+        
+if p.target < 0 || p.target >= array.len(offsets) then patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+
+        else
+        let tgt_off = array.get(offsets, p.target) in
       let tgt_abs = fn_start + tgt_off in
       let after   = p.pos + 6 in  // jz rel32 = 6 bytes
       let rel     = tgt_abs - after in
       let _ = x86.patch32(buf, p.pos + 2, rel) in
       patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
     else if op == "jmp" then
-      let tgt_off = array.get(offsets, p.target) in
+        
+if p.target < 0 || p.target >= array.len(offsets) then patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+
+        else
+        let tgt_off = array.get(offsets, p.target) in
       let tgt_abs = fn_start + tgt_off in
       let after   = p.pos + 5 in  // jmp rel32 = 5 bytes
       let rel     = tgt_abs - after in
@@ -705,9 +715,22 @@ fn patch_branches_acc(buf, patches, offsets, fn_start, i, n) {
 }
 
 
+fn array_from_list(xs) {
+  let n   = list.len(xs) in
+  let arr = array.new() in
+  array_from_list_acc(arr, xs, 0, n)
+}
+
+fn array_from_list_acc(arr, xs, i, n) {
+  if i >= n then arr
+  else
+    let _ = array.push(arr, list.get(xs, i)) in
+    array_from_list_acc(arr, xs, i + 1, n)
+}
+
 fn resolve_ir_patches(code) {
   let n   = list.len(code) in
-  let arr = array.from_list(code) in
+  let arr = array_from_list(code) in
   let _   = resolve_patches_acc(arr, code, 0, n) in
   array.to_list(arr)
 }
@@ -723,6 +746,7 @@ fn resolve_patches_acc(arr, code, i, n) {
       let _ = array.set(arr, i, { op: "nop" }) in
       resolve_patches_acc(arr, code, i + 1, n)
     else if instr.op == "patch_jump" then
+      let _ = if instr.idx >= array.len(arr) then { die: str.concat("patch_jump OOB idx=", cast.text(instr.idx)) } else null in
       let _ = array.set(arr, instr.idx, { op: "jump", target: instr.target }) in
       let _ = array.set(arr, i, { op: "nop" }) in
       resolve_patches_acc(arr, code, i + 1, n)
@@ -838,21 +862,17 @@ fn apply_patches(ctx) {
 fn apply_patches_acc(ctx, i, n) {
   if i >= n then null
   else
-    let patch   = array.get(ctx.patches, i) in
-    // patch.slot = IR local slot holding the closure (fn_id as payload)
-    // patch.pos  = byte position of the call rel32 operand in buf
-    // patch.dst  = dst slot
-    // We need fn_id from the closure slot — but we don't have locals here
-    // Instead: during emit_call we should save fn_id directly
-    // For now patches have fn_id stored directly
-    let fn_id   = patch.fn_id in
+    let patch    = array.get(ctx.patches, i) in
+    let fn_id    = patch.fn_id in
     let call_pos = patch.pos in
-    if fn_id < 0 then apply_patches_acc(ctx, i + 1, n) else
-    let fn_addr = array.get(ctx.fn_addrs, fn_id) in
-    let call_after = call_pos + 5 in  // after call rel32
-    let rel = fn_addr - call_after in
-    let _ = x86.patch32(ctx.buf, call_pos + 1, rel) in
-    apply_patches_acc(ctx, i + 1, n)
+    if fn_id < 0 || fn_id >= array.len(ctx.fn_addrs) then
+      apply_patches_acc(ctx, i + 1, n)
+    else
+      let fn_addr = array.get(ctx.fn_addrs, fn_id) in
+      let call_after = call_pos + 5 in
+      let rel = fn_addr - call_after in
+      let _ = x86.patch32(ctx.buf, call_pos + 1, rel) in
+      apply_patches_acc(ctx, i + 1, n)
 }
 
 // ── Main codegen entry point ──────────────────────────────────────────────────
@@ -871,6 +891,7 @@ fn codegen(ir) {
   let _ = emit_all_fns(ctx, fns, 0, n) in
 
   // Apply patches
+  let _dbg2 = { checkpoint: "apply_patches_start" } in
   let _ = apply_patches(ctx) in
 
   { buf:            ctx.buf,
