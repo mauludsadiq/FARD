@@ -118,7 +118,7 @@ displaced by the native backend.
 | 2 | Bytecode + emitter + interpreter | done |
 | 3 | Seed VM in x86_64 assembly | done |
 | 4 | Self-hosting compiler driver | done |
-| 5 | Native x86_64 ELF backend | nearly complete — full pipeline verified: '1+2=3' compiled to native ELF |
+| 5 | Native x86_64 ELF backend | **complete** — fardc_native.fard compiles to 11KB native ELF |
 | 6 | FARD-native production compiler | planned |
 
 ## Quick Start
