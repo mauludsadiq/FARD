@@ -33,7 +33,8 @@ fn make_ctx() {
     slot_fn:        array.new(),
     globals:        array.new(),
     slot_mod:       array.new(),
-    slot_meth:      array.new() }
+    slot_meth:      array.new(),
+    n_scratch:      array.new() }
 }
 
 
@@ -106,6 +107,86 @@ fn get_dispatch_id(module_name, method) {
   else -1
 }
 
+fn emit_build_load_n(buf, n_slot, n_val) {
+  if n_val >= 0 then x86.mov_reg_imm32(buf, x86.reg_rbx(), n_val)
+  else
+    let _ = load_payload(buf, n_slot) in
+    x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax())
+}
+
+fn find_n_scratch(scratch, slot, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(scratch, i) in
+    if e.slot == slot then e.val
+    else find_n_scratch(scratch, slot, i - 1)
+}
+
+fn emit_list_build_inline(buf, ctx, dst, args) {
+  // list.build(n, fn) -> list of n items where item[i] = fn(i)
+  let n_slot  = list.get(args, 0) in
+  let fn_slot = list.get(args, 1) in
+  let fn_id   = find_fn_id(ctx.slot_fn, fn_slot) in
+  if fn_id < 0 then emit_const(buf, ctx, dst, null)
+  else
+  // n may be in n_scratch if slot was reused for closure
+  let n_val   = find_n_scratch(ctx.n_scratch, n_slot, array.len(ctx.n_scratch) - 1) in
+  // Load n into rbx
+  let _ = emit_build_load_n(buf, n_slot, n_val) in
+  // alloc 8 + n*16 bytes
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rbx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
+  let _ = emit_call_alloc_val(buf, ctx) in
+  // rax = list ptr; rdi = list ptr; store n
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 0, x86.reg_rbx()) in
+  // loop: r9=i=0, rbx=n, rdi=list_ptr
+  let _ = x86.xor_rr(buf, x86.reg_r9(), x86.reg_r9()) in
+  let lp = x86.buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_r9(), x86.reg_rbx()) in
+  let jge = x86.buf_len(buf) in
+  let _ = x86.emit8(buf, 15) in let _ = x86.emit8(buf, 141) in let _ = x86.emit32_le(buf, 0) in
+  // push n, i, list_ptr; push arg i; call fn
+  let _ = x86.push_reg(buf, x86.reg_rbx()) in  // n
+  let _ = x86.push_reg(buf, x86.reg_r9()) in   // i
+  let _ = x86.push_reg(buf, x86.reg_rdi()) in  // list ptr
+  // push arg0 = i (TAG_INT=2, payload=r9)
+  let _ = x86.push_reg(buf, x86.reg_r9()) in   // payload=i
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 2) in
+  let _ = x86.push_reg(buf, x86.reg_rax()) in  // tag=TAG_INT
+  let call_pos = x86.buf_len(buf) in
+  let _ = x86.call_rel32(buf, 0) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id }) in
+  // cleanup: 16(arg)
+  let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), 16) in
+  // result in rax=tag, rcx=payload; save in r8/r10
+  let _ = x86.mov_rr(buf, x86.reg_r8(), x86.reg_rax()) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 202) in  // mov r10,rcx
+  // restore list_ptr, i, n
+  let _ = x86.pop_reg(buf, x86.reg_rdi()) in
+  let _ = x86.pop_reg(buf, x86.reg_r9()) in
+  let _ = x86.pop_reg(buf, x86.reg_rbx()) in
+  // store result at list[i]: slot = rdi+8+r9*16
+  let _ = x86.mov_rr(buf, x86.reg_rax(), x86.reg_r9()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rax(), x86.reg_rcx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 8) in
+  let _ = x86.add_rr(buf, x86.reg_rax(), x86.reg_rdi()) in
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 0) in    // mov [rax],r8
+  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 80) in let _ = x86.emit8(buf, 8) in  // mov [rax+8],r10
+  // i++
+  let _ = x86.add_reg_imm32(buf, x86.reg_r9(), 1) in
+  let _ = x86.jmp_rel32(buf, lp - (x86.buf_len(buf) + 5)) in
+  let done = x86.buf_len(buf) in
+  let _ = x86.patch32(buf, jge + 2, done - (jge + 6)) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
+  store_slot(buf, dst)
+}
+
 fn emit_list_fold_inline(buf, ctx, dst, args) {
   // list.fold(list, init, closure) -> acc
   // Inline loop: for each item, call closure(acc, item)
@@ -157,7 +238,7 @@ fn emit_list_fold_inline(buf, ctx, dst, args) {
               else find_fn_name_direct(ctx.fn_names, "add", 99, 0) in
   let call_pos = x86.buf_len(buf) in
   let _ = x86.call_rel32(buf, 0) in
-  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id, dst: dst }) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id }) in
   // Clean up: 4*8 args = 32
   let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), 32) in
   // Save result before restoring registers: rax=tag, rcx=payload
@@ -185,6 +266,8 @@ fn emit_stdlib_call(buf, ctx, dst, fn_slot, args) {
   if m == null then emit_const(buf, ctx, dst, null)
   else if m.module_name == "list" && m.method == "fold" then
     emit_list_fold_inline(buf, ctx, dst, args)
+  else if m.module_name == "list" && m.method == "build" then
+    emit_list_build_inline(buf, ctx, dst, args)
   else
     let did = get_dispatch_id(m.module_name, m.method) in
     if did < 0 then emit_const(buf, ctx, dst, null)
@@ -462,7 +545,7 @@ fn emit_call(buf, ctx, dst, fn_id, args) {
   let _ = emit_push_args(buf, args, n - 1) in
   let call_pos = x86.buf_len(buf) in
   let _ = x86.call_rel32(buf, 0) in
-  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id, dst: dst }) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id }) in
   let stack_args = n * 16 + 8 in
   let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), stack_args) in
   store_slot(buf, dst)
@@ -514,6 +597,7 @@ fn emit_instr(buf, ctx, instr, offsets) {
   let op = instr.op in
 
   if op == "const" then
+    let _ = if typ.of(instr.val) == "int" then array.push(ctx.n_scratch, { slot: instr.dst, val: instr.val }) else null in
     emit_const(buf, ctx, instr.dst, instr.val)
 
   else if op == "load" then
@@ -923,7 +1007,7 @@ fn emit_str_bytes_acc(buf, s, i, n) {
 fn emit_call_alloc_val(buf, ctx) {
   // Inline bump allocator: rax = r12; r12 += rdi
   let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 137) in let _ = x86.emit8(buf, 224) in
-  let _ = x86.emit8(buf, 76) in let _ = x86.emit8(buf, 1) in
+  let _ = x86.emit8(buf, 73) in let _ = x86.emit8(buf, 1) in
   x86.emit8(buf, 252)
 }
 
@@ -979,7 +1063,9 @@ fn emit_make_list_native(buf, ctx, dst, items) {
   let _ = emit_call_alloc_val(buf, ctx) in
   let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
   let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rbx(), 0, n) in
+  let _ = x86.push_reg(buf, x86.reg_rbx()) in
   let _ = emit_list_items_native(buf, items, 0, n) in
+  let _ = x86.pop_reg(buf, x86.reg_rbx()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in  // TAG_LIST
   let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst), x86.reg_rax()) in
   x86.mov_mem_disp32_reg(buf, x86.reg_rbp(), x86.local_offset(dst) + 8, x86.reg_rbx())
