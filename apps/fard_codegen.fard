@@ -34,7 +34,8 @@ fn make_ctx() {
     globals:        array.new(),
     slot_mod:       array.new(),
     slot_meth:      array.new(),
-    n_scratch:      array.new() }
+      n_scratch:      array.new(),
+      list_scratch:   array.new() }
 }
 
 
@@ -105,6 +106,14 @@ fn get_dispatch_id(module_name, method) {
   else if module_name == "int" then
     if method == "to_text" then fstdlib.id_int_to_text() else -1
   else -1
+}
+
+fn find_list_scratch(scratch, slot, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(scratch, i) in
+    if e.slot == slot then e.backup
+    else find_list_scratch(scratch, slot, i - 1)
 }
 
 fn emit_build_load_n(buf, n_slot, n_val) {
@@ -184,15 +193,20 @@ fn emit_list_build_inline(buf, ctx, dst, args) {
   // return TAG_LIST(5), payload=rdi
   let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
   let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
-  store_slot(buf, dst)
+  let backup_slot = dst + 300 in
+  let _ = array.push(ctx.list_scratch, { slot: dst, backup: backup_slot }) in
+  let _ = store_slot(buf, dst) in
+  x86.store_local_rax_rcx(buf, backup_slot)
 }
 
 fn emit_list_fold_inline(buf, ctx, dst, args) {
   // list.fold(list, init, closure) -> acc
   // Inline loop: for each item, call closure(acc, item)
-  let list_slot = list.get(args, 0) in
+  let raw_list_slot = list.get(args, 0) in
   let init_slot = list.get(args, 1) in
   let clos_slot = list.get(args, 2) in
+  let backup_list_slot = find_list_scratch(ctx.list_scratch, raw_list_slot, array.len(ctx.list_scratch) - 1) in
+  let list_slot = if backup_list_slot >= 0 then backup_list_slot else raw_list_slot in
   // acc_slot = dst (use dst as accumulator)
   // Copy init -> dst
   let _ = x86.load_local(buf, init_slot) in
