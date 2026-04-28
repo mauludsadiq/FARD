@@ -85,12 +85,15 @@ fn get_dispatch_id(module_name, method) {
     else if method == "pop" then fstdlib.id_array_pop()
     else if method == "to_list" then fstdlib.id_array_to_list()
     else -1
-  else if module_name == "str" then
-    if method == "len" then fstdlib.id_str_len()
-    else if method == "concat" then fstdlib.id_str_concat()
-    else if method == "lex_tokens" then fstdlib.id_str_lex_tokens()
-    else if method == "char_at" then fstdlib.id_str_char_at()
-    else -1
+    else if module_name == "str" then
+      if method == "len" then fstdlib.id_str_len()
+      else if method == "concat" then fstdlib.id_str_concat()
+      else if method == "lex_tokens" then fstdlib.id_str_lex_tokens()
+      else if method == "char_at" then fstdlib.id_str_char_at()
+      else if method == "slice" then fstdlib.id_str_slice()
+      else if method == "contains" then fstdlib.id_str_contains()
+      else if method == "chars" then fstdlib.id_str_chars()
+      else -1
   else if module_name == "bytes" then
     if method == "len" then fstdlib.id_bytes_len()
     else if method == "of_str" then fstdlib.id_bytes_of_str()
@@ -275,15 +278,14 @@ fn emit_list_fold_inline(buf, ctx, dst, args) {
   x86.patch32(buf, jge_pos + 2, done - (jge_pos + 6))
 }
 
-fn emit_stdlib_call(buf, ctx, dst, fn_slot, args) {
-  let m = find_slot_meth(ctx, fn_slot) in
-  if m == null then emit_const(buf, ctx, dst, null)
-  else if m.module_name == "list" && m.method == "fold" then
+fn emit_stdlib_call(buf, ctx, dst, module_name, method, args) {
+  if method == null then emit_const(buf, ctx, dst, null)
+  else if module_name == "list" && method == "fold" then
     emit_list_fold_inline(buf, ctx, dst, args)
-  else if m.module_name == "list" && m.method == "build" then
+  else if module_name == "list" && method == "build" then
     emit_list_build_inline(buf, ctx, dst, args)
   else
-    let did = get_dispatch_id(m.module_name, m.method) in
+    let did = get_dispatch_id(module_name, method) in
     if did < 0 then emit_const(buf, ctx, dst, null)
     else
       let n = list.len(args) in
@@ -644,7 +646,7 @@ fn emit_instr(buf, ctx, instr, offsets) {
 
     else if op == "call" then
       let m = find_slot_meth(ctx, instr.fn_r) in
-      if m != null then emit_stdlib_call(buf, ctx, instr.dst, instr.fn_r, instr.args)
+      if m != null then emit_stdlib_call(buf, ctx, instr.dst, m.module_name, m.method, instr.args)
       else
         let fn_id = if instr.fn_id >= 0 then instr.fn_id
                       else find_fn_id(ctx.slot_fn, instr.fn_r) in

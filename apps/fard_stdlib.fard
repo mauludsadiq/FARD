@@ -49,6 +49,7 @@ fn id_str_lex_tokens() { dispatch_id(2, 2) }
 fn id_str_char_at()    { dispatch_id(2, 3) }
 fn id_str_slice()      { dispatch_id(2, 4) }
 fn id_str_contains()   { dispatch_id(2, 7) }
+fn id_str_chars()      { dispatch_id(2, 8) }
 fn id_str_split()      { dispatch_id(2, 5) }
 fn id_str_trim()       { dispatch_id(2, 6) }
 
@@ -662,7 +663,7 @@ fn emit_bytes_of_str(buf) {
   let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
   let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
   let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
-  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
   let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
   let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 0, x86.reg_rcx()) in
   // loop: rax=i=0
@@ -884,6 +885,89 @@ fn emit_int_to_text(buf) { emit_cast_text(buf) }
 // ── Dispatch table ────────────────────────────────────────────────────────────
 // Returns { buf, addrs } where addrs maps dispatch_id -> byte offset in buf
 
+// ── str.chars ─────────────────────────────────────────────────────────────────
+// str.chars(s) -> list of single-char strings
+fn emit_str_chars(buf) {
+  // arg0 = str ptr; compute len, alloc list, fill with char_at results
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, x86.reg_rsi()) in  // rsi = str ptr
+  // strlen into rcx
+  let _ = x86.xor_rr(buf, x86.reg_rcx(), x86.reg_rcx()) in
+  let sl = buf_len(buf) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 4) in let _ = emit8(buf, 14) in  // movzx rax,[rsi+rcx]
+  let _ = x86.cmp_reg_imm32(buf, x86.reg_rax(), 0) in
+  let jzl = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rcx(), 1) in
+  let bsl = sl - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bsl) % 256) in
+  let dl = buf_len(buf) in let _ = array.set(buf, jzl + 1, dl - (jzl + 2)) in
+  // rcx = len; alloc list: 8 + len*16
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rcx()) in  // rbx = len
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 8) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // rax = list ptr; store len
+  let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rax()) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rdi(), 0, x86.reg_rbx()) in
+  // fill loop: i=0..len
+  let _ = x86.xor_rr(buf, x86.reg_rax(), x86.reg_rax()) in
+  let lp2 = buf_len(buf) in
+  let _ = x86.cmp_rr(buf, x86.reg_rax(), x86.reg_rbx()) in
+  let jge2 = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32(buf, 0) in
+  // alloc 2-byte string for char: bump 2 bytes
+  let _ = x86.push_reg(buf, x86.reg_rax()) in  // save i
+  let _ = x86.push_reg(buf, x86.reg_rbx()) in  // save len
+  let _ = x86.push_reg(buf, x86.reg_rdi()) in  // save list ptr
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rdx(), 2) in  // alloc 2 bytes
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 212) in  // add r12,rdx
+  // rax = char buf ptr
+  let _ = x86.pop_reg(buf, x86.reg_rdi()) in
+  let _ = x86.pop_reg(buf, x86.reg_rbx()) in
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in  // i
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in  // save i again
+  let _ = x86.push_reg(buf, x86.reg_rbx()) in
+  let _ = x86.push_reg(buf, x86.reg_rdi()) in
+  let _ = x86.push_reg(buf, x86.reg_rax()) in  // char buf ptr
+  // get char: [rsi+i] -> rdx
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 20) in let _ = emit8(buf, 14) in  // movzx rdx,[rsi+rcx]
+  // store char and null at char buf
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in  // char buf
+  let _ = emit8(buf, 136) in let _ = emit8(buf, 16) in  // mov [rax], dl
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 64) in let _ = emit8(buf, 1) in let _ = emit8(buf, 0) in  // mov byte[rax+1],0
+  // slot in list = rdi + 8 + i*16
+  let _ = x86.pop_reg(buf, x86.reg_rdi()) in  // list ptr
+  let _ = x86.pop_reg(buf, x86.reg_rbx()) in  // len
+  let _ = x86.pop_reg(buf, x86.reg_rcx()) in  // i
+  let _ = x86.push_reg(buf, x86.reg_rcx()) in
+  let _ = x86.push_reg(buf, x86.reg_rbx()) in
+  let _ = x86.push_reg(buf, x86.reg_rdi()) in
+  let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rcx()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rcx(), 16) in
+  let _ = x86.imul_rr(buf, x86.reg_rbx(), x86.reg_rcx()) in
+  let _ = x86.add_reg_imm32(buf, x86.reg_rbx(), 8) in
+  let _ = x86.add_rr(buf, x86.reg_rbx(), x86.reg_rdi()) in  // slot ptr
+  // store TAG_STR=3, payload=rax (char buf)
+  let _ = x86.mov_mem_disp32_imm32(buf, x86.reg_rbx(), 0, 3) in
+  let _ = x86.mov_mem_disp32_reg(buf, x86.reg_rbx(), 8, x86.reg_rax()) in
+  // restore and i++
+  let _ = x86.pop_reg(buf, x86.reg_rdi()) in
+  let _ = x86.pop_reg(buf, x86.reg_rbx()) in
+  let _ = x86.pop_reg(buf, x86.reg_rax()) in  // i
+  let _ = x86.add_reg_imm32(buf, x86.reg_rax(), 1) in
+  let _ = x86.jmp_rel32(buf, lp2 - (buf_len(buf) + 5)) in
+  let done2 = buf_len(buf) in
+  let _ = patch32(buf, jge2 + 2, done2 - (jge2 + 6)) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = x86.mov_rr(buf, x86.reg_rcx(), x86.reg_rdi()) in
+  let _ = x86.mov_reg_imm32(buf, x86.reg_rax(), 5) in
+  epilogue(buf)
+}
+
 // ── str.slice ─────────────────────────────────────────────────────────────────
 // str.slice(s, start, end) -> str (substring [start, end))
 fn emit_str_slice(buf) {
@@ -902,7 +986,7 @@ fn emit_str_slice(buf) {
   let _ = x86.mov_rr(buf, x86.reg_rdi(), x86.reg_rcx()) in
   let _ = x86.add_reg_imm32(buf, x86.reg_rdi(), 1) in
   let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
-  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
   // rax = dst ptr; save
   let _ = x86.mov_rr(buf, x86.reg_rbx(), x86.reg_rax()) in
   // copy rcx bytes from rsi to rbx
@@ -1004,6 +1088,7 @@ fn emit_all_stdlib(buf) {
   let _ = array.push(addrs, { id: id_str_char_at(),    off: buf_len(buf) }) in let _ = emit_str_char_at(buf) in
   let _ = array.push(addrs, { id: id_str_slice(),        off: buf_len(buf) }) in let _ = emit_str_slice(buf) in
   let _ = array.push(addrs, { id: id_str_contains(),     off: buf_len(buf) }) in let _ = emit_str_contains(buf) in
+  let _ = array.push(addrs, { id: id_str_chars(),         off: buf_len(buf) }) in let _ = emit_str_chars(buf) in
 
   // bytes module (mod=3)
   let _ = array.push(addrs, { id: id_bytes_len(),    off: buf_len(buf) }) in let _ = emit_bytes_len(buf) in
@@ -1039,7 +1124,7 @@ fn emit_all_stdlib(buf) {
   id_array_to_list: id_array_to_list,
   id_str_len: id_str_len, id_str_concat: id_str_concat,
   id_str_lex_tokens: id_str_lex_tokens, id_str_char_at: id_str_char_at,
-  id_str_slice: id_str_slice, id_str_contains: id_str_contains,
+  id_str_slice: id_str_slice, id_str_contains: id_str_contains, id_str_chars: id_str_chars,
   id_bytes_len: id_bytes_len, id_bytes_of_str: id_bytes_of_str,
   id_bytes_get: id_bytes_get, id_bytes_to_hex: id_bytes_to_hex,
   id_fs_read_text: id_fs_read_text, id_fs_write_bytes: id_fs_write_bytes,
