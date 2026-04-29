@@ -38,7 +38,7 @@ curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
 Goal: eliminate Rust entirely. FARD compiles to native machine code with no
 foreign runtime. See ROADMAP.md for the full plan.
 
-Current status: Stage 5 in progress — native x86_64 backend working.
+Current status: Stage 6 in progress — all compiler pipeline components compile to native ELF.
 
 Rust host: 13,632 lines
 FARD implementation: 3,500+ lines
@@ -119,7 +119,7 @@ displaced by the native backend.
 | 3 | Seed VM in x86_64 assembly | done |
 | 4 | Self-hosting compiler driver | done |
 | 5 | Native x86_64 ELF backend | **complete** — fardc_native.fard compiles to 11KB native ELF |
-| 6 | FARD-native production compiler | planned |
+| 6 | FARD-native production compiler | **in progress** — all pipeline components compile to native ELF (fardlex 66KB, fardparse 148KB, fard_lower 88KB, fard_codegen 282KB, fard_elf 52KB) |
 
 ## Quick Start
 
