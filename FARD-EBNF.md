@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**20 Apr 2026 · v1.7.0 · updated for media decoders, transforms, and integration packages**
+**2 May 2026 · v1.7.0 · updated for media decoders, transforms, integration packages, and string concat constraints**
 
 This document covers the **fardrun** production dialect. All stdlib module contents
 verified directly from source — not inferred from prior documentation.
