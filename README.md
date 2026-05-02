@@ -119,7 +119,8 @@ displaced by the native backend.
 | 3 | Seed VM in x86_64 assembly | done |
 | 4 | Self-hosting compiler driver | done |
 | 5 | Native x86_64 ELF backend | **complete** — fardc_native.fard compiles to 11KB native ELF |
-| 6 | FARD-native production compiler | **in progress** — all pipeline components compile to native ELF (fardlex 66KB, fardparse 148KB, fard_lower 88KB, fard_codegen 282KB, fard_elf 52KB) |
+| 6 | FARD-native production compiler | **complete** — all pipeline components compile to native ELF |
+| 7 | No-Rust self-hosting | in progress — single monolithic ELF, no Rust interpreter |
 
 ## Quick Start
 
