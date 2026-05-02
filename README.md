@@ -38,7 +38,7 @@ curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
 Goal: eliminate Rust entirely. FARD compiles to native machine code with no
 foreign runtime. See ROADMAP.md for the full plan.
 
-Current status: Stage 6 in progress — all compiler pipeline components compile to native ELF.
+Current status: Stage 6 complete. Stage 7 planned: eliminate Rust host entirely via native module linking.
 
 Rust host: 13,632 lines
 FARD implementation: 3,500+ lines

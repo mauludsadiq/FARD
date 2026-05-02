@@ -1,0 +1,17 @@
+import("fardlex")      as lex
+import("fardparse")    as par
+import("fard_lower")   as lower
+import("fard_codegen") as cg
+import("fard_elf")     as elf
+import("std/fs")       as fs
+import("std/bytes")    as bytes
+import("std/list")     as list
+
+let src    = fs.read_text("apps/fard_lower.fard")
+let tokens = lex.tokenize(src)
+let parsed = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(parsed.node)
+let cg_res = cg.codegen(ir)
+let binary = elf.build_elf(cg_res)
+let _      = fs.write_bytes("fardc_out2/stage3_fard_lower", binary)
+{ stage: 3, name: "fard_lower", ok: parsed.ok, n_fns: list.len(ir.fns), bytes: bytes.len(binary) }

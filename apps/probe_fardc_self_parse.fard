@@ -1,0 +1,8 @@
+import("fardlex")   as lex
+import("fardparse") as par
+import("std/fs")    as fs
+
+let src = fs.read_text("apps/fardc_self.fard")
+let tokens = lex.tokenize(src)
+let parsed = par.parse_module(tokens, 0)
+parsed

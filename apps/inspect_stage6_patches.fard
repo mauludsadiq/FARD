@@ -1,0 +1,16 @@
+import("fardlex")      as lex
+import("fardparse")    as par
+import("fard_lower")   as lower
+import("fard_codegen") as cg
+import("std/fs")       as fs
+import("std/array")    as array
+
+let src    = fs.read_text("apps/fardc_self.fard")
+let tokens = lex.tokenize(src)
+let parsed = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(parsed.node)
+let cg_res = cg.codegen(ir)
+
+{ fn_addrs: array.to_list(cg_res.fn_addrs),
+  patches: array.to_list(cg_res.patches),
+  stdlib_patches: array.to_list(cg_res.stdlib_patches) }

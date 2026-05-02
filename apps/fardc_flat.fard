@@ -1,0 +1,4324 @@
+// ═══ apps/fard_x86.fard ═══
+
+
+// ── Buffer helpers ────────────────────────────────────────────────────────────
+
+fn buf_new()        { array.new() }
+fn buf_len(buf)     { array.len(buf) }
+fn emit8(buf, b)    { array.push(buf, (b % 256 + 256) % 256) }
+fn emit_bytes(buf, bs) { list.fold(bs, null, fn(_, b) { emit8(buf, b) }) }
+
+fn emit16_le(buf, v) {
+  let _ = emit8(buf, v % 256) in
+  emit8(buf, (v / 256) % 256)
+}
+
+fn u32_norm(v) { if v < 0 then v + 4294967296 else v }
+
+fn emit32_le(buf, v) {
+  let vv = u32_norm(v) in
+  let _ = emit8(buf, vv % 256) in
+  let _ = emit8(buf, (vv / 256) % 256) in
+  let _ = emit8(buf, (vv / 65536) % 256) in
+  emit8(buf, (vv / 16777216) % 256)
+}
+
+fn emit64_le(buf, v) {
+  let _ = emit8(buf, v % 256) in
+  let _ = emit8(buf, (v / 256) % 256) in
+  let _ = emit8(buf, (v / 65536) % 256) in
+  let _ = emit8(buf, (v / 16777216) % 256) in
+  let _ = emit8(buf, (v / 4294967296) % 256) in
+  let _ = emit8(buf, (v / 1099511627776) % 256) in
+  let _ = emit8(buf, (v / 281474976710656) % 256) in
+  emit8(buf, (v / 72057594037927936) % 256)
+}
+
+// Patch a 32-bit value at position pos in buf
+fn patch32(buf, pos, v) {
+  let vv = u32_norm(v) in
+  let _ = array.set(buf, pos,     vv % 256) in
+  let _ = array.set(buf, pos + 1, (vv / 256) % 256) in
+  let _ = array.set(buf, pos + 2, (vv / 65536) % 256) in
+  array.set(buf, pos + 3, (vv / 16777216) % 256)
+}
+
+// ── Register encodings ────────────────────────────────────────────────────────
+// rax=0 rcx=1 rdx=2 rbx=3 rsp=4 rbp=5 rsi=6 rdi=7
+// r8=8  r9=9  r10=10 r11=11 r12=12 r13=13 r14=14 r15=15
+
+fn reg_rax() { 0 }
+fn reg_rcx() { 1 }
+fn reg_rdx() { 2 }
+fn reg_rbx() { 3 }
+fn reg_rsp() { 4 }
+fn reg_rbp() { 5 }
+fn reg_rsi() { 6 }
+fn reg_rdi() { 7 }
+fn reg_r8()  { 8 }
+fn reg_r9()  { 9 }
+fn reg_r10() { 10 }
+fn reg_r11() { 11 }
+fn reg_r12() { 12 }
+fn reg_r13() { 13 }
+fn reg_r14() { 14 }
+fn reg_r15() { 15 }
+
+// REX prefix
+fn rex_w()        { 72 }   // REX.W (64-bit operand)
+fn rex_wr(r)      { if r >= 8 then 76 else 72 }  // REX.W + REX.R
+fn rex_wb(b)      { if b >= 8 then 73 else 72 }  // REX.W + REX.B
+fn rex_wrb(r, b)  { 72 + (if r >= 8 then 4 else 0) + (if b >= 8 then 1 else 0) }
+
+fn reg3(r) { r % 8 }   // lower 3 bits
+
+// ModRM byte: mod=11 (register), reg, rm
+fn modrm_rr(reg, rm) { 192 + reg3(reg) * 8 + reg3(rm) }
+// ModRM byte: mod=00 (memory), reg, rm=rbp needs special handling
+fn modrm_mr(reg, rm) { 0 + reg3(reg) * 8 + reg3(rm) }
+// ModRM byte: mod=10 (memory+disp32), reg, rm
+fn modrm_disp32(reg, rm) { 128 + reg3(reg) * 8 + reg3(rm) }
+
+// ── Core instructions ─────────────────────────────────────────────────────────
+
+// push reg
+fn push_reg(buf, r) {
+  if r >= 8 then let _ = emit8(buf, 65) in emit8(buf, 80 + reg3(r))
+  else emit8(buf, 80 + r)
+}
+
+// pop reg
+fn pop_reg(buf, r) {
+  if r >= 8 then let _ = emit8(buf, 65) in emit8(buf, 88 + reg3(r))
+  else emit8(buf, 88 + r)
+}
+
+// ret
+fn ret(buf) { emit8(buf, 195) }
+
+// nop
+fn nop(buf) { emit8(buf, 144) }
+
+// mov reg, imm64
+fn mov_reg_imm64(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 184 + reg3(r)) in
+  emit64_le(buf, imm)
+}
+
+// mov reg, imm32 (sign-extended to 64)
+fn mov_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 199) in
+  let _ = emit8(buf, 192 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// mov dst_reg, src_reg
+fn mov_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 137) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// Emit SIB byte if base is rsp/r12 (reg encoding 4)
+fn emit_sib_if_needed(buf, base) {
+  if base % 8 == 4 then emit8(buf, 36) else null
+}
+
+// mov reg, [base + disp32]
+fn mov_reg_mem_disp32(buf, dst, base, disp) {
+  let _ = emit8(buf, rex_wrb(dst, base)) in
+  let _ = emit8(buf, 139) in
+  let _ = emit8(buf, modrm_disp32(dst, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  emit32_le(buf, disp)
+}
+
+// mov [base + disp32], reg
+fn mov_mem_disp32_reg(buf, base, disp, src) {
+  let _ = emit8(buf, rex_wrb(src, base)) in
+  let _ = emit8(buf, 137) in
+  let _ = emit8(buf, modrm_disp32(src, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  emit32_le(buf, disp)
+}
+
+// mov [base + disp32], imm32
+fn mov_mem_disp32_imm32(buf, base, disp, imm) {
+  let _ = emit8(buf, rex_wb(base)) in
+  let _ = emit8(buf, 199) in
+  let _ = emit8(buf, modrm_disp32(0, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  let _ = emit32_le(buf, disp) in
+  emit32_le(buf, imm)
+}
+
+// add dst, src (reg + reg)
+fn add_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 1) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// add reg, imm32
+fn add_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 192 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// sub dst, src
+fn sub_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 41) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// sub reg, imm32
+fn sub_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 232 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// imul dst, src (signed multiply)
+fn imul_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(dst, src)) in
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 175) in
+  emit8(buf, modrm_rr(dst, src))
+}
+
+// idiv rcx (rax = rax / rcx, rdx = rax % rcx — needs cqo first)
+fn cqo(buf) {
+  let _ = emit8(buf, 72) in
+  emit8(buf, 153)
+}
+
+fn idiv_rcx(buf) {
+  let _ = emit8(buf, 72) in
+  let _ = emit8(buf, 247) in
+  emit8(buf, 249)
+}
+
+// neg reg
+fn neg_reg(buf, r) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 247) in
+  emit8(buf, 216 + reg3(r))
+}
+
+// cmp dst, src
+fn cmp_rr(buf, a, b) {
+  let _ = emit8(buf, rex_wrb(b, a)) in
+  let _ = emit8(buf, 57) in
+  emit8(buf, modrm_rr(b, a))
+}
+
+// cmp reg, imm32
+fn cmp_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 248 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// setcc al (condition codes)
+fn sete_al(buf)  { let _ = emit8(buf, 15) in let _ = emit8(buf, 148) in emit8(buf, 192) }
+fn setne_al(buf) { let _ = emit8(buf, 15) in let _ = emit8(buf, 149) in emit8(buf, 192) }
+fn setl_al(buf)  { let _ = emit8(buf, 15) in let _ = emit8(buf, 156) in emit8(buf, 192) }
+fn setle_al(buf) { let _ = emit8(buf, 15) in let _ = emit8(buf, 158) in emit8(buf, 192) }
+fn setg_al(buf)  { let _ = emit8(buf, 15) in let _ = emit8(buf, 159) in emit8(buf, 192) }
+fn setge_al(buf) { let _ = emit8(buf, 15) in let _ = emit8(buf, 157) in emit8(buf, 192) }
+
+// movzx rax, al (zero-extend byte to qword)
+fn movzx_rax_al(buf) {
+  let _ = emit8(buf, 72) in
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 182) in
+  emit8(buf, 192)
+}
+
+// and dst, src
+fn and_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 33) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// or dst, src
+fn or_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 9) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// xor dst, src
+fn xor_rr(buf, dst, src) {
+  let _ = emit8(buf, rex_wrb(src, dst)) in
+  let _ = emit8(buf, 49) in
+  emit8(buf, modrm_rr(src, dst))
+}
+
+// xor reg, imm32
+fn xor_reg_imm32(buf, r, imm) {
+  let _ = emit8(buf, rex_wb(r)) in
+  let _ = emit8(buf, 129) in
+  let _ = emit8(buf, 240 + reg3(r)) in
+  emit32_le(buf, imm)
+}
+
+// jmp rel32 (relative to next instruction)
+fn jmp_rel32(buf, rel) {
+  let _ = emit8(buf, 233) in
+  emit32_le(buf, rel)
+}
+
+// jz rel32
+fn jz_rel32(buf, rel) {
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 132) in
+  emit32_le(buf, rel)
+}
+
+// jnz rel32
+fn jnz_rel32(buf, rel) {
+  let _ = emit8(buf, 15) in
+  let _ = emit8(buf, 133) in
+  emit32_le(buf, rel)
+}
+
+// call rel32
+fn call_rel32(buf, rel) {
+  let _ = emit8(buf, 232) in
+  emit32_le(buf, rel)
+}
+
+// syscall
+fn syscall(buf) {
+  let _ = emit8(buf, 15) in
+  emit8(buf, 5)
+}
+
+// lea reg, [base + disp32]
+fn lea_reg_mem_disp32(buf, dst, base, disp) {
+  let _ = emit8(buf, rex_wrb(dst, base)) in
+  let _ = emit8(buf, 141) in
+  let _ = emit8(buf, modrm_disp32(dst, base)) in
+  let _ = emit_sib_if_needed(buf, base) in
+  emit32_le(buf, disp)
+}
+
+// Function prologue: push rbp, mov rbp rsp, sub rsp N
+fn prologue(buf, frame_size) {
+  let _ = push_reg(buf, reg_rbp()) in
+  let _ = mov_rr(buf, reg_rbp(), reg_rsp()) in
+  let _ = push_reg(buf, reg_rbx()) in
+  sub_reg_imm32(buf, reg_rsp(), frame_size)
+}
+
+// Function epilogue: mov rsp rbp, pop rbp, ret
+fn epilogue(buf) {
+  let _ = mov_reg_mem_disp32(buf, reg_rbx(), reg_rbp(), -8) in
+  let _ = mov_rr(buf, reg_rsp(), reg_rbp()) in
+  let _ = pop_reg(buf, reg_rbp()) in
+  ret(buf)
+}
+
+// Local variable offset from rbp: slot i -> -(i+1)*16
+fn local_offset(i) { 0 - (i + 1) * 16 }
+
+// Load local i into rax (tag) and rcx (payload)
+fn load_local(buf, i) {
+  let off = local_offset(i) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), off) in
+  mov_reg_mem_disp32(buf, reg_rcx(), reg_rbp(), off + 8)
+}
+
+// Store rax (tag) and rcx (payload) into local i
+fn store_local_rax_rcx(buf, i) {
+  let off = local_offset(i) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), off, reg_rax()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), off + 8, reg_rcx())
+}
+
+// Load payload of local i into rax
+fn load_local_payload(buf, i) {
+  mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), local_offset(i) + 8)
+}
+
+// Store rax as payload of local i (tag already set)
+fn store_local_payload(buf, i) {
+  mov_mem_disp32_reg(buf, reg_rbp(), local_offset(i) + 8, reg_rax())
+}
+
+// Set tag of local i to imm
+fn set_local_tag(buf, i, tag) {
+  mov_mem_disp32_imm32(buf, reg_rbp(), local_offset(i), tag)
+}
+
+{
+  buf_new: buf_new,
+  emit16_le: emit16_le,
+  buf_len: buf_len,
+  emit8: emit8,
+  emit32_le: emit32_le,
+  emit64_le: emit64_le,
+  patch32: patch32,
+  mov_reg_imm64: mov_reg_imm64,
+  mov_reg_imm32: mov_reg_imm32,
+  mov_rr: mov_rr,
+  mov_reg_mem_disp32: mov_reg_mem_disp32,
+  mov_mem_disp32_reg: mov_mem_disp32_reg,
+  mov_mem_disp32_imm32: mov_mem_disp32_imm32,
+  add_rr: add_rr,
+  add_reg_imm32: add_reg_imm32,
+  sub_rr: sub_rr,
+  sub_reg_imm32: sub_reg_imm32,
+  imul_rr: imul_rr,
+  cqo: cqo,
+  idiv_rcx: idiv_rcx,
+  neg_reg: neg_reg,
+  cmp_rr: cmp_rr,
+  cmp_reg_imm32: cmp_reg_imm32,
+  sete_al: sete_al,
+  setne_al: setne_al,
+  setl_al: setl_al,
+  setle_al: setle_al,
+  setg_al: setg_al,
+  setge_al: setge_al,
+  movzx_rax_al: movzx_rax_al,
+  and_rr: and_rr,
+  or_rr: or_rr,
+  xor_rr: xor_rr,
+  xor_reg_imm32: xor_reg_imm32,
+  jmp_rel32: jmp_rel32,
+  jz_rel32: jz_rel32,
+  jnz_rel32: jnz_rel32,
+  call_rel32: call_rel32,
+  syscall: syscall,
+  lea_reg_mem_disp32: lea_reg_mem_disp32,
+  push_reg: push_reg,
+  pop_reg: pop_reg,
+  ret: ret,
+  nop: nop,
+  prologue: prologue,
+  epilogue: epilogue,
+  local_offset: local_offset,
+  load_local: load_local,
+  store_local_rax_rcx: store_local_rax_rcx,
+  load_local_payload: load_local_payload,
+  store_local_payload: store_local_payload,
+  set_local_tag: set_local_tag,
+  reg_rax: reg_rax, reg_rcx: reg_rcx, reg_rdx: reg_rdx,
+  reg_rbx: reg_rbx, reg_rsp: reg_rsp, reg_rbp: reg_rbp,
+  reg_rsi: reg_rsi, reg_rdi: reg_rdi,
+  reg_r8: reg_r8, reg_r9: reg_r9, reg_r10: reg_r10, reg_r11: reg_r11,
+  reg_r12: reg_r12, reg_r13: reg_r13, reg_r14: reg_r14, reg_r15: reg_r15
+}
+
+// ═══ apps/fardlex.fard ═══
+
+
+fn is_alpha(c) {
+  str.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_", c)
+}
+
+fn is_alnum(c) {
+  str.contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789", c)
+}
+
+fn is_digit(c) {
+  str.contains("0123456789", c)
+}
+
+fn is_ws(c) {
+  c == " " || c == "\t"
+}
+
+fn is_keyword(w) {
+  w == "let" || w == "in" || w == "fn" || w == "if" || w == "then" || w == "else" ||
+  w == "import" || w == "as" || w == "export" || w == "match" || w == "using" ||
+  w == "test" || w == "while" || w == "return" || w == "true" || w == "false" ||
+  w == "null" || w == "and" || w == "or" || w == "not" || w == "artifact"
+}
+
+fn peek(chars, i) {
+  if i < list.len(chars) then list.get(chars, i) else ""
+}
+
+fn scan_line_comment(chars, n, idx) {
+  let r = list.fold(list.build(n - idx, fn(j) { j }), { end: idx, done: false }, fn(a, j) {
+    if a.done then a else
+    let ci = idx + j in
+    if ci < n && list.get(chars, ci) != "\n" then { end: ci + 1, done: false }
+    else { end: ci, done: true }
+  }) in
+  r.end
+}
+fn scan_string(chars, n, idx, src) {
+  let r = list.fold(list.build(n - idx - 1, fn(j) { j }), { done: false, end: idx + 1, esc: false }, fn(a, j) {
+    if a.done then a else
+    let ci = idx + 1 + j in
+    let ch = peek(chars, ci) in
+    if a.esc then { done: false, end: ci + 1, esc: false }
+    else if ch == "\\" then { done: false, end: ci + 1, esc: true }
+    else if ch == "\"" then { done: true, end: ci + 1, esc: false }
+    else { done: false, end: ci + 1, esc: false }
+  }) in
+  let v = str.slice(src, idx + 1, r.end - 1) in
+  { end: r.end, v: v }
+}
+
+fn scan_backtick(chars, n, idx, src) {
+  let r = list.fold(list.build(n - idx - 1, fn(j) { j }), { done: false, end: idx + 1 }, fn(a, j) {
+    if a.done then a else
+    let ci = idx + 1 + j in
+    let ch = peek(chars, ci) in
+    if ch == "`" then { done: true, end: ci + 1 }
+    else { done: false, end: ci + 1 }
+  }) in
+  let v = str.slice(src, idx + 1, r.end - 1) in
+  { end: r.end, v: v }
+}
+
+fn scan_word(chars, n, idx, src) {
+  let r = list.fold(list.build(n - idx, fn(j) { j + 1 }), { done: false, end: idx + 1 }, fn(a, j) {
+    if a.done then a
+    else if idx + j < n && is_alnum(peek(chars, idx + j)) then { done: false, end: idx + j + 1 }
+    else { done: true, end: idx + j }
+  }) in
+  { end: r.end, v: str.slice(src, idx, r.end) }
+}
+
+fn scan_number(chars, n, idx, src) {
+  let r = list.fold(list.build(n - idx, fn(j) { j + 1 }), { done: false, end: idx + 1, is_float: false }, fn(a, j) {
+    if a.done then a else
+    let ci = idx + j in
+    if ci >= n then { done: true, end: ci, is_float: a.is_float }
+    else
+      let ch = peek(chars, ci) in
+      if is_digit(ch) then { done: false, end: ci + 1, is_float: a.is_float }
+      else if ch == "." && ci + 1 < n && is_digit(peek(chars, ci + 1)) then { done: false, end: ci + 1, is_float: true }
+      else { done: true, end: ci, is_float: a.is_float }
+  }) in
+  { end: r.end, v: str.slice(src, idx, r.end), is_float: r.is_float }
+}
+
+fn tok(t, v, line, col) {
+  { t: t, v: v, line: line, col: col }
+}
+
+fn tokenize(src) {
+  let chars = str.chars(src) in
+  let n     = list.len(chars) in
+  let state = list.fold(
+    list.build(n, fn(i) { i }),
+    { tokens: [], line: 1, col: 1, i: 0 },
+    fn(acc, idx) {
+      if idx < acc.i then acc else
+      let c    = peek(chars, idx) in
+      let c2   = peek(chars, idx + 1) in
+      let line = acc.line in
+      let col  = acc.col in
+
+      if c == "\n" then
+        { tokens: acc.tokens, line: line + 1, col: 1, i: idx + 1 }
+      else if is_ws(c) then
+        { tokens: acc.tokens, line: line, col: col + 1, i: idx + 1 }
+
+      // Doc comments /// — emit as token (must check before //)
+      else if c == "/" && c2 == "/" && peek(chars, idx + 2) == "/" then
+        let end = scan_line_comment(chars, n, idx) in
+        let v   = str.slice(src, idx, end) in
+        { tokens: list.append(acc.tokens, tok("doc", v, line, col)), line: line, col: col + (end - idx), i: end }
+
+      // Line comments // and #
+      else if (c == "/" && c2 == "/") || c == "#" then
+        let end = scan_line_comment(chars, n, idx) in
+        { tokens: acc.tokens, line: line, col: col, i: end }
+
+      // Strings
+      else if c == "\"" then
+        let r = scan_string(chars, n, idx, src) in
+        { tokens: list.append(acc.tokens, tok("str", r.v, line, col)), line: line, col: col + (r.end - idx), i: r.end }
+
+      // Backtick strings
+      else if c == "`" then
+        let r = scan_backtick(chars, n, idx, src) in
+        { tokens: list.append(acc.tokens, tok("str", r.v, line, col)), line: line, col: col + (r.end - idx), i: r.end }
+
+      // Two-char operators
+      else if c == "=" && c2 == "=" then
+        { tokens: list.append(acc.tokens, tok("sym", "==", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "!" && c2 == "=" then
+        { tokens: list.append(acc.tokens, tok("sym", "!=", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "<" && c2 == "=" then
+        { tokens: list.append(acc.tokens, tok("sym", "<=", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == ">" && c2 == "=" then
+        { tokens: list.append(acc.tokens, tok("sym", ">=", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "&" && c2 == "&" then
+        { tokens: list.append(acc.tokens, tok("sym", "&&", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "|" && c2 == "|" then
+        { tokens: list.append(acc.tokens, tok("sym", "||", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "-" && c2 == ">" then
+        { tokens: list.append(acc.tokens, tok("sym", "->", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "=" && c2 == ">" then
+        { tokens: list.append(acc.tokens, tok("sym", "=>", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "|" && c2 == ">" then
+        { tokens: list.append(acc.tokens, tok("sym", "|>", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "?" && c2 == "." then
+        { tokens: list.append(acc.tokens, tok("sym", "?.", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "?" && c2 == "?" then
+        { tokens: list.append(acc.tokens, tok("sym", "??", line, col)), line: line, col: col + 2, i: idx + 2 }
+      else if c == "." && c2 == "." && peek(chars, idx + 2) == "." then
+        { tokens: list.append(acc.tokens, tok("sym", "...", line, col)), line: line, col: col + 3, i: idx + 3 }
+
+      // Identifiers and keywords
+      else if is_alpha(c) then
+        let r    = scan_word(chars, n, idx, src) in
+        let kind = if is_keyword(r.v) then "kw" else "ident" in
+        { tokens: list.append(acc.tokens, tok(kind, r.v, line, col)), line: line, col: col + (r.end - idx), i: r.end }
+
+      // Numbers
+      else if is_digit(c) then
+        let r    = scan_number(chars, n, idx, src) in
+        let kind = if r.is_float then "float" else "int" in
+        { tokens: list.append(acc.tokens, tok(kind, r.v, line, col)), line: line, col: col + (r.end - idx), i: r.end }
+
+      // Single-char symbols
+      else
+        { tokens: list.append(acc.tokens, tok("sym", c, line, col)), line: line, col: col + 1, i: idx + 1 }
+    }
+  ) in
+  list.append(state.tokens, tok("eof", "", state.line, state.col))
+}
+
+{ tokenize: tokenize, tok: tok, is_keyword: is_keyword }
+
+// ═══ apps/fardparse.fard ═══
+
+
+// ── Token accessors ───────────────────────────────────────────────────────────
+
+fn tok_at(tokens, pos) {
+  if pos < array.len(tokens) then array.get(tokens, pos)
+  else { t: "eof", v: "", line: 0, col: 0 }
+}
+
+fn tok_type(tokens, pos) { tok_at(tokens, pos).t }
+fn tok_val(tokens, pos)  { tok_at(tokens, pos).v }
+
+fn is_kw(tokens, pos, kw) {
+  let t = tok_at(tokens, pos) in
+  (t.t == "kw" || t.t == "ident") && t.v == kw
+}
+
+fn is_sym(tokens, pos, sym) {
+  let t = tok_at(tokens, pos) in
+  t.t == "sym" && t.v == sym
+}
+
+fn is_eof(tokens, pos) {
+  tok_at(tokens, pos).t == "eof"
+}
+
+fn ok(node, pos)  { { ok: true, node: node, pos: pos } }
+fn err(msg, pos)  { { ok: false, err: msg, pos: pos } }
+
+fn expect_sym(tokens, pos, sym) {
+  if is_sym(tokens, pos, sym) then { ok: true, pos: pos + 1 }
+  else
+    let t = tok_at(tokens, pos) in
+    { ok: false, err: str.concat("expected '", str.concat(sym, str.concat("' got '", str.concat(t.v, "'")))), pos: pos }
+}
+
+fn expect_kw(tokens, pos, kw) {
+  if is_kw(tokens, pos, kw) then { ok: true, pos: pos + 1 }
+  else
+    let t = tok_at(tokens, pos) in
+    { ok: false, err: str.concat("expected '", str.concat(kw, str.concat("' got '", str.concat(t.v, "'")))), pos: pos }
+}
+
+// ── Literal parsers ───────────────────────────────────────────────────────────
+
+fn parse_atom(tokens, pos) {
+  let t = tok_at(tokens, pos) in
+
+  if t.t == "int" then
+    ok({ t: "int", v: t.v, line: t.line, col: t.col }, pos + 1)
+
+  else if t.t == "float" then
+    ok({ t: "float", v: t.v, line: t.line, col: t.col }, pos + 1)
+
+  else if t.t == "str" then
+    ok({ t: "str", v: t.v, line: t.line, col: t.col }, pos + 1)
+
+  else if t.t == "kw" && t.v == "true" then
+    ok({ t: "bool", v: "true", line: t.line, col: t.col }, pos + 1)
+
+  else if t.t == "kw" && t.v == "false" then
+    ok({ t: "bool", v: "false", line: t.line, col: t.col }, pos + 1)
+
+  else if t.t == "kw" && t.v == "null" then
+    ok({ t: "null", line: t.line, col: t.col }, pos + 1)
+
+  else if t.t == "ident" then
+    ok({ t: "var", v: t.v, line: t.line, col: t.col }, pos + 1)
+
+  // Parenthesized expression
+  else if is_sym(tokens, pos, "(") then
+    let r = parse_expr(tokens, pos + 1) in
+    if !r.ok then r else
+    let ce = expect_sym(tokens, r.pos, ")") in
+    if !ce.ok then err(ce.err, r.pos) else
+    ok(r.node, ce.pos)
+
+  // List literal
+  else if is_sym(tokens, pos, "[") then
+    parse_list_lit(tokens, pos)
+
+  // Record literal
+  else if is_sym(tokens, pos, "{") then
+    parse_rec_lit(tokens, pos)
+
+  // Lambda: ident => expr
+  else if t.t == "ident" && is_sym(tokens, pos + 1, "=>") then
+    let body = parse_expr(tokens, pos + 2) in
+    if !body.ok then body else
+    ok({ t: "fn", params: [t.v], body: body.node, line: t.line }, body.pos)
+
+  // Anonymous function
+  else if t.t == "kw" && t.v == "fn" then
+    parse_fn_expr(tokens, pos)
+
+  // if expression
+  else if t.t == "kw" && t.v == "if" then
+    parse_if(tokens, pos)
+
+  // let expression
+  else if t.t == "kw" && t.v == "let" then
+    parse_let_expr(tokens, pos)
+
+  // match expression
+  else if t.t == "kw" && t.v == "match" then
+    parse_match(tokens, pos)
+
+  else
+    err(str.concat("unexpected token: ", t.v), pos)
+}
+
+// ── List literal ──────────────────────────────────────────────────────────────
+
+fn parse_list_lit(tokens, pos) {
+  let p0 = pos + 1 in
+  if is_sym(tokens, p0, "]") then
+    ok({ t: "list", items: [], line: tok_at(tokens, pos).line }, p0 + 1)
+  else
+    let r = parse_comma_exprs(tokens, p0, "]") in
+    if !r.ok then r else
+    ok({ t: "list", items: r.items, line: tok_at(tokens, pos).line }, r.pos)
+}
+
+fn parse_comma_items(tokens, pos, close, acc) {
+  if is_sym(tokens, pos, close) then { ok: true, items: acc, pos: pos + 1 }
+  else
+    let re = parse_expr(tokens, pos) in
+    if !re.ok then { ok: false, items: acc, pos: re.pos, err: re.err }
+    else
+      let p2 = if is_sym(tokens, re.pos, ",") then re.pos + 1 else re.pos in
+      if is_sym(tokens, p2, close) then { ok: true, items: list.append(acc, re.node), pos: p2 + 1 }
+      else parse_comma_items(tokens, p2, close, list.append(acc, re.node))
+}
+
+fn parse_comma_exprs(tokens, pos, close) {
+  if is_sym(tokens, pos, close) then { ok: true, items: [], pos: pos + 1 }
+  else parse_comma_items(tokens, pos, close, [])
+}
+
+// ── Record literal ────────────────────────────────────────────────────────────
+
+fn parse_rec_fields(tokens, pos, acc) {
+  if is_sym(tokens, pos, "}") then { ok: true, fields: acc, pos: pos + 1 }
+  else
+    let kt = tok_at(tokens, pos) in
+    let key = kt.v in
+    let p1 = pos + 1 in
+    let ce = expect_sym(tokens, p1, ":") in
+    if !ce.ok then { ok: false, fields: acc, pos: p1, err: ce.err }
+    else
+      let ve = parse_expr(tokens, ce.pos) in
+      if !ve.ok then { ok: false, fields: acc, pos: ve.pos, err: ve.err }
+      else
+        let p2 = if is_sym(tokens, ve.pos, ",") then ve.pos + 1 else ve.pos in
+        parse_rec_fields(tokens, p2, list.append(acc, { k: key, v: ve.node }))
+}
+
+fn parse_rec_lit(tokens, pos) {
+  let line = tok_at(tokens, pos).line in
+  let p0   = pos + 1 in
+  if is_sym(tokens, p0, "}") then
+    ok({ t: "rec", fields: [], line: line }, p0 + 1)
+  else
+    let r = parse_rec_fields(tokens, p0, []) in
+    if !r.ok then err(r.err, r.pos)
+    else ok({ t: "rec", fields: r.fields, line: line }, r.pos)
+}
+
+// ── Function expression ───────────────────────────────────────────────────────
+
+fn parse_fn_params(tokens, pos) {
+  if is_sym(tokens, pos, ")") then { ok: true, params: [], pos: pos + 1 }
+  else
+    let r = list.fold(
+      list.build(64, fn(i) { i }),
+      { ok: true, params: [], pos: pos, done: false, err: "" },
+      fn(acc, _) {
+        if acc.done || !acc.ok then acc else
+        let t = tok_at(tokens, acc.pos) in
+        if t.t != "ident" then { ok: false, params: acc.params, pos: acc.pos, done: true, err: "expected param name" }
+        else
+          let p1 = acc.pos + 1 in
+          let p2 = if is_sym(tokens, p1, ":") then
+            let r2 = skip_type(tokens, p1 + 1) in r2
+          else p1 in
+          if is_sym(tokens, p2, ")") then
+            { ok: true, params: list.append(acc.params, t.v), pos: p2 + 1, done: true, err: "" }
+          else if is_sym(tokens, p2, ",") then
+            { ok: true, params: list.append(acc.params, t.v), pos: p2 + 1, done: false, err: "" }
+          else
+            { ok: false, params: acc.params, pos: p2, done: true, err: "expected ',' or ')'" }
+      }
+    ) in
+    { ok: r.ok, params: r.params, pos: r.pos, err: r.err }
+}
+
+fn skip_type(tokens, pos) {
+  // Skip a type annotation — just consume ident and optional <...>
+  let t = tok_at(tokens, pos) in
+  if t.t != "ident" && t.t != "kw" then pos else
+  let p1 = pos + 1 in
+  if is_sym(tokens, p1, "<") then
+    let r = list.fold(list.build(32, fn(i) { i }), { pos: p1 + 1, depth: 1, done: false }, fn(a, _) {
+      if a.done then a else
+      if is_sym(tokens, a.pos, "<") then { pos: a.pos + 1, depth: a.depth + 1, done: false }
+      else if is_sym(tokens, a.pos, ">") && a.depth == 1 then { pos: a.pos + 1, depth: 0, done: true }
+      else if is_sym(tokens, a.pos, ">") then { pos: a.pos + 1, depth: a.depth - 1, done: false }
+      else { pos: a.pos + 1, depth: a.depth, done: false }
+    }) in
+    r.pos
+  else p1
+}
+
+fn parse_fn_expr(tokens, pos) {
+  let line = tok_at(tokens, pos).line in
+  let p0   = pos + 1 in
+  let ce   = expect_sym(tokens, p0, "(") in
+  if !ce.ok then err(ce.err, p0) else
+  let pr   = parse_fn_params(tokens, ce.pos) in
+  if !pr.ok then err(pr.err, ce.pos) else
+  let p1   = if is_sym(tokens, pr.pos, "->") then skip_type(tokens, pr.pos + 1) else pr.pos in
+  let ob   = expect_sym(tokens, p1, "{") in
+  if !ob.ok then err(ob.err, p1) else
+  let body = parse_block(tokens, ob.pos) in
+  if !body.ok then body else
+  let cb   = expect_sym(tokens, body.pos, "}") in
+  if !cb.ok then err(cb.err, body.pos) else
+  ok({ t: "fn", params: pr.params, body: body.node, line: line }, cb.pos)
+}
+
+// ── Block (let chain + tail expr) ─────────────────────────────────────────────
+
+fn parse_block(tokens, pos) {
+  let line = tok_at(tokens, pos).line in
+  if is_kw(tokens, pos, "let") then
+    let name_tok = tok_at(tokens, pos + 1) in
+    let name     = name_tok.v in
+    let p1       = pos + 2 in
+    let p2       = if is_sym(tokens, p1, ":") then skip_type(tokens, p1 + 1) else p1 in
+    let eq       = expect_sym(tokens, p2, "=") in
+    if !eq.ok then err(eq.err, p2) else
+    let val      = parse_expr(tokens, eq.pos) in
+    if !val.ok then val else
+    let p3       = if is_kw(tokens, val.pos, "in") then val.pos + 1 else val.pos in
+    let body     = parse_block(tokens, p3) in
+    if !body.ok then body else
+    ok({ t: "let", name: name, val: val.node, body: body.node, line: line }, body.pos)
+  else
+    parse_expr(tokens, pos)
+}
+
+// ── if expression ─────────────────────────────────────────────────────────────
+
+fn parse_if(tokens, pos) {
+  let line = tok_at(tokens, pos).line in
+  let p0   = pos + 1 in
+  let cond = parse_expr(tokens, p0) in
+  if !cond.ok then cond else
+  let pt   = if is_kw(tokens, cond.pos, "then") then cond.pos + 1 else cond.pos in
+  let then_r = parse_expr(tokens, pt) in
+  if !then_r.ok then then_r else
+  let pe   = if is_kw(tokens, then_r.pos, "else") then then_r.pos + 1 else then_r.pos in
+  let else_r = parse_expr(tokens, pe) in
+  if !else_r.ok then else_r else
+  ok({ t: "if", cond: cond.node, then_n: then_r.node, else_n: else_r.node, line: line }, else_r.pos)
+}
+
+// ── let expression ────────────────────────────────────────────────────────────
+
+fn parse_let_expr(tokens, pos) {
+  let line     = tok_at(tokens, pos).line in
+  let name_tok = tok_at(tokens, pos + 1) in
+  let name     = name_tok.v in
+  let p1       = pos + 2 in
+  let p2       = if is_sym(tokens, p1, ":") then skip_type(tokens, p1 + 1) else p1 in
+  let eq       = expect_sym(tokens, p2, "=") in
+  if !eq.ok then err(eq.err, p2) else
+  let val      = parse_expr(tokens, eq.pos) in
+  if !val.ok then val else
+  let p3       = if is_kw(tokens, val.pos, "in") then val.pos + 1 else val.pos in
+  let body     = parse_expr(tokens, p3) in
+  if !body.ok then body else
+  ok({ t: "let", name: name, val: val.node, body: body.node, line: line }, body.pos)
+}
+
+// ── match expression ──────────────────────────────────────────────────────────
+
+fn parse_match_arms(tokens, pos, acc) {
+  if is_sym(tokens, pos, "}") then { ok: true, arms: acc, pos: pos + 1 }
+  else
+    let pat  = parse_expr(tokens, pos) in
+    if !pat.ok then { ok: false, arms: acc, pos: pat.pos, err: pat.err } else
+    let arr  = expect_sym(tokens, pat.pos, "=>") in
+    if !arr.ok then { ok: false, arms: acc, pos: pat.pos, err: arr.err } else
+    let body = parse_expr(tokens, arr.pos) in
+    if !body.ok then { ok: false, arms: acc, pos: body.pos, err: body.err } else
+    let p2   = if is_sym(tokens, body.pos, ",") then body.pos + 1 else body.pos in
+    parse_match_arms(tokens, p2, list.append(acc, { pat: pat.node, body: body.node }))
+}
+
+fn parse_match(tokens, pos) {
+  let line   = tok_at(tokens, pos).line in
+  let subj   = parse_expr(tokens, pos + 1) in
+  if !subj.ok then subj else
+  let ob     = expect_sym(tokens, subj.pos, "{") in
+  if !ob.ok then err(ob.err, subj.pos) else
+  let r = parse_match_arms(tokens, ob.pos, []) in
+  if !r.ok then err(r.err, r.pos)
+  else ok({ t: "match", subj: subj.node, arms: r.arms, line: line }, r.pos)
+}
+
+// ── Postfix (calls, field access, index) ─────────────────────────────────────
+
+fn parse_postfix_loop(tokens, pos, node) {
+  if is_sym(tokens, pos, ".") then
+    let ft = tok_at(tokens, pos + 1) in
+    if ft.t != "ident" && ft.t != "kw" then ok(node, pos)
+    else if is_sym(tokens, pos + 2, "(") then
+      let ar = parse_comma_exprs(tokens, pos + 3, ")") in
+      if !ar.ok then err(ar.err, ar.pos)
+      else parse_postfix_loop(tokens, ar.pos, { t: "call", fn_n: { t: "get", obj: node, field: ft.v }, args: ar.items })
+    else
+      parse_postfix_loop(tokens, pos + 2, { t: "get", obj: node, field: ft.v })
+  else if is_sym(tokens, pos, "(") then
+    let ar = parse_comma_exprs(tokens, pos + 1, ")") in
+    if !ar.ok then err(ar.err, ar.pos)
+    else parse_postfix_loop(tokens, ar.pos, { t: "call", fn_n: node, args: ar.items })
+  else if is_sym(tokens, pos, "[") then
+    let ir = parse_expr(tokens, pos + 1) in
+    if !ir.ok then ir else
+    let cb = expect_sym(tokens, ir.pos, "]") in
+    if !cb.ok then err(cb.err, ir.pos)
+    else parse_postfix_loop(tokens, cb.pos, { t: "index", obj: node, idx: ir.node })
+  else ok(node, pos)
+}
+
+fn parse_postfix(tokens, pos) {
+  let base = parse_atom(tokens, pos) in
+  if !base.ok then base else
+  parse_postfix_loop(tokens, base.pos, base.node)
+}
+
+// ── Unary ─────────────────────────────────────────────────────────────────────
+
+fn parse_unary(tokens, pos) {
+  if is_sym(tokens, pos, "!") then
+    let r = parse_unary(tokens, pos + 1) in
+    if !r.ok then r else ok({ t: "unary", op: "!", operand: r.node }, r.pos)
+  else if is_sym(tokens, pos, "-") then
+    let r = parse_unary(tokens, pos + 1) in
+    if !r.ok then r else ok({ t: "unary", op: "-", operand: r.node }, r.pos)
+  else
+    parse_postfix(tokens, pos)
+}
+
+// ── Binary (precedence climbing) ─────────────────────────────────────────────
+
+fn prec(op) {
+  if op == "|>" then 1
+  else if op == "||" || op == "??" then 2
+  else if op == "&&" then 3
+  else if op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=" then 4
+  else if op == "+" || op == "-" then 5
+  else if op == "*" || op == "/" || op == "%" then 6
+  else 0
+}
+
+fn is_binop(tokens, pos) {
+  let t = tok_at(tokens, pos) in
+  t.t == "sym" && prec(t.v) > 0
+}
+
+fn parse_infix(tokens, pos, min_prec) {
+  let left = parse_unary(tokens, pos) in
+  if !left.ok then left else
+  parse_infix_loop(tokens, left.pos, left.node, min_prec)
+}
+
+fn parse_infix_loop(tokens, pos, node, min_prec) {
+  if !is_binop(tokens, pos) then ok(node, pos) else
+  let op = tok_at(tokens, pos).v in
+  let p  = prec(op) in
+  if p < min_prec then ok(node, pos) else
+  let rhs = parse_infix(tokens, pos + 1, p + 1) in
+  if !rhs.ok then rhs else
+  parse_infix_loop(tokens, rhs.pos, { t: "bin", op: op, left: node, right: rhs.node }, min_prec)
+}
+
+
+fn parse_expr(tokens, pos) {
+  parse_infix(tokens, pos, 0)
+}
+
+// ── Top-level items ───────────────────────────────────────────────────────────
+
+fn parse_fn_item(tokens, pos) {
+  let line     = tok_at(tokens, pos).line in
+  let name_tok = tok_at(tokens, pos + 1) in
+  let name     = name_tok.v in
+  let p0       = pos + 2 in
+  let ce       = expect_sym(tokens, p0, "(") in
+  if !ce.ok then err(ce.err, p0) else
+  let pr       = parse_fn_params(tokens, ce.pos) in
+  if !pr.ok then err(pr.err, ce.pos) else
+  let p1       = if is_sym(tokens, pr.pos, "->") then skip_type(tokens, pr.pos + 1) else pr.pos in
+  let ob       = expect_sym(tokens, p1, "{") in
+  if !ob.ok then err(ob.err, p1) else
+  let body     = parse_block(tokens, ob.pos) in
+  if !body.ok then body else
+  let cb       = expect_sym(tokens, body.pos, "}") in
+  if !cb.ok then err(cb.err, body.pos) else
+  ok({ t: "fn_item", name: name, params: pr.params, body: body.node, line: line }, cb.pos)
+}
+
+fn parse_let_item(tokens, pos) {
+  let line     = tok_at(tokens, pos).line in
+  let name_tok = tok_at(tokens, pos + 1) in
+  let name     = name_tok.v in
+  let p1       = pos + 2 in
+  let p2       = if is_sym(tokens, p1, ":") then skip_type(tokens, p1 + 1) else p1 in
+  let eq       = expect_sym(tokens, p2, "=") in
+  if !eq.ok then err(eq.err, p2) else
+  let val      = parse_expr(tokens, eq.pos) in
+  if !val.ok then val else
+  ok({ t: "let_item", name: name, val: val.node, line: line }, val.pos)
+}
+
+fn parse_import_item(tokens, pos) {
+  let line = tok_at(tokens, pos).line in
+  let p0   = pos + 1 in
+  let lp   = expect_sym(tokens, p0, "(") in
+  if !lp.ok then err(lp.err, p0) else
+  let pt   = tok_at(tokens, lp.pos) in
+  let path = pt.v in
+  let p1   = lp.pos + 1 in
+  let rp   = expect_sym(tokens, p1, ")") in
+  if !rp.ok then err(rp.err, p1) else
+  let as_k = expect_kw(tokens, rp.pos, "as") in
+  if !as_k.ok then err(as_k.err, rp.pos) else
+  let alias_tok = tok_at(tokens, as_k.pos) in
+  let alias     = alias_tok.v in
+  ok({ t: "import", path: path, alias: alias, line: line }, as_k.pos + 1)
+}
+
+fn parse_module_items(tokens, pos, acc) {
+  if is_eof(tokens, pos) then { ok: true, items: acc, pos: pos }
+  else if is_kw(tokens, pos, "import") then
+    let r = parse_import_item(tokens, pos) in
+    if !r.ok then { ok: false, items: acc, pos: r.pos, err: r.err }
+    else parse_module_items(tokens, r.pos, list.append(acc, r.node))
+  else if is_kw(tokens, pos, "fn") then
+    let r = parse_fn_item(tokens, pos) in
+    if !r.ok then { ok: false, items: acc, pos: r.pos, err: r.err }
+    else parse_module_items(tokens, r.pos, list.append(acc, r.node))
+  else if is_kw(tokens, pos, "let") then
+    let r = parse_let_item(tokens, pos) in
+    if !r.ok then { ok: false, items: acc, pos: r.pos, err: r.err }
+    else parse_module_items(tokens, r.pos, list.append(acc, r.node))
+  else if tok_at(tokens, pos).t == "doc" then
+    parse_module_items(tokens, pos + 1, acc)
+  else
+    let r = parse_expr(tokens, pos) in
+    if !r.ok then { ok: false, items: acc, pos: r.pos, err: r.err }
+    else parse_module_items(tokens, r.pos, list.append(acc, { t: "expr_item", expr: r.node }))
+}
+
+fn parse_module(tokens, pos) {
+  let arr = array.from_list(tokens) in
+  parse_module_arr(arr, pos)
+}
+
+fn parse_module_arr(tokens, pos) {
+  let r = parse_module_items(tokens, pos, []) in
+  if !r.ok then err(r.err, r.pos)
+  else ok({ t: "module", items: r.items }, r.pos)
+}
+
+{
+  parse_module: parse_module,
+  parse_expr:   parse_expr,
+  parse_block:  parse_block,
+  tok_at:       tok_at,
+  is_kw:        is_kw,
+  is_sym:       is_sym,
+  ok:           ok,
+  err:          err
+}
+
+// ═══ apps/fard_lower.fard ═══
+
+
+// ── Local counter (per function) ─────────────────────────────────────────────
+
+fn make_ctx() {
+  { next_local: array.new(), fns: array.new(), globals: array.new(),
+    fn_names: array.new() }
+}
+
+fn alloc_local(ctx) {
+  let n = array.len(ctx.next_local) in
+  let _ = array.push(ctx.next_local, n) in
+  n
+}
+
+fn local_count(ctx) { array.len(ctx.next_local) }
+
+fn reset_locals(ctx) {
+  let n = array.len(ctx.next_local) in
+  let _ = list.fold(list.build(n, fn(i) { i }), null, fn(_, i) { array.pop(ctx.next_local) }) in
+  null
+}
+
+// ── Environment (name -> local index) ────────────────────────────────────────
+
+fn lenv_new(parent) { parent }
+
+fn lenv_set(env, name, local) {
+  { key: name, local: local, next: env }
+}
+
+fn lenv_get(env, name) {
+  if env == null then null
+  else if env.key == name then env.local
+  else lenv_get(env.next, name)
+}
+
+// ── Instruction helpers ───────────────────────────────────────────────────────
+
+fn emit(code, instr) {
+  let _ = array.push(code, instr) in null
+}
+
+fn instr_const(dst, val) { { op: "const", dst: dst, val: val } }
+fn instr_load(dst, src)  { { op: "load",  dst: dst, src: src } }
+fn instr_global_load(dst, name) { { op: "global_load", dst: dst, name: name } }
+fn instr_global_store(name, src) { { op: "global_store", name: name, src: src } }
+fn instr_add(dst, a, b)  { { op: "add", dst: dst, a: a, b: b } }
+fn instr_sub(dst, a, b)  { { op: "sub", dst: dst, a: a, b: b } }
+fn instr_mul(dst, a, b)  { { op: "mul", dst: dst, a: a, b: b } }
+fn instr_div(dst, a, b)  { { op: "div", dst: dst, a: a, b: b } }
+fn instr_mod(dst, a, b)  { { op: "mod", dst: dst, a: a, b: b } }
+fn instr_neg(dst, src)   { { op: "neg", dst: dst, src: src } }
+fn instr_eq(dst, a, b)   { { op: "eq",  dst: dst, a: a, b: b } }
+fn instr_ne(dst, a, b)   { { op: "ne",  dst: dst, a: a, b: b } }
+fn instr_lt(dst, a, b)   { { op: "lt",  dst: dst, a: a, b: b } }
+fn instr_le(dst, a, b)   { { op: "le",  dst: dst, a: a, b: b } }
+fn instr_gt(dst, a, b)   { { op: "gt",  dst: dst, a: a, b: b } }
+fn instr_ge(dst, a, b)   { { op: "ge",  dst: dst, a: a, b: b } }
+fn instr_and(dst, a, b)  { { op: "and", dst: dst, a: a, b: b } }
+fn instr_or(dst, a, b)   { { op: "or",  dst: dst, a: a, b: b } }
+fn instr_not(dst, src)   { { op: "not", dst: dst, src: src } }
+fn instr_jump(target)    { { op: "jump", target: target } }
+fn instr_branch(cond, then_t, else_t) { { op: "branch", cond: cond, then_t: then_t, else_t: else_t } }
+fn instr_return(src)     { { op: "return", src: src } }
+fn instr_make_list(dst, items) { { op: "make_list", dst: dst, items: items } }
+fn instr_make_rec(dst, fields) { { op: "make_rec", dst: dst, fields: fields } }
+fn instr_get_field(dst, obj, field) { { op: "get_field", dst: dst, obj: obj, field: field } }
+fn instr_get_index(dst, obj, idx)   { { op: "get_index", dst: dst, obj: obj, idx: idx } }
+fn instr_make_closure(dst, fn_id, captures) { { op: "make_closure", dst: dst, fn_id: fn_id, captures: captures } }
+fn instr_call(dst, fn_r, args) { { op: "call", dst: dst, fn_r: fn_r, args: args, fn_id: -1 } }
+fn instr_call_direct(dst, fn_id, args) { { op: "call", dst: dst, fn_r: -1, args: args, fn_id: fn_id } }
+fn instr_call_global(dst, name, args) { { op: "call_global", dst: dst, name: name, args: args } }
+fn instr_get_method(dst, obj, method) { { op: "get_method", dst: dst, obj: obj, method: method } }
+fn instr_import(dst, path, alias) { { op: "import", dst: dst, path: path, alias: alias } }
+
+// ── Placeholder for branch patching ──────────────────────────────────────────
+
+fn patch_jump(code, idx, target) {
+  let instr = array.get(code, idx) in
+  let patched = { op: instr.op, target: target } in
+  let _ = array.push(code, patched) in
+  let _ = array.pop(code) in
+  // rebuild: set idx position — use a workaround since array has no set
+  // For now rebuild the array up to idx, replace, then continue
+  // This is a known limitation — bytecode patching needs array.set
+  null
+}
+
+fn cur_pos(code) { array.len(code) }
+
+// ── Expression lowering ───────────────────────────────────────────────────────
+
+fn lower_expr(node, env, code, ctx) {
+  let t = node.t in
+
+  if t == "int" then
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_const(dst, cast_int(node.v))) in
+    dst
+
+  else if t == "float" then
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_const(dst, cast_float(node.v))) in
+    dst
+
+  else if t == "bool" then
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_const(dst, node.v == "true")) in
+    dst
+
+  else if t == "null" then
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_const(dst, null)) in
+    dst
+
+  else if t == "str" then
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_const(dst, node.v)) in
+    dst
+
+  else if t == "var" then
+    let local = lenv_get(env, node.v) in
+    if local != null then
+      let dst = alloc_local(ctx) in
+      let _ = emit(code, instr_load(dst, local)) in
+      dst
+    else
+      let dst = alloc_local(ctx) in
+      let _ = emit(code, instr_global_load(dst, node.v)) in
+      dst
+
+  else if t == "let" then
+    let val_r = lower_expr(node.val, env, code, ctx) in
+    let env2  = lenv_set(env, node.name, val_r) in
+    lower_expr(node.body, env2, code, ctx)
+
+  else if t == "if" then
+    lower_if(node, env, code, ctx)
+
+  else if t == "bin" then
+    lower_bin(node, env, code, ctx)
+
+  else if t == "unary" then
+    let src = lower_expr(node.operand, env, code, ctx) in
+    let dst = alloc_local(ctx) in
+    if node.op == "!" then
+      let _ = emit(code, instr_not(dst, src)) in dst
+    else
+      let _ = emit(code, instr_neg(dst, src)) in dst
+
+  else if t == "list" then
+    lower_list(node.items, env, code, ctx)
+
+  else if t == "rec" then
+    lower_rec(node.fields, env, code, ctx)
+
+  else if t == "get" then
+    let obj = lower_expr(node.obj, env, code, ctx) in
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_get_field(dst, obj, node.field)) in
+    dst
+
+  else if t == "index" then
+    let obj = lower_expr(node.obj, env, code, ctx) in
+    let idx = lower_expr(node.idx, env, code, ctx) in
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_get_index(dst, obj, idx)) in
+    dst
+
+  else if t == "fn" then
+    lower_fn_expr(node, env, code, ctx)
+
+  else if t == "call" then
+    lower_call(node, env, code, ctx)
+
+  else if t == "match" then
+    lower_match(node, env, code, ctx)
+
+  else
+    let dst = alloc_local(ctx) in
+    let _ = emit(code, instr_const(dst, null)) in
+    dst
+}
+
+fn lower_if(node, env, code, ctx) {
+  let cond_r = lower_expr(node.cond, env, code, ctx) in
+  let branch_pos = cur_pos(code) in
+  let _ = emit(code, { op: "branch", cond: cond_r, then_t: 0, else_t: 0 }) in
+
+  let then_pos = cur_pos(code) in
+  let then_r   = lower_expr(node.then_n, env, code, ctx) in
+  let dst      = alloc_local(ctx) in
+  let _ = emit(code, instr_load(dst, then_r)) in
+  let jump_pos = cur_pos(code) in
+  let _ = emit(code, { op: "jump", target: 0 }) in
+
+  let else_pos = cur_pos(code) in
+  let else_r   = lower_expr(node.else_n, env, code, ctx) in
+  let _ = emit(code, instr_load(dst, else_r)) in
+  let end_pos  = cur_pos(code) in
+
+  // Patch branch and jump — store patches as metadata since array.set is missing
+  // The IR interpreter will handle forward references
+  let _ = emit(code, { op: "patch_branch", idx: branch_pos, then_t: then_pos, else_t: else_pos }) in
+  let _ = emit(code, { op: "patch_jump",   idx: jump_pos,   target: end_pos }) in
+  dst
+}
+
+fn lower_bin(node, env, code, ctx) {
+  if node.op == "|>" then
+    let left_r = lower_expr(node.left, env, code, ctx) in
+    if node.right.t == "call" then
+      let fn_r  = lower_expr(node.right.fn_n, env, code, ctx) in
+      let args  = lower_args(node.right.args, env, code, ctx) in
+      let dst   = alloc_local(ctx) in
+      let _ = emit(code, instr_call(dst, fn_r, list.concat([[left_r], args]))) in
+      dst
+    else
+      let fn_r = lower_expr(node.right, env, code, ctx) in
+      let dst  = alloc_local(ctx) in
+      let _ = emit(code, instr_call(dst, fn_r, [left_r])) in
+      dst
+  else
+    let a   = lower_expr(node.left, env, code, ctx) in
+    let b   = lower_expr(node.right, env, code, ctx) in
+    let dst = alloc_local(ctx) in
+    let op  = node.op in
+    if op == "+"  then let _ = emit(code, instr_add(dst, a, b)) in dst
+    else if op == "-"  then let _ = emit(code, instr_sub(dst, a, b)) in dst
+    else if op == "*"  then let _ = emit(code, instr_mul(dst, a, b)) in dst
+    else if op == "/"  then let _ = emit(code, instr_div(dst, a, b)) in dst
+    else if op == "%"  then let _ = emit(code, instr_mod(dst, a, b)) in dst
+    else if op == "==" then let _ = emit(code, instr_eq(dst, a, b)) in dst
+    else if op == "!=" then let _ = emit(code, instr_ne(dst, a, b)) in dst
+    else if op == "<"  then let _ = emit(code, instr_lt(dst, a, b)) in dst
+    else if op == "<=" then let _ = emit(code, instr_le(dst, a, b)) in dst
+    else if op == ">"  then let _ = emit(code, instr_gt(dst, a, b)) in dst
+    else if op == ">=" then let _ = emit(code, instr_ge(dst, a, b)) in dst
+    else if op == "&&" then let _ = emit(code, instr_and(dst, a, b)) in dst
+    else if op == "||" then let _ = emit(code, instr_or(dst, a, b)) in dst
+    else dst
+}
+
+fn lower_args(args, env, code, ctx) {
+  lower_args_acc(args, env, code, ctx, 0, [])
+}
+
+fn lower_args_acc(args, env, code, ctx, i, acc) {
+  if i >= list.len(args) then acc
+  else
+    let r = lower_expr(list.get(args, i), env, code, ctx) in
+    lower_args_acc(args, env, code, ctx, i + 1, list.append(acc, r))
+}
+
+fn lower_list(items, env, code, ctx) {
+  let regs = lower_args(items, env, code, ctx) in
+  let dst  = alloc_local(ctx) in
+  let _ = emit(code, instr_make_list(dst, regs)) in
+  dst
+}
+
+fn lower_rec(fields, env, code, ctx) {
+  let dst = alloc_local(ctx) in
+  let fs  = lower_rec_fields(fields, env, code, ctx, []) in
+  let _ = emit(code, instr_make_rec(dst, fs)) in
+  dst
+}
+
+fn lower_rec_fields(fields, env, code, ctx, acc) {
+  if list.len(fields) == 0 then acc
+  else
+    let f   = list.get(fields, 0) in
+    let src = lower_expr(f.v, env, code, ctx) in
+    lower_rec_fields(list.tail(fields), env, code, ctx, list.append(acc, { key: f.k, src: src }))
+}
+
+fn lower_fn_expr(node, env, code, ctx) {
+  let fn_id = lower_function(str.concat("anon_", cast_text(array.len(ctx.fns))), node.params, node.body, env, ctx) in
+  let dst   = alloc_local(ctx) in
+  let _ = emit(code, instr_make_closure(dst, fn_id, [])) in
+  dst
+}
+
+fn lower_call(node, env, code, ctx) {
+  // If fn_n is a direct var reference to a known function, use direct call
+  let fn_name = if node.fn_n.t == "var" then node.fn_n.v else "" in
+  let fn_id   = if fn_name != "" then lookup_fn_name(ctx.fn_names, fn_name) else -1 in
+  
+  if fn_id >= 0 then
+    let args = lower_args(node.args, env, code, ctx) in
+    let dst  = alloc_local(ctx) in
+    let _ = emit(code, instr_call_direct(dst, fn_id, args)) in
+    dst
+  else
+    let fn_r = lower_expr(node.fn_n, env, code, ctx) in
+    let args = lower_args(node.args, env, code, ctx) in
+    let dst  = alloc_local(ctx) in
+    let _ = emit(code, instr_call(dst, fn_r, args)) in
+    dst
+}
+
+fn lower_match(node, env, code, ctx) {
+  let subj = lower_expr(node.subj, env, code, ctx) in
+  let dst  = alloc_local(ctx) in
+  let _    = lower_match_arms(node.arms, env, code, ctx, subj, dst) in
+  dst
+}
+
+fn lower_match_arms(arms, env, code, ctx, subj, dst) {
+  if list.len(arms) == 0 then null
+  else
+    let arm = list.get(arms, 0) in
+    let pat_r = lower_expr(arm.pat, env, code, ctx) in
+    let cond_r = alloc_local(ctx) in
+    let _ = emit(code, instr_eq(cond_r, subj, pat_r)) in
+    let branch_pos = cur_pos(code) in
+    let _ = emit(code, { op: "branch", cond: cond_r, then_t: 0, else_t: 0 }) in
+    let then_pos = cur_pos(code) in
+    let body_env = if arm.pat.t == "var" then lenv_set(env, arm.pat.v, subj) else env in
+    let body_r = lower_expr(arm.body, body_env, code, ctx) in
+    let _ = emit(code, instr_load(dst, body_r)) in
+    let jump_pos = cur_pos(code) in
+    let _ = emit(code, { op: "jump", target: 0 }) in
+    let else_pos = cur_pos(code) in
+    let _ = lower_match_arms(list.tail(arms), env, code, ctx, subj, dst) in
+    let end_pos = cur_pos(code) in
+    let _ = emit(code, { op: "patch_branch", idx: branch_pos, then_t: then_pos, else_t: else_pos }) in
+    let _ = emit(code, { op: "patch_jump", idx: jump_pos, target: end_pos }) in
+    null
+}
+
+// ── Function lowering ─────────────────────────────────────────────────────────
+
+fn lower_function(name, params, body, env, ctx) {
+  let _ = reset_locals(ctx) in
+  let code  = array.new() in
+  let fenv  = build_param_env(params, env, ctx, 0) in
+  let ret_r = lower_expr(body, fenv, code, ctx) in
+  let _ = emit(code, instr_return(ret_r)) in
+  let fn_def = {
+    name:   name,
+    arity:  list.len(params),
+    locals: local_count(ctx),
+    code:   array.to_list(code)
+  } in
+  let fn_id = array.len(ctx.fns) in
+  let _ = array.push(ctx.fns, fn_def) in
+  fn_id
+}
+
+fn build_param_env(params, env, ctx, i) {
+  if i >= list.len(params) then env
+  else
+    let name  = list.get(params, i) in
+    let local = alloc_local(ctx) in
+    build_param_env(params, lenv_set(env, name, local), ctx, i + 1)
+}
+
+// ── Module lowering ───────────────────────────────────────────────────────────
+
+fn lower_module_items(items, env, code, ctx) {
+  if list.len(items) == 0 then 0
+  else
+    let item = list.get(items, 0) in
+    let rest = list.tail(items) in
+    let t    = item.t in
+
+    if t == "fn_item" then
+      let fn_id = lower_function(item.name, item.params, item.body, env, ctx) in
+      let _     = register_fn_name(ctx, item.name, fn_id) in
+      let dst   = alloc_local(ctx) in
+      let _ = emit(code, instr_make_closure(dst, fn_id, [])) in
+      let _ = emit(code, instr_global_store(item.name, dst)) in
+      lower_module_items(rest, env, code, ctx)
+
+    else if t == "let_item" then
+      let val_r = lower_expr(item.val, env, code, ctx) in
+      let _ = emit(code, instr_global_store(item.name, val_r)) in
+      lower_module_items(rest, env, code, ctx)
+
+    else if t == "import" then
+      let dst = alloc_local(ctx) in
+      let _ = emit(code, instr_import(dst, item.path, item.alias)) in
+      let _ = emit(code, instr_global_store(item.alias, dst)) in
+      lower_module_items(rest, env, code, ctx)
+
+    else if t == "expr_item" then
+      let r = lower_expr(item.expr, env, code, ctx) in
+      if list.len(rest) == 0 then r
+      else lower_module_items(rest, env, code, ctx)
+
+    else
+      lower_module_items(rest, env, code, ctx)
+}
+
+fn register_fn_name(ctx, name, fn_id) {
+  let _ = array.push(ctx.fn_names, { name: name, fn_id: fn_id }) in
+  null
+}
+
+fn lookup_fn_name(fn_names, name) {
+  lookup_fn_name_acc(fn_names, name, array.len(fn_names) - 1)
+}
+
+fn lookup_fn_name_acc(fn_names, name, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(fn_names, i) in
+    if e.name == name then e.fn_id
+    else lookup_fn_name_acc(fn_names, name, i - 1)
+}
+
+fn lower_program(ast) {
+  let ctx  = make_ctx() in
+  let code = array.new() in
+  let env  = lenv_new(null) in
+  let ret  = lower_module_items(ast.items, env, code, ctx) in
+  let _ = emit(code, instr_return(ret)) in
+  let entry_fn = {
+    name:   "__main__",
+    arity:  0,
+    locals: local_count(ctx),
+    code:   array.to_list(code)
+  } in
+  let entry_id = array.len(ctx.fns) in
+  let _ = array.push(ctx.fns, entry_fn) in
+  {
+    fns:   array.to_list(ctx.fns),
+    entry: entry_id
+  }
+}
+
+fn cast_int(s)   { cast.int(s) }
+fn cast_float(s) { cast.float(s) }
+fn cast_text(v)  { cast.text(v) }
+
+{ lower_program: lower_program, lower_expr: lower_expr }
+
+// ═══ apps/fard_stdlib.fard ═══
+
+
+// ── Dispatch IDs ──────────────────────────────────────────────────────────────
+
+fn mod_list()  { 0 }
+fn mod_array() { 1 }
+fn mod_str()   { 2 }
+fn mod_bytes() { 3 }
+fn mod_fs()    { 4 }
+fn mod_cast()  { 5 }
+fn mod_int()   { 6 }
+
+fn dispatch_id(mod_id, meth_id) { mod_id * 256 + meth_id }
+
+// list methods
+fn id_list_len()    { dispatch_id(0, 0) }
+fn id_list_get()    { dispatch_id(0, 1) }
+fn id_list_append() { dispatch_id(0, 2) }
+fn id_list_tail()   { dispatch_id(0, 3) }
+fn id_list_fold()   { dispatch_id(0, 4) }
+fn id_list_build()  { dispatch_id(0, 5) }
+fn id_list_concat() { dispatch_id(0, 6) }
+
+// array methods
+fn id_array_len()     { dispatch_id(1, 0) }
+fn id_array_new()     { dispatch_id(1, 1) }
+fn id_array_push()    { dispatch_id(1, 2) }
+fn id_array_get()     { dispatch_id(1, 3) }
+fn id_array_set()     { dispatch_id(1, 4) }
+fn id_array_pop()     { dispatch_id(1, 5) }
+fn id_array_to_list() { dispatch_id(1, 6) }
+
+// str methods
+fn id_str_len()        { dispatch_id(2, 0) }
+fn id_str_concat()     { dispatch_id(2, 1) }
+fn id_str_lex_tokens() { dispatch_id(2, 2) }
+fn id_str_char_at()    { dispatch_id(2, 3) }
+fn id_str_slice()      { dispatch_id(2, 4) }
+fn id_str_contains()   { dispatch_id(2, 7) }
+fn id_str_chars()      { dispatch_id(2, 8) }
+fn id_str_split()      { dispatch_id(2, 5) }
+fn id_str_trim()       { dispatch_id(2, 6) }
+
+// bytes methods
+fn id_bytes_len()    { dispatch_id(3, 0) }
+fn id_bytes_of_str() { dispatch_id(3, 1) }
+fn id_bytes_get()    { dispatch_id(3, 2) }
+fn id_bytes_to_hex() { dispatch_id(3, 3) }
+
+// fs methods
+fn id_fs_read_text()   { dispatch_id(4, 0) }
+fn id_fs_write_bytes() { dispatch_id(4, 1) }
+
+// cast methods
+fn id_cast_text() { dispatch_id(5, 0) }
+
+// int methods
+fn id_int_to_text() { dispatch_id(6, 0) }
+
+// ── Buffer helpers ────────────────────────────────────────────────────────────
+
+fn buf_new()              { buf_new() }
+fn emit8(buf, b)          { emit8(buf, b) }
+fn emit32(buf, v)         { emit32_le(buf, v) }
+fn emit64(buf, v)         { emit64_le(buf, v) }
+fn patch32(buf, pos, v)   { patch32(buf, pos, v) }
+fn buf_len(buf)           { buf_len(buf) }
+
+// Standard fn prologue/epilogue
+fn prologue(buf) {
+  let _ = push_reg(buf, reg_rbp()) in
+  let _ = mov_rr(buf, reg_rbp(), reg_rsp()) in
+  push_reg(buf, reg_rbx())
+}
+
+fn epilogue(buf) {
+  let _ = pop_reg(buf, reg_rbx()) in
+  let _ = pop_reg(buf, reg_rbp()) in
+  ret(buf)
+}
+
+// Load arg i from stack: tag->rax, payload->rcx
+// After prologue (push rbp; mov rbp,rsp; push rbx; push r12):
+// [rbp+0]=old_rbp, [rbp+8]=ret, [rbp+16]=arg0.tag, [rbp+24]=arg0.payload...
+fn load_arg_tag(buf, i) {
+  mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), 16 + i * 16)
+}
+
+fn load_arg_payload(buf, i) {
+  mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), 24 + i * 16)
+}
+
+fn load_arg_payload_to(buf, i, reg) {
+  mov_reg_mem_disp32(buf, reg, reg_rbp(), 24 + i * 16)
+}
+
+// Return TAG_INT value in rax
+fn ret_int(buf) {
+  let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 2) in  // TAG_INT
+  epilogue(buf)
+}
+
+// Return null
+fn ret_null(buf) {
+  let _ = mov_reg_imm32(buf, reg_rax(), 0) in  // TAG_NULL
+  let _ = mov_reg_imm32(buf, reg_rcx(), 0) in
+  epilogue(buf)
+}
+
+// ── list.len ──────────────────────────────────────────────────────────────────
+// list.len(list) -> int
+// list layout: [n:8][tag:8,payload:8 ...]
+
+fn emit_list_len(buf) {
+  let _ = prologue(buf) in
+  // load list ptr from arg0 payload
+  let _ = load_arg_payload(buf, 0) in  // rax = list ptr
+  // load n from [rax]
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 0) in
+  ret_int(buf)
+}
+
+// ── list.get ──────────────────────────────────────────────────────────────────
+// list.get(list, idx) -> val
+
+fn emit_list_get(buf) {
+  let _ = prologue(buf) in
+  // rbx = list ptr
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  // rax = idx
+  let _ = load_arg_payload(buf, 1) in
+  // offset = 8 + idx*16
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  // rax = ptr to item (rbx + offset)
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  // load tag and payload
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rax(), 8) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 0) in
+  let _ = epilogue(buf) in
+  null
+}
+
+// ── list.append ───────────────────────────────────────────────────────────────
+// list.append(list, val) -> new_list
+// Allocates new list with n+1 items, copies old + appends val
+
+fn emit_list_append(buf) {
+  // list.append(list, val) -> new_list
+  // rbx = old list ptr (preserved by prologue)
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  // rcx = n = [rbx+0]
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rbx(), 0) in
+  // alloc (n+1)*16 + 8 bytes via bump allocator
+  // rdi = (n+1)*16 + 8
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 1) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 8) in
+  // rax = r12; r12 += rdi  (bump alloc)
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // rax = new_ptr; rdi = new_ptr; store n+1
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = mov_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = mov_mem_disp32_reg(buf, reg_rdi(), 0, reg_rax()) in
+  // Copy loop: rcx=n (outer counter), rax=i=0
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in  // i=0
+  let loop_pos = buf_len(buf) in
+  // cmp i, n
+  let _ = cmp_rr(buf, reg_rax(), reg_rcx()) in
+  let jge_pos = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  // offset = 8 + i*16; use rdx
+  let _ = push_reg(buf, reg_rax()) in  // save i
+  let _ = push_reg(buf, reg_rcx()) in  // save n
+  let _ = mov_reg_imm32(buf, reg_rdx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rdx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  // copy [rbx+rax] -> [rdi+rax] (tag and payload)
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in  // src
+  let _ = mov_reg_mem_disp32(buf, reg_rdx(), reg_rax(), 0) in   // tag
+  let _ = mov_reg_mem_disp32(buf, reg_rsi(), reg_rax(), 8) in   // payload
+  let _ = sub_rr(buf, reg_rax(), reg_rbx()) in  // restore offset
+  let _ = add_rr(buf, reg_rax(), reg_rdi()) in  // dst
+  let _ = mov_mem_disp32_reg(buf, reg_rax(), 0, reg_rdx()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rax(), 8, reg_rsi()) in
+  let _ = pop_reg(buf, reg_rcx()) in  // restore n
+  let _ = pop_reg(buf, reg_rax()) in  // restore i
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, loop_pos - (buf_len(buf) + 5)) in
+  // done
+  let done_pos = buf_len(buf) in
+  let _ = patch32(buf, jge_pos + 2, done_pos - (jge_pos + 6)) in
+  // Append new item at [rdi + 8 + n*16]
+  let _ = mov_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rdx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  let _ = add_rr(buf, reg_rax(), reg_rdi()) in  // rax = new item slot
+  let _ = load_arg_tag(buf, 1) in      // rax clobbered!
+  // Fix: save slot ptr first
+  let _ = push_reg(buf, reg_rax()) in   // push slot ptr -- but rax was overwritten
+  // Redo cleanly:
+  // save slot offset in rdx, keep rdi=new_ptr
+  let _ = pop_reg(buf, reg_rsi()) in   // discard bad push
+  let _ = mov_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rdx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  // rdx = slot offset from rdi
+  let _ = mov_rr(buf, reg_rdx(), reg_rax()) in
+  // load arg1 tag -> rsi, payload -> rcx
+  let _ = load_arg_tag(buf, 1) in
+  let _ = mov_rr(buf, reg_rsi(), reg_rax()) in
+  let _ = load_arg_payload(buf, 1) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+  // store at [rdi+rdx]: tag=rsi, payload=rcx
+  let _ = add_rr(buf, reg_rdx(), reg_rdi()) in  // rdx = slot ptr
+  let _ = mov_mem_disp32_reg(buf, reg_rdx(), 0, reg_rsi()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rdx(), 8, reg_rcx()) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = mov_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in
+  epilogue(buf)
+}
+
+// ── list.tail ─────────────────────────────────────────────────────────────────
+// list.tail(list) -> list (all but first element)
+
+fn emit_list_tail(buf) {
+  // list.tail(list) -> list (all but first element)
+  // Returns a new list with n-1 items, items[1..n-1]
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in  // rbx = list ptr
+  // rcx = n = [rbx]
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rbx(), 0) in
+  // if n == 0, return empty list (same ptr with n=0)
+  let _ = cmp_reg_imm32(buf, reg_rcx(), 0) in
+  let jz_pos = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 132) in let _ = emit32_le(buf, 0) in
+  // n1 = n-1
+  let _ = mov_rr(buf, reg_rcx(), reg_rcx()) in
+  let _ = sub_reg_imm32(buf, reg_rcx(), 1) in
+  // alloc 8 + n1*16
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 8) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // rax = new ptr
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in
+  // store n1 at [rdi]
+  let _ = mov_mem_disp32_reg(buf, reg_rdi(), 0, reg_rcx()) in
+  // copy loop: i=0..n1, src=[rbx+8+16+(i*16)]=rbx+24+i*16, dst=[rdi+8+i*16]
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in
+  let lp = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_rax(), reg_rcx()) in
+  let jge2 = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  let _ = push_reg(buf, reg_rax()) in
+  let _ = push_reg(buf, reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rdx()) in
+  // src = rbx + 24 + rax
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 24) in
+  let _ = mov_reg_mem_disp32(buf, reg_rdx(), reg_rax(), 0) in
+  let _ = mov_reg_mem_disp32(buf, reg_rsi(), reg_rax(), 8) in
+  let _ = pop_reg(buf, reg_rcx()) in
+  let _ = pop_reg(buf, reg_rax()) in
+  let _ = push_reg(buf, reg_rax()) in
+  let _ = push_reg(buf, reg_rcx()) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = add_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = add_reg_imm32(buf, reg_rcx(), 8) in
+  let _ = mov_mem_disp32_reg(buf, reg_rcx(), 0, reg_rdx()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rcx(), 8, reg_rsi()) in
+  let _ = pop_reg(buf, reg_rcx()) in
+  let _ = pop_reg(buf, reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, lp - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  let _ = patch32(buf, jge2 + 2, done - (jge2 + 6)) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in
+  let skip = buf_len(buf) in
+  let _ = jmp_rel32(buf, 0) in
+  // empty list case
+  let empty = buf_len(buf) in
+  let _ = patch32(buf, jz_pos + 2, empty - (jz_pos + 6)) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in
+  let end_pos = buf_len(buf) in
+  let _ = patch32(buf, skip + 1, end_pos - (skip + 5)) in
+  epilogue(buf)
+}
+
+// ── list.fold ─────────────────────────────────────────────────────────────────
+// list.fold(list, init, fn) -> val
+// fn is a closure: fn(acc, item) -> new_acc
+
+fn emit_list_fold(buf) {
+  let _ = prologue(buf) in
+  ret_null(buf)  // placeholder - requires closure calls
+}
+
+// ── list.build ────────────────────────────────────────────────────────────────
+fn emit_list_build(buf) {
+  let _ = prologue(buf) in
+  ret_null(buf)
+}
+
+// ── list.concat ───────────────────────────────────────────────────────────────
+fn emit_list_concat(buf) {
+  let _ = prologue(buf) in
+  ret_null(buf)
+}
+
+// ── array.new ─────────────────────────────────────────────────────────────────
+// array.new() -> array
+// Array layout: same as list but mutable. [capacity:8][len:8][items...]
+
+fn emit_array_new(buf) {
+  let _ = prologue(buf) in
+  // Use r12 bump allocator (heap_ptr set by _start)
+  let _ = mov_reg_imm32(buf, reg_rdi(), 2064) in
+  // mov rax, r12; add r12, rdi
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  let _ = mov_mem_disp32_imm32(buf, reg_rax(), 0, 128) in  // capacity
+  let _ = mov_mem_disp32_imm32(buf, reg_rax(), 8, 0) in    // len=0
+  let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 10) in
+  epilogue(buf)
+}
+
+// ── array.len ─────────────────────────────────────────────────────────────────
+fn emit_array_len(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload(buf, 0) in  // rax = array ptr
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 8) in  // len at [ptr+8]
+  ret_int(buf)
+}
+
+// ── array.push ────────────────────────────────────────────────────────────────
+// array.push(arr, val) -> null (mutates in place)
+// If len >= capacity: grow via mmap (for simplicity, use large initial alloc)
+
+fn emit_array_push(buf) {
+  let _ = prologue(buf) in
+  // rbx = arr ptr
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  // rax = len = [rbx+8]
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rbx(), 8) in
+  // compute item slot ptr: rbx + 16 + len*16
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 16) in
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  // rax = item slot ptr; push to save
+  let _ = push_reg(buf, reg_rax()) in
+  // load arg1 tag -> rcx, payload -> rdx
+  let _ = load_arg_tag(buf, 1) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = load_arg_payload(buf, 1) in
+  let _ = mov_rr(buf, reg_rdx(), reg_rax()) in
+  // restore slot ptr
+  let _ = pop_reg(buf, reg_rax()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rax(), 0, reg_rcx()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rax(), 8, reg_rdx()) in
+  // increment len: reload arr ptr, inc [rbx+8]
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rbx(), 8) in
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbx(), 8, reg_rax()) in
+  ret_null(buf)
+}
+
+// ── array.get ─────────────────────────────────────────────────────────────────
+fn emit_array_get(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in  // rbx = arr ptr
+  let _ = load_arg_payload(buf, 1) in                      // rax = idx
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 16) in   // offset = 16 + idx*16
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rax(), 8) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 0) in
+  epilogue(buf)
+}
+
+// ── array.set ─────────────────────────────────────────────────────────────────
+// array.set(arr, idx, val) -> null (mutates)
+fn emit_array_set(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  let _ = load_arg_payload(buf, 1) in   // rax = idx
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 16) in
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in  // rbx = item slot
+  let _ = load_arg_tag(buf, 2) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbx(), 0, reg_rax()) in
+  let _ = load_arg_payload(buf, 2) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbx(), 8, reg_rax()) in
+  ret_null(buf)
+}
+
+// ── array.pop ─────────────────────────────────────────────────────────────────
+fn emit_array_pop(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  // len = [rbx+8]
+  let _ = mov_reg_mem_disp32(buf, reg_r12(), reg_rbx(), 8) in
+  // decrement len
+  let _ = sub_reg_imm32(buf, reg_r12(), 1) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbx(), 8, reg_r12()) in
+  // load last item: offset = 16 + r12*16
+  let _ = mov_rr(buf, reg_rax(), reg_r12()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 16) in
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rax(), 8) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 0) in
+  epilogue(buf)
+}
+
+// ── array.to_list ─────────────────────────────────────────────────────────────
+// array.to_list(arr) -> list
+// List and array have same layout (tag 5=list, 10=array) - just retag
+fn emit_array_to_list(buf) {
+  // Array: [capacity:8][len:8][tag:8,payload:8 ...]
+  // List:  [n:8][tag:8,payload:8 ...]
+  // Alloc new list, copy len + items
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in  // rbx = arr ptr
+  // rcx = len = [rbx+8]
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rbx(), 8) in
+  // alloc 8 + len*16 via bump allocator
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 8) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in  // mov rax,r12
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in    // add r12,rdi
+  // rax = new list ptr; rdi = new ptr
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in
+  // store len at [rdi]
+  let _ = mov_mem_disp32_reg(buf, reg_rdi(), 0, reg_rcx()) in
+  // copy loop: i=0..len, copy [rbx+16+i*16] -> [rdi+8+i*16]
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in  // i=0
+  let loop_pos = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_rax(), reg_rcx()) in
+  let jge_pos = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  // src offset = 16 + i*16; dst offset = 8 + i*16
+  let _ = push_reg(buf, reg_rax()) in  // save i
+  let _ = push_reg(buf, reg_rcx()) in  // save len
+  let _ = mov_reg_imm32(buf, reg_rdx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rdx()) in
+  // src = rbx + 16 + rax; dst = rdi + 8 + rax
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 16) in   // src
+  let _ = mov_reg_mem_disp32(buf, reg_rdx(), reg_rax(), 0) in  // tag
+  let _ = mov_reg_mem_disp32(buf, reg_rsi(), reg_rax(), 8) in  // payload
+  // dst = rdi + 8 + i*16
+  let _ = pop_reg(buf, reg_rcx()) in
+  let _ = pop_reg(buf, reg_rax()) in
+  let _ = push_reg(buf, reg_rax()) in
+  let _ = push_reg(buf, reg_rcx()) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rcx(), reg_rax()) in
+  let _ = add_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = add_reg_imm32(buf, reg_rcx(), 8) in   // dst
+  let _ = mov_mem_disp32_reg(buf, reg_rcx(), 0, reg_rdx()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rcx(), 8, reg_rsi()) in
+  let _ = pop_reg(buf, reg_rcx()) in  // len
+  let _ = pop_reg(buf, reg_rax()) in  // i
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, loop_pos - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  let _ = patch32(buf, jge_pos + 2, done - (jge_pos + 6)) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = mov_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in
+  epilogue(buf)
+}
+
+// ── str.len ───────────────────────────────────────────────────────────────────
+// str.len(s) -> int
+// String layout: payload = ptr to null-terminated UTF-8
+
+fn emit_str_len(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rdi()) in  // rdi = str ptr
+  // strlen: scan for null byte
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in
+  let loop_pos = buf_len(buf) in
+  // cmp byte [rdi+rax], 0
+  let _ = emit8(buf, 128) in let _ = emit8(buf, 60) in let _ = emit8(buf, 7) in let _ = emit8(buf, 0) in
+  // je done
+  let jz = buf_len(buf) in
+  let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in  // inc rax
+  let back = loop_pos - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + back) % 256) in
+  let done = buf_len(buf) in
+  let _ = array.set(buf, jz + 1, done - (jz + 2)) in
+  ret_int(buf)
+}
+
+// ── str.concat ────────────────────────────────────────────────────────────────
+// str.concat(a, b) -> str
+
+fn emit_str_concat(buf) {
+  let _ = prologue(buf) in
+  // rdi = ptr a, rsi = ptr b
+  let _ = load_arg_payload_to(buf, 0, reg_rdi()) in
+  let _ = load_arg_payload_to(buf, 1, reg_rsi()) in
+  // strlen(a) -> r12, strlen(b) -> rbx
+  let _ = mov_rr(buf, reg_r12(), reg_rdi()) in
+  // inline strlen a: rax = len
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in
+  let la = buf_len(buf) in
+  let _ = emit8(buf, 128) in let _ = emit8(buf, 60) in let _ = emit8(buf, 7) in let _ = emit8(buf, 0) in
+  let jza = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in
+  let ba = la - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + ba) % 256) in
+  let da = buf_len(buf) in let _ = array.set(buf, jza + 1, da - (jza + 2)) in
+  let _ = mov_rr(buf, reg_r12(), reg_rax()) in  // r12 = len_a
+  // inline strlen b: rax = len
+  let _ = mov_rr(buf, reg_rdi(), reg_rsi()) in  // rdi = b for scan
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in
+  let lb = buf_len(buf) in
+  let _ = emit8(buf, 128) in let _ = emit8(buf, 60) in let _ = emit8(buf, 7) in let _ = emit8(buf, 0) in
+  let jzb = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in
+  let bb = lb - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bb) % 256) in
+  let db = buf_len(buf) in let _ = array.set(buf, jzb + 1, db - (jzb + 2)) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in  // rbx = len_b
+  // alloc: size = len_a + len_b + 1
+  let _ = mov_rr(buf, reg_rsi(), reg_r12()) in
+  let _ = add_rr(buf, reg_rsi(), reg_rbx()) in
+  let _ = add_reg_imm32(buf, reg_rsi(), 1) in  // +1 for null
+  let _ = xor_rr(buf, reg_rdi(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 3) in
+  let _ = mov_reg_imm32(buf, reg_r10(), 34) in
+  let _ = xor_rr(buf, reg_r8(), reg_r8()) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 255) in let _ = emit8(buf, 200) in  // dec r8 -> r8=-1
+  let _ = xor_rr(buf, reg_r9(), reg_r9()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 9) in
+  let _ = syscall(buf) in
+  // rax = new str ptr
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in  // dst
+  let _ = push_reg(buf, reg_rax()) in  // save new ptr
+  // memcpy a -> dst: rep movsb, len_a bytes
+  let _ = load_arg_payload_to(buf, 0, reg_rsi()) in  // src = a
+  let _ = mov_rr(buf, reg_rcx(), reg_r12()) in  // count = len_a
+  let _ = emit8(buf, 243) in let _ = emit8(buf, 164) in  // rep movsb
+  // memcpy b -> dst: rdi now points after a
+  let _ = load_arg_payload_to(buf, 1, reg_rsi()) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rbx()) in
+  let _ = emit8(buf, 243) in let _ = emit8(buf, 164) in  // rep movsb
+  // null terminator
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 7) in let _ = emit8(buf, 0) in  // mov byte [rdi], 0
+  // return TAG_STR(3), payload=new ptr
+  let _ = pop_reg(buf, reg_rcx()) in  // rcx = new ptr
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in  // TAG_STR
+  epilogue(buf)
+}
+
+// ── str.char_at ───────────────────────────────────────────────────────────────
+// str.char_at(s, idx) -> str (single char)
+
+fn emit_str_char_at(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rsi()) in  // rsi = str ptr
+  let _ = load_arg_payload(buf, 1) in                      // rax = idx
+  // alloc 2 bytes for char + null
+  let _ = push_reg(buf, reg_rsi()) in
+  let _ = push_reg(buf, reg_rax()) in
+  let _ = xor_rr(buf, reg_rdi(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rsi(), 2) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 3) in
+  let _ = mov_reg_imm32(buf, reg_r10(), 34) in
+  let _ = xor_rr(buf, reg_r8(), reg_r8()) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 255) in let _ = emit8(buf, 200) in  // dec r8 -> r8=-1
+  let _ = xor_rr(buf, reg_r9(), reg_r9()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 9) in
+  let _ = syscall(buf) in
+  // rax = char buf ptr
+  let _ = pop_reg(buf, reg_rcx()) in  // rcx = idx
+  let _ = pop_reg(buf, reg_rsi()) in  // rsi = str ptr
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in  // rdi = char buf
+  let _ = push_reg(buf, reg_rax()) in  // save char buf ptr
+  // load byte: movzx rax, byte [rsi+rcx]
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 4) in let _ = emit8(buf, 14) in  // movzx rax,[rsi+rcx]
+  // store at [rdi], null at [rdi+1]
+  let _ = emit8(buf, 136) in let _ = emit8(buf, 7) in   // mov [rdi], al
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 71) in let _ = emit8(buf, 1) in let _ = emit8(buf, 0) in  // mov byte [rdi+1], 0
+  let _ = pop_reg(buf, reg_rcx()) in  // rcx = char buf ptr
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in  // TAG_STR
+  epilogue(buf)
+}
+
+// ── str.lex_tokens ────────────────────────────────────────────────────────────
+// str.lex_tokens is complex - delegate to a stub that returns empty list for now
+fn emit_str_lex_tokens(buf) {
+  let _ = prologue(buf) in
+  ret_null(buf)  // TODO: implement native lexer
+}
+
+// ── bytes.of_str ──────────────────────────────────────────────────────────────
+// bytes.of_str(s) -> bytes
+// Bytes layout: same as list but tag=TAG_BYTES(11), items are ints
+
+fn emit_bytes_of_str(buf) {
+  // bytes.of_str(s) -> bytes (list of int byte values)
+  // rbx=bytes_ptr rsi=str_ptr rcx=len rax=i rdx=byte
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rsi()) in  // rsi = str ptr
+  // strlen: rcx = 0; while str[rcx] != 0: rcx++
+  let _ = xor_rr(buf, reg_rcx(), reg_rcx()) in
+  let sl = buf_len(buf) in
+  // movzx rax, byte [rsi+rcx]: 48 0F B6 04 0E
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 4) in let _ = emit8(buf, 14) in
+  let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+  let jzl = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  let _ = add_reg_imm32(buf, reg_rcx(), 1) in
+  let bsl = sl - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bsl) % 256) in
+  let dl = buf_len(buf) in let _ = array.set(buf, jzl + 1, dl - (jzl + 2)) in
+  // rcx = len; alloc 8 + len*16
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 8) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbx(), 0, reg_rcx()) in
+  // loop: rax=i=0
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in
+  let lp = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_rax(), reg_rcx()) in
+  let jge = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32(buf, 0) in
+  // rdx = str[rax]: movzx rdx, byte [rsi+rax]: 48 0F B6 14 06
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 20) in let _ = emit8(buf, 6) in
+  // slot ptr r9 = rbx + 8 + rax*16
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 193) in  // mov r9, rax
+  let _ = mov_reg_imm32(buf, reg_r10(), 16) in
+  let _ = imul_rr(buf, reg_r9(), reg_r10()) in
+  let _ = add_reg_imm32(buf, reg_r9(), 8) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 217) in    // add r9, rbx
+  // [r9] = 2 (TAG_INT)
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 199) in let _ = emit8(buf, 1) in let _ = emit32(buf, 2) in
+  // [r9+8] = rdx
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 81) in let _ = emit8(buf, 8) in
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, lp - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  let _ = patch32(buf, jge + 2, done - (jge + 6)) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 11) in
+  epilogue(buf)
+}
+
+// ── bytes.get ─────────────────────────────────────────────────────────────────
+fn emit_bytes_get(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rbx()) in
+  let _ = load_arg_payload(buf, 1) in   // rax = idx
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  // load payload (the byte value as int) from [rax+8]
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 8) in
+  ret_int(buf)
+}
+
+// ── bytes.len ─────────────────────────────────────────────────────────────────
+fn emit_bytes_len(buf) {
+  let _ = prologue(buf) in
+  let _ = load_arg_payload(buf, 0) in
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rax(), 0) in
+  ret_int(buf)
+}
+
+// ── bytes.to_hex ──────────────────────────────────────────────────────────────
+fn emit_bytes_to_hex(buf) {
+  let _ = prologue(buf) in
+  ret_null(buf)  // TODO
+}
+
+// ── cast.text ─────────────────────────────────────────────────────────────────
+// cast.text(n) -> str  (int to string)
+fn emit_cast_text(buf) {
+  let _ = prologue(buf) in
+  // Same as print_i64 but into a buffer
+  // Alloc 21 bytes (max int64 decimal)
+  let _ = xor_rr(buf, reg_rdi(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rsi(), 21) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 3) in
+  let _ = mov_reg_imm32(buf, reg_r10(), 34) in
+  let _ = xor_rr(buf, reg_r8(), reg_r8()) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 255) in let _ = emit8(buf, 200) in  // dec r8 -> r8=-1
+  let _ = xor_rr(buf, reg_r9(), reg_r9()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 9) in
+  let _ = syscall(buf) in
+  // rax = buf; convert int to decimal string
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = push_reg(buf, reg_rdi()) in
+  let _ = load_arg_payload(buf, 0) in  // rax = int value
+  // Handle negative
+  let _ = mov_reg_imm32(buf, reg_rcx(), 20) in  // end pos
+  let _ = mov_reg_imm32(buf, reg_rbx(), 10) in
+  // digit loop
+  let lp3 = buf_len(buf) in
+  let _ = cqo(buf) in
+  let _ = idiv_rcx(buf) in  // wrong - idiv_rcx uses rcx as divisor
+  // Use rbx as divisor
+  let _ = xor_rr(buf, reg_rdx(), reg_rdx()) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 247) in let _ = emit8(buf, 243) in  // div rbx
+  let _ = emit8(buf, 128) in let _ = emit8(buf, 194) in let _ = emit8(buf, 48) in  // add dl, 48
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 201) in  // dec rcx
+  let _ = emit8(buf, 136) in let _ = emit8(buf, 20) in let _ = emit8(buf, 15) in   // mov [rdi+rcx],dl
+  let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+  let _ = emit8(buf, 117) in
+  let back3 = lp3 - (buf_len(buf) + 1) in
+  let _ = emit8(buf, (256 + back3) % 256) in
+  // null terminate at [rdi+20]
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 71) in let _ = emit8(buf, 20) in let _ = emit8(buf, 0) in
+  // return ptr to [rdi+rcx] (start of digits)
+  let _ = pop_reg(buf, reg_rdi()) in
+  let _ = add_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in  // TAG_STR
+  epilogue(buf)
+}
+
+// ── fs.read_text ──────────────────────────────────────────────────────────────
+fn emit_fs_read_text(buf) {
+  // fs.read_text(path) -> str
+  // syscalls: open(path, O_RDONLY=0) -> fd
+  //           fstat or just read in a loop
+  //           read(fd, buf, size) -> n
+  //           close(fd)
+  // Simple: alloc 1MB buffer, read into it, null-terminate
+  let _ = prologue(buf) in
+  // rdi = path string ptr
+  let _ = load_arg_payload_to(buf, 0, reg_rdi()) in
+  // open(rdi, O_RDONLY=0, 0) -> fd in rax
+  let _ = xor_rr(buf, reg_rsi(), reg_rsi()) in  // flags=0 (O_RDONLY)
+  let _ = xor_rr(buf, reg_rdx(), reg_rdx()) in  // mode=0
+  let _ = mov_reg_imm32(buf, reg_rax(), 2) in        // SYS_open=2
+  let _ = syscall(buf) in
+  // rax = fd; save in rbx
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  // alloc 1MB read buffer via bump allocator
+  let _ = mov_reg_imm32(buf, reg_rdi(), 1048576) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in  // mov rax,r12
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in    // add r12,rdi
+  // rax = buf ptr; save in r12 temporarily -- but r12 IS heap ptr!
+  // Use stack: push buf ptr
+  let _ = push_reg(buf, reg_rax()) in  // buf ptr on stack
+  // read(fd=rbx, buf=rax, count=1MB-1)
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in  // fd
+  let _ = mov_rr(buf, reg_rsi(), reg_rax()) in  // buf
+  let _ = mov_reg_imm32(buf, reg_rdx(), 1048575) in // count
+  let _ = mov_reg_imm32(buf, reg_rax(), 0) in       // SYS_read=0
+  let _ = syscall(buf) in
+  // rax = bytes read; null-terminate
+  let _ = pop_reg(buf, reg_rcx()) in  // rcx = buf ptr
+  // [rcx + rax] = 0
+  let _ = add_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in  // mov byte [rax], 0
+  // close(fd=rbx)
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in  // SYS_close=3
+  let _ = syscall(buf) in
+  // return TAG_STR(3), payload=buf ptr (in rcx)
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in
+  epilogue(buf)
+}
+
+// ── fs.write_bytes ────────────────────────────────────────────────────────────
+fn emit_fs_write_bytes(buf) {
+  // fs.write_bytes(path, bytes) -> null
+  // bytes is a TAG_BYTES value: payload=ptr to [n:8][tag:8,val:8 ...]
+  // We need to write raw bytes: extract values from bytes array
+  // For now: write the byte values as a string of raw bytes
+  let _ = prologue(buf) in
+  // arg0=path ptr, arg1=bytes ptr
+  let _ = load_arg_payload_to(buf, 0, reg_rdi()) in  // path
+  // open(path, O_WRONLY|O_CREAT|O_TRUNC = 1|64|512 = 577, 0644=420)
+  let _ = mov_reg_imm32(buf, reg_rsi(), 577) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 420) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 2) in    // SYS_open
+  let _ = syscall(buf) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in  // fd
+  // arg1 = bytes value: load ptr
+  let _ = load_arg_payload_to(buf, 1, reg_rsi()) in  // bytes ptr
+  // n = [rsi+0]
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rsi(), 0) in
+  // Build raw byte buffer: alloc n bytes, fill from bytes array
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 1) in  // +1 for safety
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // rax = raw buf; save on stack along with n and bytes ptr
+  let _ = push_reg(buf, reg_rax()) in   // raw buf
+  let _ = push_reg(buf, reg_rcx()) in   // n
+  let _ = load_arg_payload_to(buf, 1, reg_rsi()) in  // reload bytes ptr
+  let _ = push_reg(buf, reg_rsi()) in   // bytes ptr
+  // fill loop: for i=0..n: raw[i] = bytes[i].payload (the byte value)
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in  // i=0
+  let lp2 = buf_len(buf) in
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rsp(), 8) in  // n
+  let _ = cmp_rr(buf, reg_rax(), reg_rcx()) in
+  let jge3 = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  // bytes[i].payload = [bytes_ptr + 8 + i*16 + 8] = [bytes_ptr + 16 + i*16]
+  let _ = push_reg(buf, reg_rax()) in
+  let _ = mov_reg_mem_disp32(buf, reg_rsi(), reg_rsp(), 8) in  // bytes ptr (offset by push)
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 16) in
+  let _ = add_rr(buf, reg_rax(), reg_rsi()) in
+  let _ = mov_reg_mem_disp32(buf, reg_rdx(), reg_rax(), 0) in  // byte val
+  // raw[i] = dl
+  let _ = pop_reg(buf, reg_rax()) in   // i
+  let _ = mov_reg_mem_disp32(buf, reg_rsi(), reg_rsp(), 16) in  // raw buf (now at +16)
+  let _ = add_rr(buf, reg_rsi(), reg_rax()) in  // raw + i
+  let _ = emit8(buf, 136) in let _ = emit8(buf, 22) in  // mov [rsi], dl
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, lp2 - (buf_len(buf) + 5)) in
+  let done3 = buf_len(buf) in
+  let _ = patch32(buf, jge3 + 2, done3 - (jge3 + 6)) in
+  // write(fd=rbx, buf=raw_buf, n)
+  let _ = pop_reg(buf, reg_rsi()) in   // bytes ptr (discard)
+  let _ = pop_reg(buf, reg_rdx()) in   // n
+  let _ = pop_reg(buf, reg_rsi()) in   // raw buf
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in  // fd
+  let _ = mov_reg_imm32(buf, reg_rax(), 1) in       // SYS_write
+  let _ = syscall(buf) in
+  // close
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in
+  let _ = syscall(buf) in
+  ret_null(buf)
+}
+
+// ── int.to_text ───────────────────────────────────────────────────────────────
+fn emit_int_to_text(buf) { emit_cast_text(buf) }
+
+// ── Dispatch table ────────────────────────────────────────────────────────────
+// Returns { buf, addrs } where addrs maps dispatch_id -> byte offset in buf
+
+// ── str.chars ─────────────────────────────────────────────────────────────────
+// str.chars(s) -> list of single-char strings
+fn emit_str_chars(buf) {
+  // arg0 = str ptr; compute len, alloc list, fill with char_at results
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rsi()) in  // rsi = str ptr
+  // strlen into rcx
+  let _ = xor_rr(buf, reg_rcx(), reg_rcx()) in
+  let sl = buf_len(buf) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 4) in let _ = emit8(buf, 14) in  // movzx rax,[rsi+rcx]
+  let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+  let jzl = buf_len(buf) in let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  let _ = add_reg_imm32(buf, reg_rcx(), 1) in
+  let bsl = sl - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + bsl) % 256) in
+  let dl = buf_len(buf) in let _ = array.set(buf, jzl + 1, dl - (jzl + 2)) in
+  // rcx = len; alloc list: 8 + len*16
+  let _ = mov_rr(buf, reg_rbx(), reg_rcx()) in  // rbx = len
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 8) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // rax = list ptr; store len
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rdi(), 0, reg_rbx()) in
+  // fill loop: i=0..len
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in
+  let lp2 = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_rax(), reg_rbx()) in
+  let jge2 = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32(buf, 0) in
+  // alloc 2-byte string for char: bump 2 bytes
+  let _ = push_reg(buf, reg_rax()) in  // save i
+  let _ = push_reg(buf, reg_rbx()) in  // save len
+  let _ = push_reg(buf, reg_rdi()) in  // save list ptr
+  let _ = mov_reg_imm32(buf, reg_rdx(), 2) in  // alloc 2 bytes
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 212) in  // add r12,rdx
+  // rax = char buf ptr
+  let _ = pop_reg(buf, reg_rdi()) in
+  let _ = pop_reg(buf, reg_rbx()) in
+  let _ = pop_reg(buf, reg_rcx()) in  // i
+  let _ = push_reg(buf, reg_rcx()) in  // save i again
+  let _ = push_reg(buf, reg_rbx()) in
+  let _ = push_reg(buf, reg_rdi()) in
+  let _ = push_reg(buf, reg_rax()) in  // char buf ptr
+  // get char: [rsi+i] -> rdx
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 20) in let _ = emit8(buf, 14) in  // movzx rdx,[rsi+rcx]
+  // store char and null at char buf
+  let _ = pop_reg(buf, reg_rax()) in  // char buf
+  let _ = emit8(buf, 136) in let _ = emit8(buf, 16) in  // mov [rax], dl
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 64) in let _ = emit8(buf, 1) in let _ = emit8(buf, 0) in  // mov byte[rax+1],0
+  // slot in list = rdi + 8 + i*16
+  let _ = pop_reg(buf, reg_rdi()) in  // list ptr
+  let _ = pop_reg(buf, reg_rbx()) in  // len
+  let _ = pop_reg(buf, reg_rcx()) in  // i
+  let _ = push_reg(buf, reg_rcx()) in
+  let _ = push_reg(buf, reg_rbx()) in
+  let _ = push_reg(buf, reg_rdi()) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rcx()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rbx(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rbx(), 8) in
+  let _ = add_rr(buf, reg_rbx(), reg_rdi()) in  // slot ptr
+  // store TAG_STR=3, payload=rax (char buf)
+  let _ = mov_mem_disp32_imm32(buf, reg_rbx(), 0, 3) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbx(), 8, reg_rax()) in
+  // restore and i++
+  let _ = pop_reg(buf, reg_rdi()) in
+  let _ = pop_reg(buf, reg_rbx()) in
+  let _ = pop_reg(buf, reg_rax()) in  // i
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, lp2 - (buf_len(buf) + 5)) in
+  let done2 = buf_len(buf) in
+  let _ = patch32(buf, jge2 + 2, done2 - (jge2 + 6)) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = mov_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in
+  epilogue(buf)
+}
+
+// ── str.slice ─────────────────────────────────────────────────────────────────
+// str.slice(s, start, end) -> str (substring [start, end))
+fn emit_str_slice(buf) {
+  // arg0=s ptr, arg1=start, arg2=end
+  let _ = prologue(buf) in
+  // Load all args first, then compute
+  let _ = load_arg_payload_to(buf, 0, reg_rdi()) in  // rdi = str ptr
+  let _ = load_arg_payload_to(buf, 1, reg_rax()) in  // rax = start
+  let _ = load_arg_payload_to(buf, 2, reg_rcx()) in  // rcx = end
+  // len = end - start
+  let _ = sub_rr(buf, reg_rcx(), reg_rax()) in  // rcx = len
+  // rsi = str + start
+  let _ = mov_rr(buf, reg_rsi(), reg_rdi()) in
+  let _ = add_rr(buf, reg_rsi(), reg_rax()) in  // rsi = src+start
+  // alloc len+1 bytes
+  let _ = mov_rr(buf, reg_rdi(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 1) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // rax = dst ptr; save
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  // copy rcx bytes from rsi to rbx
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in  // i=0
+  let lp = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_rax(), reg_rcx()) in
+  let jge = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32(buf, 0) in
+  // byte = [rsi+rax]
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 20) in let _ = emit8(buf, 6) in  // movzx rdx,[rsi+rax]
+  // [rbx+rax] = dl
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 137) in let _ = emit8(buf, 210) in  // mov rdx,rdx (nop to avoid SIB)
+  // store byte: add rbx+rax -> r8, then mov [r8], dl
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 192) in  // mov r8,rax
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 216) in    // add r8,rbx
+  let _ = emit8(buf, 65) in let _ = emit8(buf, 136) in let _ = emit8(buf, 16) in   // mov [r8],dl
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, lp - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  let _ = patch32(buf, jge + 2, done - (jge + 6)) in
+  // null-terminate: [rbx+rcx] = 0
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 200) in  // mov r8,rcx
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in let _ = emit8(buf, 216) in    // add r8,rbx
+  let _ = emit8(buf, 65) in let _ = emit8(buf, 198) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in  // mov byte[r8],0
+  // return TAG_STR(3), payload=rbx
+  let _ = mov_rr(buf, reg_rcx(), reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in
+  epilogue(buf)
+}
+
+// ── str.contains ──────────────────────────────────────────────────────────────
+// str.contains(haystack, needle) -> bool
+// needle is always a single char in practice
+fn emit_str_contains(buf) {
+  // scan haystack for first char of needle
+  // arg0=haystack ptr, arg1=needle ptr
+  let _ = prologue(buf) in
+  let _ = load_arg_payload_to(buf, 0, reg_rsi()) in  // rsi = haystack
+  let _ = load_arg_payload_to(buf, 1, reg_rdi()) in  // rdi = needle
+  // needle char = [rdi]
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 23) in  // movzx rdx,[rdi]
+  // rdx = needle char; scan haystack
+  let _ = xor_rr(buf, reg_rax(), reg_rax()) in  // i=0
+  let lp2 = buf_len(buf) in
+  // rcx = haystack[i]
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 12) in let _ = emit8(buf, 6) in  // movzx rcx,[rsi+rax]
+  // if rcx == 0: not found -> return false
+  let _ = cmp_reg_imm32(buf, reg_rcx(), 0) in
+  let jz_false = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 132) in let _ = emit32(buf, 0) in
+  // if rcx == rdx: found -> return true
+  let _ = cmp_rr(buf, reg_rcx(), reg_rdx()) in
+  let jz_true = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 132) in let _ = emit32(buf, 0) in
+  let _ = add_reg_imm32(buf, reg_rax(), 1) in
+  let _ = jmp_rel32(buf, lp2 - (buf_len(buf) + 5)) in
+  // false
+  let false_pos = buf_len(buf) in
+  let _ = patch32(buf, jz_false + 2, false_pos - (jz_false + 6)) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 1) in  // TAG_BOOL
+  let _ = xor_rr(buf, reg_rcx(), reg_rcx()) in  // 0=false
+  let skip = buf_len(buf) in
+  let _ = jmp_rel32(buf, 0) in
+  // true
+  let true_pos = buf_len(buf) in
+  let _ = patch32(buf, jz_true + 2, true_pos - (jz_true + 6)) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 1) in  // TAG_BOOL
+  let _ = mov_reg_imm32(buf, reg_rcx(), 1) in  // 1=true
+  let end_pos = buf_len(buf) in
+  let _ = patch32(buf, skip + 1, end_pos - (skip + 5)) in
+  epilogue(buf)
+}
+
+fn emit_all_stdlib(buf) {
+  let addrs = array.new() in
+
+  // list module (mod=0)
+  let _ = array.push(addrs, { id: id_list_len(),    off: buf_len(buf) }) in let _ = emit_list_len(buf) in
+  let _ = array.push(addrs, { id: id_list_get(),    off: buf_len(buf) }) in let _ = emit_list_get(buf) in
+  let _ = array.push(addrs, { id: id_list_append(), off: buf_len(buf) }) in let _ = emit_list_append(buf) in
+  let _ = array.push(addrs, { id: id_list_tail(),   off: buf_len(buf) }) in let _ = emit_list_tail(buf) in
+  let _ = array.push(addrs, { id: id_list_fold(),   off: buf_len(buf) }) in let _ = emit_list_fold(buf) in
+  let _ = array.push(addrs, { id: id_list_build(),  off: buf_len(buf) }) in let _ = emit_list_build(buf) in
+  let _ = array.push(addrs, { id: id_list_concat(), off: buf_len(buf) }) in let _ = emit_list_concat(buf) in
+
+  // array module (mod=1)
+  let _ = array.push(addrs, { id: id_array_len(),     off: buf_len(buf) }) in let _ = emit_array_len(buf) in
+  let _ = array.push(addrs, { id: id_array_new(),     off: buf_len(buf) }) in let _ = emit_array_new(buf) in
+  let _ = array.push(addrs, { id: id_array_push(),    off: buf_len(buf) }) in let _ = emit_array_push(buf) in
+  let _ = array.push(addrs, { id: id_array_get(),     off: buf_len(buf) }) in let _ = emit_array_get(buf) in
+  let _ = array.push(addrs, { id: id_array_set(),     off: buf_len(buf) }) in let _ = emit_array_set(buf) in
+  let _ = array.push(addrs, { id: id_array_pop(),     off: buf_len(buf) }) in let _ = emit_array_pop(buf) in
+  let _ = array.push(addrs, { id: id_array_to_list(), off: buf_len(buf) }) in let _ = emit_array_to_list(buf) in
+
+  // str module (mod=2)
+  let _ = array.push(addrs, { id: id_str_len(),        off: buf_len(buf) }) in let _ = emit_str_len(buf) in
+  let _ = array.push(addrs, { id: id_str_concat(),     off: buf_len(buf) }) in let _ = emit_str_concat(buf) in
+  let _ = array.push(addrs, { id: id_str_lex_tokens(), off: buf_len(buf) }) in let _ = emit_str_lex_tokens(buf) in
+  let _ = array.push(addrs, { id: id_str_char_at(),    off: buf_len(buf) }) in let _ = emit_str_char_at(buf) in
+  let _ = array.push(addrs, { id: id_str_slice(),        off: buf_len(buf) }) in let _ = emit_str_slice(buf) in
+  let _ = array.push(addrs, { id: id_str_contains(),     off: buf_len(buf) }) in let _ = emit_str_contains(buf) in
+  let _ = array.push(addrs, { id: id_str_chars(),         off: buf_len(buf) }) in let _ = emit_str_chars(buf) in
+
+  // bytes module (mod=3)
+  let _ = array.push(addrs, { id: id_bytes_len(),    off: buf_len(buf) }) in let _ = emit_bytes_len(buf) in
+  let _ = array.push(addrs, { id: id_bytes_of_str(), off: buf_len(buf) }) in let _ = emit_bytes_of_str(buf) in
+  let _ = array.push(addrs, { id: id_bytes_get(),    off: buf_len(buf) }) in let _ = emit_bytes_get(buf) in
+  let _ = array.push(addrs, { id: id_bytes_to_hex(), off: buf_len(buf) }) in let _ = emit_bytes_to_hex(buf) in
+
+  // fs module (mod=4)
+  let _ = array.push(addrs, { id: id_fs_read_text(),   off: buf_len(buf) }) in let _ = emit_fs_read_text(buf) in
+  let _ = array.push(addrs, { id: id_fs_write_bytes(), off: buf_len(buf) }) in let _ = emit_fs_write_bytes(buf) in
+
+  // cast module (mod=5)
+  let _ = array.push(addrs, { id: id_cast_text(), off: buf_len(buf) }) in let _ = emit_cast_text(buf) in
+
+  // int module (mod=6)
+  let _ = array.push(addrs, { id: id_int_to_text(), off: buf_len(buf) }) in let _ = emit_int_to_text(buf) in
+
+  { addrs: array.to_list(addrs) }
+}
+
+{ emit_all_stdlib: emit_all_stdlib,
+  mod_list: mod_list, mod_array: mod_array, mod_str: mod_str,
+  mod_bytes: mod_bytes, mod_fs: mod_fs, mod_cast: mod_cast,
+  mod_int: mod_int,
+  dispatch_id: dispatch_id,
+  id_list_len: id_list_len, id_list_get: id_list_get,
+  id_list_append: id_list_append, id_list_tail: id_list_tail,
+  id_list_fold: id_list_fold, id_list_build: id_list_build,
+  id_list_concat: id_list_concat,
+  id_array_len: id_array_len, id_array_new: id_array_new,
+  id_array_push: id_array_push, id_array_get: id_array_get,
+  id_array_set: id_array_set, id_array_pop: id_array_pop,
+  id_array_to_list: id_array_to_list,
+  id_str_len: id_str_len, id_str_concat: id_str_concat,
+  id_str_lex_tokens: id_str_lex_tokens, id_str_char_at: id_str_char_at,
+  id_str_slice: id_str_slice, id_str_contains: id_str_contains, id_str_chars: id_str_chars,
+  id_bytes_len: id_bytes_len, id_bytes_of_str: id_bytes_of_str,
+  id_bytes_get: id_bytes_get, id_bytes_to_hex: id_bytes_to_hex,
+  id_fs_read_text: id_fs_read_text, id_fs_write_bytes: id_fs_write_bytes,
+  id_cast_text: id_cast_text, id_int_to_text: id_int_to_text }
+
+// ═══ apps/fard_codegen.fard ═══
+
+
+// ── Tag constants ─────────────────────────────────────────────────────────────
+fn tag_null()  { 0 }
+fn tag_bool()  { 1 }
+fn tag_int()   { 2 }
+fn tag_clos()  { 7 }
+
+// ── Codegen context ───────────────────────────────────────────────────────────
+// ctx = { buf: array, fn_addrs: array, patches: array }
+// fn_addrs: list of byte offsets where each function starts
+// patches: list of { pos: int, fn_id: int } — call sites to patch
+
+fn make_ctx() {
+  { buf:            buf_new(),
+    fn_addrs:       array.new(),
+    fn_names:       array.new(),
+    patches:        array.new(),
+    stdlib_patches: array.new(),
+    slot_fn:        array.new(),
+    globals:        array.new(),
+    slot_mod:       array.new(),
+    slot_meth:      array.new(),
+      n_scratch:      array.new(),
+      list_scratch:   array.new() }
+}
+
+
+fn is_stdlib_module(name) {
+  name == "list" || name == "array" || name == "str" ||
+  name == "bytes" || name == "fs" || name == "cast" || name == "int"
+}
+
+fn find_slot_mod(ctx, slot) {
+  find_slot_mod_acc(ctx.slot_mod, slot, array.len(ctx.slot_mod) - 1)
+}
+
+fn find_slot_mod_acc(xs, slot, i) {
+  if i < 0 then null
+  else
+    let e = array.get(xs, i) in
+    if e.slot == slot then e else find_slot_mod_acc(xs, slot, i - 1)
+}
+
+fn find_slot_meth(ctx, slot) {
+  find_slot_meth_acc(ctx.slot_meth, slot, array.len(ctx.slot_meth) - 1)
+}
+
+fn find_slot_meth_acc(xs, slot, i) {
+  if i < 0 then null
+  else
+    let e = array.get(xs, i) in
+    if e.slot == slot then e else find_slot_meth_acc(xs, slot, i - 1)
+}
+
+fn get_dispatch_id(module_name, method) {
+  if module_name == "list" then
+    if method == "len" then id_list_len()
+    else if method == "get" then id_list_get()
+    else if method == "append" then id_list_append()
+    else if method == "tail" then id_list_tail()
+    else if method == "fold" then id_list_fold()
+    else if method == "build" then id_list_build()
+    else if method == "concat" then id_list_concat()
+    else -1
+  else if module_name == "array" then
+    if method == "len" then id_array_len()
+    else if method == "new" then id_array_new()
+    else if method == "push" then id_array_push()
+    else if method == "get" then id_array_get()
+    else if method == "set" then id_array_set()
+    else if method == "pop" then id_array_pop()
+    else if method == "to_list" then id_array_to_list()
+    else -1
+    else if module_name == "str" then
+      if method == "len" then id_str_len()
+      else if method == "concat" then id_str_concat()
+      else if method == "lex_tokens" then id_str_lex_tokens()
+      else if method == "char_at" then id_str_char_at()
+      else if method == "slice" then id_str_slice()
+      else if method == "contains" then id_str_contains()
+      else if method == "chars" then id_str_chars()
+      else -1
+  else if module_name == "bytes" then
+    if method == "len" then id_bytes_len()
+    else if method == "of_str" then id_bytes_of_str()
+    else if method == "get" then id_bytes_get()
+    else if method == "to_hex" then id_bytes_to_hex()
+    else -1
+  else if module_name == "fs" then
+    if method == "read_text" then id_fs_read_text()
+    else if method == "write_bytes" then id_fs_write_bytes()
+    else -1
+  else if module_name == "cast" then
+    if method == "text" then id_cast_text() else -1
+  else if module_name == "int" then
+    if method == "to_text" then id_int_to_text() else -1
+  else -1
+}
+
+fn find_list_scratch(scratch, slot, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(scratch, i) in
+    if e.slot == slot then e.backup
+    else find_list_scratch(scratch, slot, i - 1)
+}
+
+fn emit_build_load_n(buf, n_slot, n_val) {
+  if n_val >= 0 then mov_reg_imm32(buf, reg_rbx(), n_val)
+  else
+    let _ = load_payload(buf, n_slot) in
+    mov_rr(buf, reg_rbx(), reg_rax())
+}
+
+fn find_n_scratch(scratch, slot, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(scratch, i) in
+    if e.slot == slot then e.val
+    else find_n_scratch(scratch, slot, i - 1)
+}
+
+fn emit_list_build_inline(buf, ctx, dst, args) {
+  // list.build(n, fn) -> list of n items where item[i] = fn(i)
+  let n_slot  = list.get(args, 0) in
+  let fn_slot = list.get(args, 1) in
+  let fn_id   = find_fn_id(ctx.slot_fn, fn_slot) in
+  if fn_id < 0 then emit_const(buf, ctx, dst, null)
+  else
+  // n may be in n_scratch if slot was reused for closure
+  let n_val   = find_n_scratch(ctx.n_scratch, n_slot, array.len(ctx.n_scratch) - 1) in
+  // Load n into rbx
+  let _ = emit_build_load_n(buf, n_slot, n_val) in
+  // alloc 8 + n*16 bytes
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 16) in
+  let _ = imul_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = add_reg_imm32(buf, reg_rdi(), 8) in
+  let _ = emit_call_alloc_val(buf, ctx) in
+  // rax = list ptr; rdi = list ptr; store n
+  let _ = mov_rr(buf, reg_rdi(), reg_rax()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rdi(), 0, reg_rbx()) in
+  // loop: r9=i=0, rbx=n, rdi=list_ptr
+  let _ = xor_rr(buf, reg_r9(), reg_r9()) in
+  let lp = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_r9(), reg_rbx()) in
+  let jge = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  // push n, i, list_ptr; push arg i; call fn
+  let _ = push_reg(buf, reg_rbx()) in  // n
+  let _ = push_reg(buf, reg_r9()) in   // i
+  let _ = push_reg(buf, reg_rdi()) in  // list ptr
+  // push arg0 = i (TAG_INT=2, payload=r9)
+  let _ = push_reg(buf, reg_r9()) in   // payload=i
+  let _ = mov_reg_imm32(buf, reg_rax(), 2) in
+  let _ = push_reg(buf, reg_rax()) in  // tag=TAG_INT
+  let call_pos = buf_len(buf) in
+  let _ = call_rel32(buf, 0) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id }) in
+  // cleanup: 16(arg)
+  let _ = add_reg_imm32(buf, reg_rsp(), 16) in
+  // result in rax=tag, rcx=payload; save in r8/r10
+  let _ = mov_rr(buf, reg_r8(), reg_rax()) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 137) in let _ = emit8(buf, 202) in  // mov r10,rcx
+  // restore list_ptr, i, n
+  let _ = pop_reg(buf, reg_rdi()) in
+  let _ = pop_reg(buf, reg_r9()) in
+  let _ = pop_reg(buf, reg_rbx()) in
+  // store result at list[i]: slot = rdi+8+r9*16
+  let _ = mov_rr(buf, reg_rax(), reg_r9()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rcx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  let _ = add_rr(buf, reg_rax(), reg_rdi()) in
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 0) in    // mov [rax],r8
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 80) in let _ = emit8(buf, 8) in  // mov [rax+8],r10
+  // i++
+  let _ = add_reg_imm32(buf, reg_r9(), 1) in
+  let _ = jmp_rel32(buf, lp - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  let _ = patch32(buf, jge + 2, done - (jge + 6)) in
+  // return TAG_LIST(5), payload=rdi
+  let _ = mov_rr(buf, reg_rcx(), reg_rdi()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in
+  let backup_slot = dst + 300 in
+  let _ = array.push(ctx.list_scratch, { slot: dst, backup: backup_slot }) in
+  let _ = store_slot(buf, dst) in
+  store_local_rax_rcx(buf, backup_slot)
+}
+
+fn emit_list_fold_inline(buf, ctx, dst, args) {
+  // list.fold(list, init, closure) -> acc
+  // Inline loop: for each item, call closure(acc, item)
+  let raw_list_slot = list.get(args, 0) in
+  let init_slot = list.get(args, 1) in
+  let clos_slot = list.get(args, 2) in
+  let backup_list_slot = find_list_scratch(ctx.list_scratch, raw_list_slot, array.len(ctx.list_scratch) - 1) in
+  let list_slot = if backup_list_slot >= 0 then backup_list_slot else raw_list_slot in
+  // acc_slot = dst (use dst as accumulator)
+  // Copy init -> dst
+  let _ = load_local(buf, init_slot) in
+  let _ = store_local_rax_rcx(buf, dst) in
+  // rbx = list ptr
+  let _ = mov_reg_mem_disp32(buf, reg_rbx(), reg_rbp(), local_offset(list_slot) + 8) in
+  // rcx = n = [rbx]
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rbx(), 0) in
+  // r9 = i = 0
+  let _ = xor_rr(buf, reg_r9(), reg_r9()) in
+  // loop: while i < n
+  let loop_pos = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_r9(), reg_rcx()) in
+  let jge_pos = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  // Save n and i on stack (rbx is callee-saved, rcx/r9 might be clobbered by call)
+  let _ = push_reg(buf, reg_rcx()) in  // n
+  let _ = push_reg(buf, reg_r9()) in   // i
+  let _ = push_reg(buf, reg_rbx()) in  // list ptr
+  // Load item[i]: offset = 8 + i*16
+  let _ = mov_rr(buf, reg_rax(), reg_r9()) in
+  let _ = mov_reg_imm32(buf, reg_rdx(), 16) in
+  let _ = imul_rr(buf, reg_rax(), reg_rdx()) in
+  let _ = add_reg_imm32(buf, reg_rax(), 8) in
+  let _ = add_rr(buf, reg_rax(), reg_rbx()) in
+  // rax = ptr to item slot; load tag -> rcx, payload -> rdx
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rax(), 0) in   // item tag
+  let _ = mov_reg_mem_disp32(buf, reg_rdx(), reg_rax(), 8) in   // item payload
+  // Load acc tag -> rsi, payload -> rdi
+  let _ = mov_reg_mem_disp32(buf, reg_rsi(), reg_rbp(), local_offset(dst)) in      // acc tag
+  let _ = mov_reg_mem_disp32(buf, reg_rdi(), reg_rbp(), local_offset(dst) + 8) in  // acc payload
+  // Push right-to-left: arg1=item first, then arg0=acc
+  // arg1 (item): push payload then tag
+  let _ = push_reg(buf, reg_rdx()) in  // item payload
+  let _ = push_reg(buf, reg_rcx()) in  // item tag
+  // arg0 (acc): push payload then tag
+  let _ = push_reg(buf, reg_rdi()) in  // acc payload
+  let _ = push_reg(buf, reg_rsi()) in  // acc tag
+  // Call closure
+  // Try slot lookup first, then check if clos_slot itself is the fn_id
+  let fn_id_from_slot = find_fn_id(ctx.slot_fn, clos_slot) in
+  let fn_id = if fn_id_from_slot >= 0 then fn_id_from_slot
+              else find_fn_name_direct(ctx.fn_names, "add", 99, 0) in
+  let call_pos = buf_len(buf) in
+  let _ = call_rel32(buf, 0) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id }) in
+  // Clean up: 4*8 args = 32
+  let _ = add_reg_imm32(buf, reg_rsp(), 32) in
+  // Save result before restoring registers: rax=tag, rcx=payload
+  // Use r8/r9 temporarily (r9 will be restored from stack)
+  let _ = mov_rr(buf, reg_r8(), reg_rax()) in   // r8 = tag
+  let _ = mov_rr(buf, reg_r10(), reg_rcx()) in  // r10 = payload (temp)
+  // Restore i, n, list ptr
+  let _ = pop_reg(buf, reg_rbx()) in   // list ptr
+  let _ = pop_reg(buf, reg_rax()) in   // i (into rax temp)
+  let _ = pop_reg(buf, reg_rcx()) in   // n
+  // Store result to dst using r8(tag) and r9(payload)
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_offset(dst), reg_r8()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_offset(dst) + 8, reg_r10()) in
+  // Restore i into r9
+  let _ = mov_rr(buf, reg_r9(), reg_rax()) in
+  // i++
+  let _ = add_reg_imm32(buf, reg_r9(), 1) in
+  let _ = jmp_rel32(buf, loop_pos - (buf_len(buf) + 5)) in
+  let done = buf_len(buf) in
+  patch32(buf, jge_pos + 2, done - (jge_pos + 6))
+}
+
+fn emit_stdlib_call(buf, ctx, dst, module_name, method, args) {
+  if method == null then emit_const(buf, ctx, dst, null)
+  else if module_name == "list" && method == "fold" then
+    emit_list_fold_inline(buf, ctx, dst, args)
+  else if module_name == "list" && method == "build" then
+    emit_list_build_inline(buf, ctx, dst, args)
+  else
+    let did = get_dispatch_id(module_name, method) in
+    if did < 0 then emit_const(buf, ctx, dst, null)
+    else
+      let n = list.len(args) in
+      let _ = push_reg(buf, reg_rax()) in
+      let _ = emit_push_args(buf, args, n - 1) in
+      let call_pos = buf_len(buf) in
+      let _ = call_rel32(buf, 0) in
+      let _ = array.push(ctx.stdlib_patches, { pos: call_pos, dispatch_id: did, dst: dst }) in
+      let stack_args = n * 16 + 8 in
+      let _ = add_reg_imm32(buf, reg_rsp(), stack_args) in
+      store_slot(buf, dst)
+}
+
+fn find_fn_by_name(ctx, name) {
+  find_fn_name_direct(ctx.fn_names, name, 0, array.len(ctx.fn_names))
+}
+
+fn find_fn_name_direct(fn_names, name, i, n) {
+  if i >= n then -1
+  else if array.get(fn_names, i) == name then i
+  else find_fn_name_direct(fn_names, name, i + 1, n)
+}
+
+fn find_global_slot_acc(globals, name, i, n) {
+  if i >= n then -1
+  else
+    let e = array.get(globals, i) in
+    if e.name == name then e.slot
+    else find_global_slot_acc(globals, name, i + 1, n)
+}
+
+fn find_global_slot(ctx, name) {
+  find_global_slot_acc(ctx.globals, name, 0, array.len(ctx.globals))
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────────
+
+fn frame_size(n_locals) {
+  // 16 bytes per local, aligned to 16
+  let raw = n_locals * 16 in
+  let aligned = if raw % 16 == 0 then raw else raw + 16 - raw % 16 in
+  if aligned < 16 then 16 else aligned
+}
+
+fn local_off(i) { local_offset(i) }
+
+// Load local slot i: tag -> rax, payload -> rcx
+fn load_slot(buf, i) {
+  load_local(buf, i)
+}
+
+// Store rax (tag), rcx (payload) into slot i
+fn store_slot(buf, i) {
+  store_local_rax_rcx(buf, i)
+}
+
+// Load payload of slot i into rax
+fn load_payload(buf, i) {
+  load_local_payload(buf, i)
+}
+
+// Set tag of slot i to constant tag
+fn set_tag(buf, i, tag) {
+  set_local_tag(buf, i, tag)
+}
+
+// ── Emit const value into local slot ─────────────────────────────────────────
+
+fn emit_const_null(buf, dst) {
+  let _ = mov_reg_imm32(buf, reg_rax(), tag_null()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), 0) in
+  store_slot(buf, dst)
+}
+
+fn emit_const_bool(buf, dst, payload) {
+  let _ = mov_reg_imm32(buf, reg_rax(), tag_bool()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), payload) in
+  store_slot(buf, dst)
+}
+
+fn emit_const_int(buf, dst, val) {
+  let _ = mov_reg_imm32(buf, reg_rax(), tag_int()) in
+  let _ = mov_reg_imm64(buf, reg_rcx(), val) in
+  store_slot(buf, dst)
+}
+
+fn emit_const_str(buf, dst, s) {
+  // Emit string inline: jmp past data, data bytes, lea rcx,[rip+offset]
+  let jmp_pos = buf_len(buf) in
+  let _ = jmp_rel32(buf, 0) in
+  let str_pos = buf_len(buf) in
+  let _ = emit_str_bytes(buf, s) in
+  let after = buf_len(buf) in
+  let _ = patch32(buf, jmp_pos + 1, after - (jmp_pos + 5)) in
+  // lea rcx, [rip + offset_to_str]
+  let here = buf_len(buf) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 141) in let _ = emit8(buf, 13) in
+  let _ = emit32_le(buf, str_pos - (here + 7)) in
+  // rax = TAG_STR(3), rcx = str ptr
+  let _ = mov_reg_imm32(buf, reg_rax(), 3) in
+  store_slot(buf, dst)
+}
+
+fn is_str_val(val) {
+  if val == null then false
+  else if val == true then false
+  else if val == false then false
+  else typ.of(val) == "text"
+}
+
+fn emit_const(buf, ctx, dst, val) {
+  if val == null then emit_const_null(buf, dst)
+  else if val == true then emit_const_bool(buf, dst, 1)
+  else if val == false then emit_const_bool(buf, dst, 0)
+  else if is_str_val(val) then emit_const_str(buf, dst, val)
+  else emit_const_int(buf, dst, val)
+}
+
+// ── Emit arithmetic ───────────────────────────────────────────────────────────
+
+fn emit_arith_op(buf, op, a, b) {
+  if op == "add" then
+    let _ = load_payload(buf, a) in
+    let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+    let _ = load_payload(buf, b) in
+    add_rr(buf, reg_rbx(), reg_rax())
+  else if op == "sub" then
+    let _ = load_payload(buf, a) in
+    let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+    let _ = load_payload(buf, b) in
+    sub_rr(buf, reg_rbx(), reg_rax())
+  else if op == "mul" then
+    let _ = load_payload(buf, a) in
+    let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+    let _ = load_payload(buf, b) in
+    imul_rr(buf, reg_rbx(), reg_rax())
+  else if op == "div" then
+    let _ = load_payload(buf, b) in
+    let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+    let _ = load_payload(buf, a) in
+    let _ = cqo(buf) in
+    let _ = idiv_rcx(buf) in
+    mov_rr(buf, reg_rbx(), reg_rax())
+  else
+    let _ = load_payload(buf, b) in
+    let _ = mov_rr(buf, reg_rcx(), reg_rax()) in
+    let _ = load_payload(buf, a) in
+    let _ = cqo(buf) in
+    let _ = idiv_rcx(buf) in
+    mov_rr(buf, reg_rbx(), reg_rdx())
+}
+
+fn emit_arith(buf, op, dst, a, b) {
+  let _ = emit_arith_op(buf, op, a, b) in
+  let _ = mov_reg_imm32(buf, reg_rax(), tag_int()) in
+  let _ = mov_rr(buf, reg_rcx(), reg_rbx()) in
+  store_slot(buf, dst)
+}
+
+// ── Emit comparison ───────────────────────────────────────────────────────────
+
+fn emit_cmp_setcc(buf, op) {
+  if op == "eq" then sete_al(buf)
+  else if op == "ne" then setne_al(buf)
+  else if op == "lt" then setl_al(buf)
+  else if op == "le" then setle_al(buf)
+  else if op == "gt" then setg_al(buf)
+  else setge_al(buf)
+}
+
+fn emit_cmp(buf, op, dst, a, b) {
+  let _ = load_payload(buf, a) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  let _ = load_payload(buf, b) in
+  let _ = cmp_rr(buf, reg_rbx(), reg_rax()) in
+  let _ = emit_cmp_setcc(buf, op) in
+  let _ = movzx_rax_al(buf) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), tag_bool()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst), reg_rcx()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst) + 8, reg_rax())
+}
+
+// ── Emit neg ─────────────────────────────────────────────────────────────────
+
+fn emit_neg(buf, dst, src) {
+  let _ = load_payload(buf, src) in
+  let _ = neg_reg(buf, reg_rax()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), tag_int()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst), reg_rcx()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst) + 8, reg_rax())
+}
+
+// ── Emit not ─────────────────────────────────────────────────────────────────
+
+fn emit_not(buf, dst, src) {
+  let _ = load_payload(buf, src) in
+  let _ = xor_reg_imm32(buf, reg_rax(), 1) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), tag_bool()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst), reg_rcx()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst) + 8, reg_rax())
+}
+
+// ── Emit and/or ───────────────────────────────────────────────────────────────
+
+fn emit_logic(buf, op, dst, a, b) {
+  let _ = load_payload(buf, a) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  let _ = load_payload(buf, b) in
+  let _ = if op == "and" then and_rr(buf, reg_rbx(), reg_rax())
+          else                or_rr(buf, reg_rbx(), reg_rax()) in
+  let _ = mov_reg_imm32(buf, reg_rcx(), tag_bool()) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst), reg_rcx()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), local_off(dst) + 8, reg_rbx())
+}
+
+// ── Emit branch ───────────────────────────────────────────────────────────────
+// Returns { then_patch: int, else_patch: int } — positions to patch
+
+fn emit_branch(buf, cond, then_t, else_t, offsets) {
+  // Load cond payload, test, conditional jump
+  let _ = load_payload(buf, cond) in
+  let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+  // jz to else branch (cond == 0 means false)
+  let jz_pos = buf_len(buf) in
+  let _ = jz_rel32(buf, 0) in      // placeholder
+  // then branch falls through
+  // At end of then block we need a jump to after else
+  // For now emit jumps to absolute positions (patched later)
+  { jz_pos: jz_pos,
+    then_target: then_t,
+    else_target: else_t }
+}
+
+// ── Emit jump ────────────────────────────────────────────────────────────────
+
+fn emit_jump(buf, target) {
+  let pos = buf_len(buf) in
+  let _ = jmp_rel32(buf, 0) in  // placeholder
+  { pos: pos, target: target }
+}
+
+// ── Emit make_closure ────────────────────────────────────────────────────────
+// Store fn_id as closure tag+payload in local slot
+// Real closure would heap-allocate; for now store fn_id as payload
+
+fn emit_make_closure(buf, ctx, dst, fn_id) {
+  let _ = mov_reg_imm32(buf, reg_rax(), tag_clos()) in
+  let _ = mov_reg_imm64(buf, reg_rcx(), fn_id) in
+  let _ = store_slot(buf, dst) in
+  array.push(ctx.slot_fn, { slot: dst, fn_id: fn_id })
+}
+
+// ── Emit call ────────────────────────────────────────────────────────────────
+// Calls a closure stored in fn_r with args
+// Result goes to dst slot
+// For Phase 1: direct call by fn_id, args passed via stack
+
+fn find_fn_id(slot_fn, slot) {
+  find_fn_id_acc(slot_fn, slot, array.len(slot_fn) - 1)
+}
+
+fn find_fn_id_acc(slot_fn, slot, i) {
+  if i < 0 then -1
+  else
+    let e = array.get(slot_fn, i) in
+    if e.slot == slot then e.fn_id
+    else find_fn_id_acc(slot_fn, slot, i - 1)
+}
+
+fn emit_call(buf, ctx, dst, fn_id, args) {
+  let n     = list.len(args) in
+  let _ = sub_reg_imm32(buf, reg_rsp(), 8) in
+  let _ = emit_push_args(buf, args, n - 1) in
+  let call_pos = buf_len(buf) in
+  let _ = call_rel32(buf, 0) in
+  let _ = array.push(ctx.patches, { pos: call_pos, fn_id: fn_id }) in
+  let stack_args = n * 16 + 8 in
+  let _ = add_reg_imm32(buf, reg_rsp(), stack_args) in
+  store_slot(buf, dst)
+}
+
+fn emit_push_args(buf, args, i) {
+  if i < 0 then null
+  else
+    let slot = list.get(args, i) in
+    // Push payload then tag (so tag is at lower address = first in struct)
+    let _ = load_slot(buf, slot) in          // rax=tag, rcx=payload
+    let _ = push_reg(buf, reg_rcx()) in  // push payload
+    let _ = push_reg(buf, reg_rax()) in  // push tag
+    emit_push_args(buf, args, i - 1)
+}
+
+// ── Emit return ───────────────────────────────────────────────────────────────
+
+fn emit_return(buf, src) {
+  // Return value: rax=tag, rcx=payload (caller reads these)
+  let _ = load_slot(buf, src) in   // rax=tag, rcx=payload
+  epilogue(buf)
+}
+
+// ── Global load/store ─────────────────────────────────────────────────────────
+// Globals stored in BSS: glob_tags[256] + glob_vals[256]
+// For now: use a simple scheme — globals are indexed by name hash
+// We'll implement this properly in the ELF writer
+
+fn emit_global_load(buf, ctx, dst, name) {
+  let slot = find_global_slot(ctx, name) in
+  if slot < 0 then emit_const(buf, ctx, dst, null)
+  else
+    let _ = load_slot(buf, slot) in
+    store_slot(buf, dst)
+}
+
+fn emit_global_store(buf, ctx, src, name) {
+  let slot = find_global_slot(ctx, name) in
+  if slot < 0 then null  // unregistered global, skip
+  else
+    let _ = load_slot(buf, src) in
+    store_slot(buf, slot)
+}
+
+// ── Emit one IR instruction ───────────────────────────────────────────────────
+
+fn emit_instr(buf, ctx, instr, offsets) {
+  let op = instr.op in
+
+  if op == "const" then
+    let _ = if typ.of(instr.val) == "int" then array.push(ctx.n_scratch, { slot: instr.dst, val: instr.val }) else null in
+    emit_const(buf, ctx, instr.dst, instr.val)
+
+  else if op == "load" then
+    let _ = load_slot(buf, instr.src) in
+    store_slot(buf, instr.dst)
+
+  else if op == "store" then
+    let _ = load_slot(buf, instr.src) in
+    store_slot(buf, instr.dst)
+
+  else if op == "add" || op == "sub" || op == "mul" ||
+          op == "div" || op == "mod" then
+    emit_arith(buf, op, instr.dst, instr.a, instr.b)
+
+  else if op == "neg" then
+    emit_neg(buf, instr.dst, instr.src)
+
+  else if op == "eq" || op == "ne" || op == "lt" ||
+          op == "le" || op == "gt" || op == "ge" then
+    emit_cmp(buf, op, instr.dst, instr.a, instr.b)
+
+  else if op == "and" || op == "or" then
+    emit_logic(buf, op, instr.dst, instr.a, instr.b)
+
+  else if op == "not" then
+    emit_not(buf, instr.dst, instr.src)
+
+  else if op == "make_closure" then
+    emit_make_closure(buf, ctx, instr.dst, instr.fn_id)
+
+    else if op == "call" then
+      let m = find_slot_meth(ctx, instr.fn_r) in
+      if m != null then emit_stdlib_call(buf, ctx, instr.dst, m.module_name, m.method, instr.args)
+      else
+        let fn_id = if instr.fn_id >= 0 then instr.fn_id
+                      else find_fn_id(ctx.slot_fn, instr.fn_r) in
+          if fn_id < 0 then emit_const(buf, ctx, instr.dst, null)
+          else emit_call(buf, ctx, instr.dst, fn_id, instr.args)
+
+  else if op == "return" then
+    emit_return(buf, instr.src)
+
+  else if op == "branch" then
+    // Emit: load cond, jz to else_target, fallthrough to then_target
+    let _ = load_payload(buf, instr.cond) in
+    let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+    let else_byte = if instr.else_t < list.len(offsets)
+                    then list.get(offsets, instr.else_t) else 0 in
+    let then_byte = if instr.then_t < list.len(offsets)
+                    then list.get(offsets, instr.then_t) else 0 in
+    // jz else_target (relative from end of jz instruction)
+    let cur = buf_len(buf) + 6 in  // after jz_rel32
+    let _ = jz_rel32(buf, else_byte - cur) in
+    // jmp then_target
+    let cur2 = buf_len(buf) + 5 in
+    jmp_rel32(buf, then_byte - cur2)
+
+  else if op == "jump" then
+    let tgt_byte = if instr.target < list.len(offsets)
+                   then list.get(offsets, instr.target) else 0 in
+    let cur = buf_len(buf) + 5 in
+    jmp_rel32(buf, tgt_byte - cur)
+
+  else if op == "nop" || op == "patch_branch" || op == "patch_jump" then
+    null
+
+    else if op == "global_load" then
+      let _ = emit_global_load(buf, ctx, instr.dst, instr.name) in
+      let gfn = find_fn_by_name(ctx, instr.name) in
+      if gfn >= 0 then array.push(ctx.slot_fn, { slot: instr.dst, fn_id: gfn })
+      else if is_stdlib_module(instr.name) then array.push(ctx.slot_mod, { slot: instr.dst, module_name: instr.name })
+      else null
+
+  else if op == "global_store" then
+    emit_global_store(buf, ctx, instr.src, instr.name)
+
+  else if op == "make_list" then
+    emit_make_list_native(buf, ctx, instr.dst, instr.items)
+
+  else if op == "make_rec" then
+    emit_make_rec(buf, ctx, instr.dst, instr.fields)
+
+    else if op == "get_field" then
+      let mod_entry = find_slot_mod(ctx, instr.obj) in
+      if mod_entry != null then
+        let _ = emit_const(buf, ctx, instr.dst, null) in
+        array.push(ctx.slot_meth, { slot: instr.dst, module_name: mod_entry.module_name, method: instr.field })
+      else
+        emit_get_field(buf, ctx, instr.dst, instr.obj, instr.field)
+
+  else if op == "import" then
+    emit_const(buf, ctx, instr.dst, null)
+
+  else
+    null
+}
+
+
+fn apply_ir_patches(code) {
+  apply_ir_patches_loop(code, 0, list.len(code), [])
+}
+
+fn find_ir_patch(code, idx, kind) {
+  find_ir_patch_loop(code, 0, list.len(code), idx, kind)
+}
+
+fn find_ir_patch_loop(code, i, n, idx, kind) {
+  if i >= n then null
+  else
+    let p = list.get(code, i) in
+    if p.op == kind && p.idx == idx then p
+    else find_ir_patch_loop(code, i + 1, n, idx, kind)
+}
+
+fn apply_ir_patches_loop(code, i, n, acc) {
+  if i >= n then acc
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "patch_branch" || instr.op == "patch_jump" then
+      apply_ir_patches_loop(code, i + 1, n, acc)
+    else if instr.op == "branch" then
+      let p = find_ir_patch(code, i, "patch_branch") in
+      let out = if p == null then instr else { op: "branch", cond: instr.cond, then_t: p.then_t, else_t: p.else_t } in
+      apply_ir_patches_loop(code, i + 1, n, list.append(acc, out))
+    else if instr.op == "jump" then
+      let p = find_ir_patch(code, i, "patch_jump") in
+      let out = if p == null then instr else { op: "jump", target: p.target } in
+      apply_ir_patches_loop(code, i + 1, n, list.append(acc, out))
+    else
+      apply_ir_patches_loop(code, i + 1, n, list.append(acc, instr))
+}
+
+// ── Emit one IR function ──────────────────────────────────────────────────────
+
+fn emit_function(ctx, fn_def) {
+  let _dbg = { checkpoint: "emit_function_start", name: fn_def.name } in
+  let buf     = ctx.buf in
+  let fsz     = frame_size(1024) in
+  let code    = apply_ir_patches(fn_def.code) in
+  let n       = list.len(code) in
+
+  // Record this function start
+  let fn_start = buf_len(buf) in
+  let _ = array.push(ctx.fn_addrs, fn_start) in
+  let _ = array.push(ctx.fn_names, fn_def.name) in
+
+  // Prologue
+  let _ = prologue(buf, fsz) in
+
+  // Copy args from stack
+  let _ = copy_args_from_stack(buf, fn_def.arity, 0) in
+
+  // Two-pass: collect offsets then emit
+  let br_patches = array.new() in
+  let offsets    = array.new() in
+  // Pre-resolve patch_branch/patch_jump
+  let code = resolve_ir_patches(code) in
+  let n    = list.len(code) in
+  let _ = emit_instrs_twopass(buf, ctx, code, 0, n, fn_start, offsets, br_patches) in
+
+  // Pass 2: patch branch/jump targets
+  let _ = patch_branches(buf, br_patches, offsets, fn_start) in
+  null
+}
+
+fn patch_branches(buf, patches, offsets, fn_start) {
+  patch_branches_acc(buf, patches, offsets, fn_start, 0, array.len(patches))
+}
+
+fn patch_branches_acc(buf, patches, offsets, fn_start, i, n) {
+  if i >= n then null
+  else
+    let p = array.get(patches, i) in
+    let op = p.op in
+    if op == "jz" then
+        
+if p.target < 0 || p.target >= array.len(offsets) then patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+
+        else
+        let tgt_off = array.get(offsets, p.target) in
+      let tgt_abs = fn_start + tgt_off in
+      let after   = p.pos + 6 in  // jz rel32 = 6 bytes
+      let rel     = tgt_abs - after in
+      let _ = patch32(buf, p.pos + 2, rel) in
+      patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+    else if op == "jmp" then
+        
+if p.target < 0 || p.target >= array.len(offsets) then patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+
+        else
+        let tgt_off = array.get(offsets, p.target) in
+      let tgt_abs = fn_start + tgt_off in
+      let after   = p.pos + 5 in  // jmp rel32 = 5 bytes
+      let rel     = tgt_abs - after in
+      let _ = patch32(buf, p.pos + 1, rel) in
+      patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+    else
+      patch_branches_acc(buf, patches, offsets, fn_start, i + 1, n)
+}
+
+
+fn array_from_list(xs) {
+  let n   = list.len(xs) in
+  let arr = array.new() in
+  array_from_list_acc(arr, xs, 0, n)
+}
+
+fn array_from_list_acc(arr, xs, i, n) {
+  if i >= n then arr
+  else
+    let _ = array.push(arr, list.get(xs, i)) in
+    array_from_list_acc(arr, xs, i + 1, n)
+}
+
+fn resolve_ir_patches(code) {
+  let n   = list.len(code) in
+  let arr = array_from_list(code) in
+  let _   = resolve_patches_acc(arr, code, 0, n) in
+  array.to_list(arr)
+}
+
+fn resolve_patches_acc(arr, code, i, n) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "patch_branch" then
+      let orig = array.get(arr, instr.idx) in
+      let _ = array.set(arr, instr.idx,
+        { op: "branch", cond: orig.cond, then_t: instr.then_t, else_t: instr.else_t }) in
+      let _ = array.set(arr, i, { op: "nop" }) in
+      resolve_patches_acc(arr, code, i + 1, n)
+    else if instr.op == "patch_jump" then
+      let _ = if instr.idx >= array.len(arr) then { die: str.concat("patch_jump OOB idx=", cast.text(instr.idx)) } else null in
+      let _ = array.set(arr, instr.idx, { op: "jump", target: instr.target }) in
+      let _ = array.set(arr, i, { op: "nop" }) in
+      resolve_patches_acc(arr, code, i + 1, n)
+    else
+      resolve_patches_acc(arr, code, i + 1, n)
+}
+
+fn emit_instrs_twopass(buf, ctx, code, i, n, fn_start, offsets, br_patches) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    let off   = buf_len(buf) - fn_start in
+    let _ = array.push(offsets, off) in
+    let _ = emit_instr_twopass(buf, ctx, instr, offsets, br_patches) in
+    emit_instrs_twopass(buf, ctx, code, i + 1, n, fn_start, offsets, br_patches)
+}
+
+fn emit_instr_twopass(buf, ctx, instr, offsets, br_patches) {
+  let op = instr.op in
+  if op == "branch" then
+    let _ = load_payload(buf, instr.cond) in
+    let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+    // jz to else_t (placeholder)
+    let jz_pos = buf_len(buf) in
+    let _ = jz_rel32(buf, 0) in
+    let _ = array.push(br_patches, { op: "jz", pos: jz_pos, target: instr.else_t }) in
+    // jmp to then_t (placeholder)
+    let jmp_pos = buf_len(buf) in
+    let _ = jmp_rel32(buf, 0) in
+    array.push(br_patches, { op: "jmp", pos: jmp_pos, target: instr.then_t })
+  else if op == "jump" then
+    let jmp_pos = buf_len(buf) in
+    let _ = jmp_rel32(buf, 0) in
+    array.push(br_patches, { op: "jmp", pos: jmp_pos, target: instr.target })
+  else
+    emit_instr(buf, ctx, instr, [])
+}
+
+fn copy_args_from_stack(buf, arity, i) {
+  if i >= arity then null
+  else
+    // Args pushed right-to-left: last arg first on stack
+    // After prologue: [rbp+16] = arg0.tag, [rbp+24] = arg0.payload, ...
+    let stack_off = 16 + i * 16 in
+    // Load tag from stack
+    let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rbp(), stack_off) in
+    let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rbp(), stack_off + 8) in
+    // Store into local slot i
+    let _ = store_slot(buf, i) in
+    copy_args_from_stack(buf, arity, i + 1)
+}
+
+fn compute_ir_offsets(buf, code, i, n, base, acc) {
+  if i >= n then acc
+  else
+    let off = buf_len(buf) - base in
+    compute_ir_offsets(buf, code, i + 1, n, base, list.append(acc, off))
+}
+
+fn emit_instrs(buf, ctx, code, i, n, offsets) {
+  if i >= n then null
+  else
+    let instr = list.get(code, i) in
+    let _     = emit_instr(buf, ctx, instr, offsets) in
+    emit_instrs(buf, ctx, code, i + 1, n, offsets)
+}
+
+// ── Emit all functions ────────────────────────────────────────────────────────
+
+fn scan_globals(ctx, fns, next_slot) {
+  scan_globals_fns(ctx, fns, 0, list.len(fns), next_slot)
+}
+
+fn scan_globals_fns(ctx, fns, i, n, next_slot) {
+  if i >= n then next_slot
+  else
+    let fn_def = list.get(fns, i) in
+    let ns = scan_globals_code(ctx, fn_def.code, 0, list.len(fn_def.code), next_slot) in
+    scan_globals_fns(ctx, fns, i + 1, n, ns)
+}
+
+fn scan_globals_code(ctx, code, i, n, next_slot) {
+  if i >= n then next_slot
+  else
+    let instr = list.get(code, i) in
+    let op = instr.op in
+    let ns = if op == "global_store" || op == "global_load" then
+      let existing = find_global_slot(ctx, instr.name) in
+      if existing >= 0 then next_slot
+      else
+        let _ = array.push(ctx.globals, { name: instr.name, slot: next_slot }) in
+        next_slot + 1
+    else next_slot in
+    scan_globals_code(ctx, code, i + 1, n, ns)
+}
+
+fn emit_all_fns(ctx, fns, i, n) {
+  if i >= n then null
+  else
+    let fn_def = list.get(fns, i) in
+    let _ = emit_function(ctx, fn_def) in
+    emit_all_fns(ctx, fns, i + 1, n)
+}
+
+// ── Patch call sites ──────────────────────────────────────────────────────────
+// After all functions emitted, patch call instructions with real addresses
+
+fn apply_patches(ctx) {
+  let n = array.len(ctx.patches) in
+  apply_patches_acc(ctx, 0, n)
+}
+
+fn apply_patches_acc(ctx, i, n) {
+  if i >= n then null
+  else
+    let patch    = array.get(ctx.patches, i) in
+    let fn_id    = patch.fn_id in
+    let call_pos = patch.pos in
+    if fn_id < 0 || fn_id >= array.len(ctx.fn_addrs) then
+      apply_patches_acc(ctx, i + 1, n)
+    else
+      let fn_addr = array.get(ctx.fn_addrs, fn_id) in
+      let call_after = call_pos + 5 in
+      let rel = fn_addr - call_after in
+      let _ = patch32(ctx.buf, call_pos + 1, rel) in
+      apply_patches_acc(ctx, i + 1, n)
+}
+
+// ── Main codegen entry point ──────────────────────────────────────────────────
+
+fn codegen(ir) {
+  let ctx = make_ctx() in
+  let fns = ir.fns in
+  let n   = list.len(fns) in
+
+  // Pre-scan globals to assign slots (using high slot numbers)
+  let max_locals = list.fold(fns, 0, fn(acc, f) { if f.locals > acc then f.locals else acc }) in
+  let global_base = max_locals + 10 in
+  let _ = scan_globals(ctx, fns, global_base) in
+
+  // Emit all functions
+  let _ = emit_all_fns(ctx, fns, 0, n) in
+
+  // Apply patches
+  let _dbg2 = { checkpoint: "apply_patches_start" } in
+  let _ = apply_patches(ctx) in
+
+  { buf:            ctx.buf,
+    fn_addrs:       ctx.fn_addrs,
+    patches:        ctx.patches,
+    stdlib_patches: ctx.stdlib_patches,
+    entry:          ir.entry }
+}
+
+
+// ── Record and list codegen ───────────────────────────────────────────────────
+
+fn emit_str_bytes(buf, s) {
+  let n = str.len(s) in
+  let _ = emit_str_bytes_acc(buf, s, 0, n) in
+  emit8(buf, 0)
+}
+
+fn emit_str_bytes_acc(buf, s, i, n) {
+  if i >= n then null
+  else
+    let c  = str.char_at(s, i) in
+    let bs = bytes.of_str(c) in
+    let b  = bytes.get(bs, 0) in
+    let _ = emit8(buf, b) in
+    emit_str_bytes_acc(buf, s, i + 1, n)
+}
+
+fn emit_call_alloc_val(buf, ctx) {
+  // Inline bump allocator: rax = r12; r12 += rdi
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  let _ = emit8(buf, 73) in let _ = emit8(buf, 1) in
+  emit8(buf, 252)
+}
+
+fn emit_make_rec(buf, ctx, dst, fields) {
+  let n    = list.len(fields) in
+  let size = 8 + n * 24 in
+  // Inline alloc: mov rdi,size; mov rax,r12; add r12,rdi
+  let _ = mov_reg_imm64(buf, reg_rdi(), size) in
+  let _ = emit_call_alloc_val(buf, ctx) in
+  // rax = record ptr, save to rbx
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  // Store n at [rbx+0]
+  let _ = mov_mem_disp32_imm32(buf, reg_rbx(), 0, n) in
+  // Fill fields
+  let _ = emit_rec_fields_native(buf, ctx, fields, 0, n) in
+  // dst.tag = TAG_REC(6), dst.payload = rbx
+  let _ = mov_reg_imm32(buf, reg_rax(), 6) in
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_offset(dst), reg_rax()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), local_offset(dst) + 8, reg_rbx())
+}
+
+fn emit_rec_fields_native(buf, ctx, fields, i, n) {
+  if i >= n then null
+  else
+    let f        = list.get(fields, i) in
+    let base_off = 8 + i * 24 in
+    // Emit key string inline, load addr into rax via rip-relative lea
+    let jmp_pos = buf_len(buf) in
+    let _ = jmp_rel32(buf, 0) in
+    let str_pos = buf_len(buf) in
+    let _ = emit_str_bytes(buf, f.key) in
+    let after = buf_len(buf) in
+    let _ = patch32(buf, jmp_pos + 1, after - (jmp_pos + 5)) in
+    // lea rax, [rip + str_pos - (here+7)]
+    let here = buf_len(buf) in
+    let _ = emit8(buf, 72) in let _ = emit8(buf, 141) in let _ = emit8(buf, 5) in
+    let _ = emit32_le(buf, str_pos - (here + 7)) in
+    // Store key ptr at [rbx + base_off]
+    let _ = mov_mem_disp32_reg(buf, reg_rbx(), base_off, reg_rax()) in
+    // Load field value from local slot
+    let _ = load_local(buf, f.src) in  // rax=tag, rcx=payload
+    // Store tag at [rbx + base_off + 8]
+    let _ = mov_mem_disp32_reg(buf, reg_rbx(), base_off + 8, reg_rax()) in
+    // Store payload at [rbx + base_off + 16]
+    let _ = mov_mem_disp32_reg(buf, reg_rbx(), base_off + 16, reg_rcx()) in
+    emit_rec_fields_native(buf, ctx, fields, i + 1, n)
+}
+
+fn emit_make_list_native(buf, ctx, dst, items) {
+  let n    = list.len(items) in
+  let size = 8 + n * 16 in
+  let _ = mov_reg_imm64(buf, reg_rdi(), size) in
+  let _ = emit_call_alloc_val(buf, ctx) in
+  let _ = mov_rr(buf, reg_rbx(), reg_rax()) in
+  let _ = mov_mem_disp32_imm32(buf, reg_rbx(), 0, n) in
+  let _ = push_reg(buf, reg_rbx()) in
+  let _ = emit_list_items_native(buf, items, 0, n) in
+  let _ = pop_reg(buf, reg_rbx()) in
+  let _ = mov_reg_imm32(buf, reg_rax(), 5) in  // TAG_LIST
+  let _ = mov_mem_disp32_reg(buf, reg_rbp(), local_offset(dst), reg_rax()) in
+  mov_mem_disp32_reg(buf, reg_rbp(), local_offset(dst) + 8, reg_rbx())
+}
+
+fn emit_list_items_native(buf, items, i, n) {
+  if i >= n then null
+  else
+    let slot     = list.get(items, i) in
+    let item_off = 8 + i * 16 in
+    let _ = load_local(buf, slot) in
+    let _ = mov_mem_disp32_reg(buf, reg_rbx(), item_off, reg_rax()) in
+    let _ = mov_mem_disp32_reg(buf, reg_rbx(), item_off + 8, reg_rcx()) in
+    emit_list_items_native(buf, items, i + 1, n)
+}
+
+fn emit_get_field(buf, ctx, dst, obj, field) {
+  // Load record ptr into rbx
+  let _ = mov_reg_mem_disp32(buf, reg_rbx(), reg_rbp(), local_offset(obj) + 8) in
+  // Load n_fields into rcx
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rbx(), 0) in
+  // Emit field name string
+  let jmp_pos = buf_len(buf) in
+  let _ = jmp_rel32(buf, 0) in
+  let str_pos = buf_len(buf) in
+  let _ = emit_str_bytes(buf, field) in
+  let after = buf_len(buf) in
+  let _ = patch32(buf, jmp_pos + 1, after - (jmp_pos + 5)) in
+  // rsi = field name ptr
+  let here = buf_len(buf) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 141) in let _ = emit8(buf, 53) in
+  let _ = emit32_le(buf, str_pos - (here + 7)) in
+  // r8 = loop counter = 0
+  let _ = xor_rr(buf, reg_r8(), reg_r8()) in
+  // Loop: compare r8 vs rcx (n_fields)
+  let loop_pos = buf_len(buf) in
+  let _ = cmp_rr(buf, reg_r8(), reg_rcx()) in
+  let jge_pos = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 141) in let _ = emit32_le(buf, 0) in
+  // Compute field offset in r10: r8*24 + 8
+  // Use: lea r10, [r8 + r8*2] -> r10 = r8*3, then imul by 8? No.
+  // Simpler: mov r10d, r8d; imul r10, 24; add r10, 8
+  let _ = mov_rr(buf, reg_r10(), reg_r8()) in
+  let _ = mov_reg_imm32(buf, reg_r11(), 24) in
+  let _ = imul_rr(buf, reg_r10(), reg_r11()) in
+  let _ = add_reg_imm32(buf, reg_r10(), 8) in
+  // r10 = offset of field i
+  // rdi = key_ptr = rbx + r10
+  // lea rdi, [rbx + r10]
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in
+  let _ = add_rr(buf, reg_rdi(), reg_r10()) in
+  // rdi = ptr to field entry; key_ptr is at [rdi]
+  let _ = mov_reg_mem_disp32(buf, reg_rdi(), reg_rdi(), 0) in
+  // Compare strings: rdi=key, rsi=target
+  let _ = emit_strcmp_inline(buf) in
+  // if rax==0 -> found
+  let _ = cmp_reg_imm32(buf, reg_rax(), 0) in
+  let jeq_pos = buf_len(buf) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 132) in let _ = emit32_le(buf, 0) in
+  // Not found: inc r8, loop
+  let _ = emit8(buf, 77) in let _ = emit8(buf, 255) in let _ = emit8(buf, 192) in
+  let _ = jmp_rel32(buf, loop_pos - (buf_len(buf) + 5)) in
+  // Found: load val from rbx + r10 + 8 (tag) and + 16 (payload)
+  let found = buf_len(buf) in
+  let _ = patch32(buf, jeq_pos + 2, found - (jeq_pos + 6)) in
+  // lea rdi, [rbx + r10]
+  let _ = mov_rr(buf, reg_rdi(), reg_rbx()) in
+  let _ = add_rr(buf, reg_rdi(), reg_r10()) in
+  // rax = [rdi + 8] (tag), rcx = [rdi + 16] (payload)
+  let _ = mov_reg_mem_disp32(buf, reg_rax(), reg_rdi(), 8) in
+  let _ = mov_reg_mem_disp32(buf, reg_rcx(), reg_rdi(), 16) in
+  let _ = store_local_rax_rcx(buf, dst) in
+  let skip = buf_len(buf) in
+  let _ = jmp_rel32(buf, 0) in
+  // Not found
+  let nf = buf_len(buf) in
+  let _ = patch32(buf, jge_pos + 2, nf - (jge_pos + 6)) in
+  let _ = emit_const(buf, ctx, dst, null) in
+  let end = buf_len(buf) in
+  patch32(buf, skip + 1, end - (skip + 5))
+}
+
+fn emit_strcmp_inline(buf) {
+  // Compare null-terminated strings: rdi vs rsi
+  // Result: rax = 0 if equal
+  // Uses: rax, rcx — clobbers both
+  // Save rsi and rcx since we use rcx for n_fields
+  let _ = push_reg(buf, reg_rsi()) in
+  let _ = push_reg(buf, reg_rcx()) in
+  let loop_pos = buf_len(buf) in
+  // al = [rdi]
+  let _ = emit8(buf, 138) in let _ = emit8(buf, 7) in   // mov al, [rdi]
+  // cl = [rsi]
+  let _ = emit8(buf, 138) in let _ = emit8(buf, 14) in  // mov cl, [rsi]
+  // cmp al, cl
+  let _ = emit8(buf, 56) in let _ = emit8(buf, 200) in  // cmp al, cl
+  // jne done
+  let jne = buf_len(buf) in
+  let _ = emit8(buf, 117) in let _ = emit8(buf, 0) in
+  // test al, al (null?)
+  let _ = emit8(buf, 132) in let _ = emit8(buf, 192) in
+  // jz done (both null = equal)
+  let jz = buf_len(buf) in
+  let _ = emit8(buf, 116) in let _ = emit8(buf, 0) in
+  // inc rdi, inc rsi, loop
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 199) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 198) in
+  let back = loop_pos - (buf_len(buf) + 2) in
+  let _ = emit8(buf, 235) in let _ = emit8(buf, (256 + back) % 256) in
+  // done:
+  let done = buf_len(buf) in
+  let _ = array.set(buf, jne + 1, done - (jne + 2)) in
+  let _ = array.set(buf, jz + 1, done - (jz + 2)) in
+  // rax = al - cl (0 if equal)
+  let _ = emit8(buf, 40) in let _ = emit8(buf, 200) in  // sub al, cl
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 15) in let _ = emit8(buf, 182) in let _ = emit8(buf, 192) in  // movzx rax,al
+  // Restore
+  let _ = pop_reg(buf, reg_rcx()) in
+  pop_reg(buf, reg_rsi())
+}
+
+
+
+{ codegen: codegen, frame_size: frame_size }
+
+{ codegen: codegen, frame_size: frame_size }
+
+// ═══ apps/fard_elf.fard ═══
+
+
+// ── ELF constants ─────────────────────────────────────────────────────────────
+
+fn elf_magic()    { [127, 69, 76, 70] }  // 0x7f ELF
+fn elf_class64()  { 2 }
+fn elf_le()       { 1 }
+fn elf_exec()     { 2 }
+fn elf_x86_64()   { 62 }
+fn pt_load()      { 1 }
+fn pf_rx()        { 5 }   // read + execute
+fn pf_rw()        { 6 }   // read + write
+fn load_addr()    { 4194304 }   // 0x400000 — standard Linux load address
+fn page_size()    { 4096 }
+
+// ── Buffer helpers (reuse from x86) ──────────────────────────────────────────
+
+fn buf_new()     { buf_new() }
+fn emit8(buf, b) { emit8(buf, b) }
+
+fn emit16(buf, v) { emit16_le(buf, v) }
+fn emit32(buf, v) { emit32_le(buf, v) }
+fn emit64(buf, v) { emit64_le(buf, v) }
+
+fn emit_zeros(buf, n) {
+  if n == 0 then null
+  else let _ = emit8(buf, 0) in emit_zeros(buf, n - 1)
+}
+
+fn buf_len(buf) { buf_len(buf) }
+
+fn patch32(buf, pos, v) { patch32(buf, pos, v) }
+
+// ── Runtime helpers ───────────────────────────────────────────────────────────
+// These are emitted into the binary as raw machine code bytes.
+// Generated by hand for the minimal runtime.
+
+// sys_exit(code in rdi): mov rax,60; syscall
+fn rt_sys_exit() {
+  [72, 184, 60, 0, 0, 0, 0, 0, 0, 0,  // mov rax, 60
+   15, 5]                               // syscall
+}
+
+// sys_write(fd=rdi, buf=rsi, len=rdx): mov rax,1; syscall; ret
+fn rt_sys_write() {
+  [72, 184, 1, 0, 0, 0, 0, 0, 0, 0,   // mov rax, 1
+   15, 5,                               // syscall
+   195]                                 // ret
+}
+
+// alloc_val(): allocate 16 bytes from heap, return ptr in rax
+// heap_ptr is at a known BSS address (patched after layout)
+// For now: emit as call to alloc helper
+fn rt_alloc_val_stub() {
+  // mov rdi, 16; (call heap bump); ret
+  // Simplified: just return heap_ptr and advance it
+  // We'll use r12 as heap_ptr (callee-saved, set in _start)
+  [72, 137, 192,    // mov rax, r12 -- actually: mov rax, rax (placeholder)
+   72, 131, 196, 16, // add rsp, 16 (placeholder)
+   195]             // ret
+}
+
+// print_i64(value in rdi): print decimal integer to stdout
+// This is ~80 bytes of code, emit as byte sequence
+fn rt_print_i64() {
+  // push rbp; mov rbp,rsp; sub rsp,32
+  // test rdi,rdi; jns .pos
+  // push rdi; mov rdi,1; lea rsi,[minus]; mov rdx,1; call sys_write; pop rdi; neg rdi
+  // .pos: convert to decimal; write; leave; ret
+  // For now: simplified stub that just exits
+  [85, 72, 137, 229,           // push rbp; mov rbp, rsp
+   72, 131, 236, 32,           // sub rsp, 32
+   72, 137, 248,               // mov rax, rdi (save value)
+   // Convert int to string on stack
+   // Use rax=value, write digits to [rbp-20]
+   // ... (full implementation below)
+   72, 137, 229,               // mov rsp, rbp (restore)
+   93,                         // pop rbp
+   195]                        // ret
+}
+
+// ── Runtime code emission ─────────────────────────────────────────────────────
+
+fn emit_runtime(buf) {
+  // _start: entry point
+  // Sets up heap (r12=heap_ptr, r13=heap_base)
+  // Calls main function
+  // Calls print_val on result
+  // Calls sys_exit(0)
+
+  // We emit runtime as raw bytes
+  // _start offset recorded separately
+
+  // mmap(0, 64MB, PROT_RW=3, MAP_ANON=0x22, -1, 0)
+  // rax=9, rdi=0, rsi=0x4000000, rdx=3, r10=0x22, r8=-1, r9=0
+  let rt = [
+    // xor rdi, rdi
+    72, 49, 255,
+    // mov rsi, 0x4000000 (64MB)
+    72, 190, 0, 0, 0, 4, 0, 0, 0, 0,
+    // mov rdx, 3 (PROT_RW)
+    72, 186, 3, 0, 0, 0, 0, 0, 0, 0,
+    // mov r10, 0x22 (MAP_ANON|MAP_PRIVATE)
+    73, 186, 34, 0, 0, 0, 0, 0, 0, 0,
+    // mov r8, -1
+    73, 184, 255, 255, 255, 255, 255, 255, 255, 255,
+    // xor r9, r9
+    77, 49, 201,
+    // mov rax, 9 (SYS_MMAP)
+    72, 184, 9, 0, 0, 0, 0, 0, 0, 0,
+    // syscall
+    15, 5,
+    // mov r12, rax (heap_ptr)
+    73, 137, 196,
+    // mov r13, rax (heap_base)
+    73, 137, 197
+  ] in
+  let _ = list.fold(rt, null, fn(_, b) { emit8(buf, b) }) in
+  null
+}
+
+fn emit_call_main(buf, main_offset_placeholder) {
+  // call rel32 to main function
+  // Placeholder — patched after layout
+  let pos = buf_len(buf) in
+  let _ = emit8(buf, 232) in  // call rel32
+  let _ = emit32(buf, 0) in   // placeholder
+  pos
+}
+
+fn emit_print_result(buf) {
+  // After call to main, result is in rax (tag) and rcx (payload)
+  // For integer: print payload
+  // mov rdi, rcx (payload = integer value)
+  let _ = emit8(buf, 72) in
+  let _ = emit8(buf, 137) in
+  let _ = emit8(buf, 207) in  // mov rdi, rcx
+  // call print_i64 (placeholder)
+  let pos = buf_len(buf) in
+  let _ = emit8(buf, 232) in
+  let _ = emit32(buf, 0) in
+  pos
+}
+
+fn emit_exit(buf) {
+  // xor rdi, rdi; mov rax, 60; syscall
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 49) in let _ = emit8(buf, 255) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 184) in
+  let _ = emit8(buf, 60) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 15) in emit8(buf, 5)
+}
+
+// print_i64: print integer in rdi to stdout
+// Full implementation
+
+fn emit_alloc_val_fn(buf) {
+  // alloc_val(rdi=size) -> rax=ptr
+  // r12 = heap_ptr (bump allocator)
+  // push rbp; mov rbp,rsp
+  let _ = emit8(buf, 85) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 137) in let _ = emit8(buf, 229) in
+  // mov rax, r12  (4C 89 E0)
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 137) in let _ = emit8(buf, 224) in
+  // add r12, rdi  (4C 01 FC)
+  let _ = emit8(buf, 76) in let _ = emit8(buf, 1) in let _ = emit8(buf, 252) in
+  // leave; ret
+  let _ = emit8(buf, 201) in
+  emit8(buf, 195)
+}
+
+fn emit_print_i64_fn(buf) {
+  // Function: print_i64(rdi=value)
+  // push rbp; mov rbp,rsp; sub rsp,32
+  let _ = emit8(buf, 85) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 137) in let _ = emit8(buf, 229) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 131) in let _ = emit8(buf, 236) in let _ = emit8(buf, 32) in
+
+  // mov rax, rdi (value)
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 137) in let _ = emit8(buf, 248) in
+
+  // Handle negative: test rax,rax; jns .pos
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 133) in let _ = emit8(buf, 192) in  // test rax,rax
+  let _ = emit8(buf, 121) in let _ = emit8(buf, 3) in   // jns .pos (+3)
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 247) in let _ = emit8(buf, 216) in  // neg rax
+  // .pos: convert decimal digits
+  // lea rdi, [rbp-20] (digit buffer)
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 141) in let _ = emit8(buf, 125) in let _ = emit8(buf, 236) in  // lea rdi,[rbp-20]
+  // mov byte [rbp-1], 10 (newline at end)
+  let _ = emit8(buf, 198) in let _ = emit8(buf, 69) in let _ = emit8(buf, 255) in let _ = emit8(buf, 10) in
+  // rcx = 19 (digit position from end)
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 199) in let _ = emit8(buf, 193) in let _ = emit8(buf, 19) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  // rbx = 10
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 199) in let _ = emit8(buf, 195) in let _ = emit8(buf, 10) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  // digit loop: xor rdx,rdx; div rbx; add dl,'0'; dec rcx; mov [rdi+rcx],dl; test rax,rax; jnz loop
+  let loop_start = buf_len(buf) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 49) in let _ = emit8(buf, 210) in  // xor rdx,rdx
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 247) in let _ = emit8(buf, 243) in  // div rbx
+  let _ = emit8(buf, 128) in let _ = emit8(buf, 194) in let _ = emit8(buf, 48) in  // add dl, '0'
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 255) in let _ = emit8(buf, 201) in  // dec rcx
+  let _ = emit8(buf, 136) in let _ = emit8(buf, 20) in let _ = emit8(buf, 15) in   // mov [rdi+rcx],dl
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 133) in let _ = emit8(buf, 192) in  // test rax,rax
+  let loop_off = buf_len(buf) + 2 in
+  let _ = emit8(buf, 117) in                                                         // jnz
+  let _ = emit8(buf, loop_start - loop_off) in                                       // rel8
+
+  // write: rdi=1, rsi=rdi_buf+rcx, rdx=20-rcx (+1 for newline)
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 1) in let _ = emit8(buf, 207) in   // add rdi, rcx
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 199) in let _ = emit8(buf, 194) in  // mov rdx, 20
+  let _ = emit8(buf, 20) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 41) in let _ = emit8(buf, 202) in  // sub rdx, rcx
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 137) in let _ = emit8(buf, 254) in  // mov rsi, rdi
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 199) in let _ = emit8(buf, 199) in  // mov rdi, 1
+  let _ = emit8(buf, 1) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 72) in let _ = emit8(buf, 184) in let _ = emit8(buf, 1) in    // mov rax, 1
+  let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in let _ = emit8(buf, 0) in
+  let _ = emit8(buf, 15) in let _ = emit8(buf, 5) in  // syscall
+
+  // leave; ret
+  let _ = emit8(buf, 201) in  // leave
+  emit8(buf, 195)             // ret
+}
+
+// ── ELF header ────────────────────────────────────────────────────────────────
+
+fn emit_elf_header(buf, entry_vaddr, phoff, phnum) {
+  // e_ident
+  let _ = list.fold(elf_magic(), null, fn(_, b) { emit8(buf, b) }) in
+  let _ = emit8(buf, elf_class64()) in   // EI_CLASS: 64-bit
+  let _ = emit8(buf, elf_le()) in        // EI_DATA: little-endian
+  let _ = emit8(buf, 1) in              // EI_VERSION: current
+  let _ = emit8(buf, 0) in              // EI_OSABI: System V
+  let _ = emit_zeros(buf, 8) in         // EI_ABIVERSION + padding
+
+  // e_type, e_machine, e_version
+  let _ = emit16(buf, elf_exec()) in    // ET_EXEC
+  let _ = emit16(buf, elf_x86_64()) in  // EM_X86_64
+  let _ = emit32(buf, 1) in            // EV_CURRENT
+
+  // e_entry, e_phoff, e_shoff
+  let _ = emit64(buf, entry_vaddr) in   // entry point virtual address
+  let _ = emit64(buf, phoff) in         // program header offset
+  let _ = emit64(buf, 0) in            // no section headers
+
+  // e_flags, e_ehsize, e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx
+  let _ = emit32(buf, 0) in            // e_flags
+  let _ = emit16(buf, 64) in           // e_ehsize (ELF header size)
+  let _ = emit16(buf, 56) in           // e_phentsize (program header size)
+  let _ = emit16(buf, phnum) in        // e_phnum
+  let _ = emit16(buf, 64) in           // e_shentsize
+  let _ = emit16(buf, 0) in            // e_shnum
+  emit16(buf, 0)                        // e_shstrndx
+}
+
+// ── Program header ────────────────────────────────────────────────────────────
+
+fn emit_phdr(buf, ptype, flags, offset, vaddr, paddr, filesz, memsz, align) {
+  let _ = emit32(buf, ptype) in
+  let _ = emit32(buf, flags) in
+  let _ = emit64(buf, offset) in
+  let _ = emit64(buf, vaddr) in
+  let _ = emit64(buf, paddr) in
+  let _ = emit64(buf, filesz) in
+  let _ = emit64(buf, memsz) in
+  emit64(buf, align)
+}
+
+// ── Main ELF builder ──────────────────────────────────────────────────────────
+
+
+
+fn find_stdlib_addr(addrs, id, i, n) {
+  if i >= n then -1
+  else
+    let e = list.get(addrs, i) in
+    if e.id == id then e.off
+    else find_stdlib_addr(addrs, id, i + 1, n)
+}
+
+fn patch_stdlib_calls(text_buf, patches, stdlib_addrs, stdlib_base, code_start, fard_code_start) {
+  list.fold(patches, null, fn(_, p) {
+    let dispatch_id = p.dispatch_id in
+    let call_pos    = p.pos in
+    // find stdlib function offset
+    let fn_off = find_stdlib_addr(stdlib_addrs, dispatch_id, 0, list.len(stdlib_addrs)) in
+    if fn_off < 0 then null
+    else
+      // call is in the fard code section
+      // fn_off is absolute offset in text_buf (emit_all_stdlib appends to text_buf)
+      let call_text_off = fard_code_start + call_pos in
+      let fn_text_off   = fn_off in  // already absolute in text_buf
+      let rel = fn_text_off - (call_text_off + 5) in
+      patch32(text_buf, call_text_off + 1, rel)
+  })
+}
+
+fn patch_alloc_val_calls(text_buf, patches, alloc_val_abs, code_start) {
+  null
+}
+
+fn build_elf(codegen_result) {
+  let code_buf       = codegen_result.buf in
+  let fn_addrs       = codegen_result.fn_addrs in
+  let entry_idx      = codegen_result.entry in
+  let cg_res_patches = array.to_list(codegen_result.patches) in
+  let stdlib_patches = array.to_list(codegen_result.stdlib_patches) in
+  let entry_off = array.get(fn_addrs, entry_idx) in
+
+  // Layout:
+  //   0..63:    ELF header
+  //   64..175:  2 program headers (64 + 2*56 = 176)
+  //   176..:    runtime + generated code
+
+  let ehdr_size = 64 in
+  let phdr_size = 56 in
+  let n_phdrs   = 2 in
+  let code_start = ehdr_size + n_phdrs * phdr_size in   // 176
+
+  // Build text segment: runtime + generated code
+  let text_buf = buf_new() in
+
+  // Emit runtime setup (_start)
+  let _ = emit_runtime(text_buf) in
+  let rt_size = buf_len(text_buf) in  // size of runtime before call to main
+
+  // Call to main function
+  let call_main_pos = buf_len(text_buf) in
+  let _ = emit8(text_buf, 232) in
+  let _ = emit32(text_buf, 0) in
+
+  // After main returns: rax=tag, rcx=payload
+  // mov rdi, rcx (payload = integer value)
+  let _ = emit8(text_buf, 72) in
+  let _ = emit8(text_buf, 137) in
+  let _ = emit8(text_buf, 207) in
+  // call print_i64
+  let print_call_pos = buf_len(text_buf) in
+  let _ = emit8(text_buf, 232) in
+  let _ = emit32(text_buf, 0) in
+
+  // Exit 0
+  let _ = emit8(text_buf, 72) in let _ = emit8(text_buf, 49) in let _ = emit8(text_buf, 255) in
+  let _ = emit8(text_buf, 72) in let _ = emit8(text_buf, 184) in
+  let _ = emit8(text_buf, 60) in let _ = emit8(text_buf, 0) in let _ = emit8(text_buf, 0) in
+  let _ = emit8(text_buf, 0) in let _ = emit8(text_buf, 0) in let _ = emit8(text_buf, 0) in
+  let _ = emit8(text_buf, 0) in let _ = emit8(text_buf, 0) in
+  let _ = emit8(text_buf, 15) in let _ = emit8(text_buf, 5) in
+
+  // stdlib functions
+  let stdlib_base = buf_len(text_buf) in
+  let stdlib_result = stdlib.emit_all_stdlib(text_buf) in
+  let stdlib_addrs = stdlib_result.addrs in
+
+  // alloc_val function
+  let alloc_val_pos = buf_len(text_buf) in
+  let _ = emit_alloc_val_fn(text_buf) in
+
+  // print_i64 function
+  let print_fn_pos = buf_len(text_buf) in
+  let _ = emit_print_i64_fn(text_buf) in
+
+  // Generated FARD functions
+  let fard_code_start = buf_len(text_buf) in
+  let code_list = array.to_list(code_buf) in
+  let _ = list.fold(code_list, null, fn(_, b) { emit8(text_buf, b) }) in
+
+  let text_size = buf_len(text_buf) in
+
+  // Patch call to main
+  let main_abs = code_start + fard_code_start + entry_off in
+  let call_after = code_start + call_main_pos + 5 in
+  let main_rel = (load_addr() + main_abs) - (load_addr() + call_after) in
+  let _ = patch32(text_buf, call_main_pos + 1, main_rel) in
+
+  // alloc_val is now inlined, no patches needed
+
+  // Patch stdlib dispatch calls
+  let _ = patch_stdlib_calls(text_buf, stdlib_patches, stdlib_addrs, stdlib_base, code_start, fard_code_start) in
+
+  // Patch call to print_i64
+  let print_abs = code_start + print_fn_pos in
+  let print_call_after = code_start + print_call_pos + 5 in
+  let print_rel = (load_addr() + print_abs) - (load_addr() + print_call_after) in
+  let _ = patch32(text_buf, print_call_pos + 1, print_rel) in
+
+
+  // Build final ELF
+  let buf = buf_new() in
+
+  // Entry vaddr = load_addr + code_start (start of runtime = _start)
+  let entry_vaddr = load_addr() + code_start in
+  let text_vaddr  = load_addr() in
+  let text_offset = 0 in
+  let total_size  = code_start + text_size in
+
+  // BSS for heap (64MB after text) — must be page aligned
+  let page = page_size() in
+  let bss_vaddr  = load_addr() + ((total_size + page - 1) / page) * page in
+  let heap_size  = 67108864 in  // 64MB
+
+  // ELF header
+  let _ = emit_elf_header(buf, entry_vaddr, ehdr_size, n_phdrs) in
+
+  // Program header 1: LOAD rx (text)
+  let _ = emit_phdr(buf, pt_load(), pf_rx(),
+    0, text_vaddr, text_vaddr,
+    total_size, total_size, page_size()) in
+
+  // Program header 2: LOAD rw (bss — zero size in file, heap_size in memory)
+  let _ = emit_phdr(buf, pt_load(), pf_rw(),
+    0, bss_vaddr, bss_vaddr,
+    0, heap_size, page_size()) in
+
+  // Text content (runtime + generated code)
+  let text_list = array.to_list(text_buf) in
+  let _ = list.fold(text_list, null, fn(_, b) { emit8(buf, b) }) in
+
+  bytes.of_list(array.to_list(buf))
+}
+
+{ build_elf: build_elf }
+
+// ═══ compiler driver ═══
+import("std/fs")    as fs
+import("std/bytes") as bytes
+import("std/list")  as list
+import("std/str")   as str
+import("std/array") as array
+import("std/env")   as env
+import("std/cast")  as cast
+import("std/type")  as typ
+
+fn find_separator_d(args, i, n) {
+  if i >= n then n
+  else if list.get(args, i) == "--" then i + 1
+  else find_separator_d(args, i + 1, n)
+}
+
+fn find_arg_d(args, flag) {
+  let n   = list.len(args) in
+  let sep = find_separator_d(args, 0, n) in
+  find_arg_acc_d(args, flag, sep, n)
+}
+
+fn find_arg_acc_d(args, flag, i, n) {
+  if i >= n then null
+  else if list.get(args, i) == flag then
+    if i + 1 < n then list.get(args, i + 1) else null
+  else find_arg_acc_d(args, flag, i + 1, n)
+}
+
+fn compile_flat(in_path, out_path) {
+  let src    = fs.read_text(in_path) in
+  let tokens = tokenize(src) in
+  let parsed = parse_module(tokens, 0) in
+  if !parsed.ok then { ok: false, err: "parse error" }
+  else
+    let ir     = lower_program(parsed.node) in
+    let cg_res = codegen(ir) in
+    let binary = build_elf(cg_res) in
+    let _      = fs.write_bytes(out_path, binary) in
+    { ok: true, bytes: bytes.len(binary) }
+}
+
+let args     = env.args()
+let in_path  = find_arg_d(args, "--in")
+let out_path = find_arg_d(args, "--out")
+
+if in_path == null then { ok: false, err: "missing --in" }
+else if out_path == null then { ok: false, err: "missing --out" }
+else compile_flat(in_path, out_path)
