@@ -4687,6 +4687,13 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 Val::Record(ref m) if matches!(m.get("t"), Some(Val::Text(t)) if t == "closure") => {
                     match m.get("params") { Some(Val::List(v)) => v.iter().map(|p| if let Val::Text(s) = p { s.clone() } else { "_".to_string() }).collect(), _ => bail!("named closure: no params") }
                 }
+                Val::VmFunc(fn_idx) => {
+                    VM_FNS.with(|cell| {
+                        let fns = unsafe { &*cell.as_ptr() };
+                        let f = &fns[*fn_idx];
+                        f.slot_names[..f.n_params].to_vec()
+                    })
+                }
                 _ => bail!("named call on non-function"),
             };
             // Build ordered args
