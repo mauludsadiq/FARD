@@ -1134,6 +1134,12 @@ WASM binary format decoder and stack machine interpreter, pure FARD.
 
 ## Known Parser Constraints
 
+1. **`+` does not concatenate strings** — `"hello" + " world"` is a type error. Use `str.concat("hello", " world")` for two strings, or `str.concat([a, b, c])` for multiple. The error hint in fardrun suggests the list form.
+
+1. **`str.concat` accepts either two strings or a list of strings** — both `str.concat(a, b)` and `str.concat([a, b, c])` are valid. The list form is preferred when joining more than two parts.
+
+1. **Missing `std/str` import causes silent failures** — files using `str.concat`, `str.len`, `str.replace` etc. must explicitly `import("std/str") as str`. Common omission in helper modules like `payloads.fard`, `rbac.fard`, `cas.fard`.
+
 1. **`let` inside `if/else` branches works in both forms.** `if c then let x = e in body` and `if c then { let x = e\n body }` both work correctly.
 1. **`[[…]]` as fn tail is FIXED.** The postfix parser now checks for newlines and
    literal bases before treating `[` as an index operator. `[[a, b], [c, d]]` works
