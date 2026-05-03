@@ -1,72 +1,64 @@
 # FARD — ISO EBNF Grammar
 
-**2 May 2026 · v1.7.0 · updated for media decoders, transforms, integration packages, string concat constraints, and Stage 6 native backend**
+**2 May 2026 · v1.7.0 · fully verified against fardrun source and runtime**
 
-This document covers the **fardrun** production dialect. All stdlib module contents
-verified directly from source — not inferred from prior documentation.
+This document covers the **fardrun** production dialect. All grammar rules and stdlib
+entries verified directly by running test programs against fardrun v1.7.0.
 
 -----
 
 ## Lexical
 
 ```ebnf
-alpha           = "A" | … | "Z" | "a" | … | "z" ;
-digit           = "0" | … | "9" ;
+alpha           = "A" | ... | "Z" | "a" | ... | "z" ;
+digit           = "0" | ... | "9" ;
 
 ident_start     = alpha | "_" ;
 ident_continue  = alpha | digit | "_" ;
 ident           = ident_start , { ident_continue } ;
 
 integer         = digit , { digit } ;
-(* Multi-digit integer cannot have leading "0".
-   Negative integers are handled by unary "-" at the expression level. *)
+(* Multi-digit integer cannot have leading "0" — ERROR_PARSE leading zero integer literal. *)
+(* Negative integers are handled by unary "-" at the expression level. *)
 
 float           = digit , { digit } , "." , digit , { digit } , [ sci_exp ] ;
 sci_exp         = ( "e" | "E" ) , [ "+" | "-" ] , digit , { digit } ;
-(* Float literals lex to Tok::Float, evaluate to Val::Float(f64).
-   Scientific notation is supported: 1.5e10, 2.3E-4.
-   Use float.* builtins for arithmetic. Do not use == on float results. *)
+(* Float literals evaluate to Val::Float(f64). Scientific notation supported: 1.5e10, 2.3E-4. *)
+(* Int+float arithmetic is automatically promoted: 1 + 0.5 == 1.5. *)
 
 escape          = "\\n" | "\\t" | "\\\"" | "\\\\" ;
-(* Only these four escapes are valid. "\r" produces "bad escape: \r". *)
+(* Only these four escape sequences are valid. "\r" produces: bad escape: \r *)
 
 string_char     = ? any char except " and \ ? | escape ;
 string          = "\"" , { string_char | interp_expr } , "\"" ;
 interp_expr     = "${" , expr , "}" ;
-(* String interpolation is a native token (Tok::StrInterp).
-   "${expr}" is valid inside any double-quoted string. *)
+(* String interpolation: "${expr}" embeds any expression inside a double-quoted string. *)
 
-backtick_string = "`" , { ? any char except ` ? } , "`" ;
-(* Backtick strings have NO escape processing — all characters literal.
-   Useful for raw strings containing backslashes or double quotes. *)
+backtick_string = "`" , { ? any char except backtick ? } , "`" ;
+(* Backtick strings have NO escape processing. All chars are literal. *)
 
 whitespace      = { " " | "\t" | "\r" | "\n" } ;
 comment         = "//" , { ? any char except newline ? } , ( "\n" | ? EOF ? )
                 | "#"  , { ? any char except newline ? } , ( "\n" | ? EOF ? ) ;
+(* Both // and # introduce line comments. Both verified working. *)
 
-(* Two-char operators — lexed in this order: *)
 sym2            = "!=" | "==" | "<=" | ">=" | "&&" | "->" | "=>" | "|>" ;
-(* NOTE: "!=" IS implemented — use it directly. Earlier docs were wrong. *)
-(* "||" is lexed as a dedicated Tok::OrOr token, not Tok::Sym("||") *)
+(* "||" is a dedicated token. "!=" IS implemented — use it directly. *)
 
 sym3            = "..." ;
 
-(* Single-char symbols: *)
 sym1            = "(" | ")" | "{" | "}" | "[" | "]" | "," | ":" | "."
                 | "+" | "-" | "*" | "/" | "=" | "%" | "|" | "<" | ">"
                 | "?" | "!" ;
-(* "%" — modulo operator, valid at the mul_expr level *)
-(* "!" — unary logical not, valid at the unary_expr level *)
-(* "|" — single pipe char, distinct from "|>" pipe operator *)
+(* "%" modulo. "!" unary not. "|" sequencing, distinct from "|>" *)
 
-(* Keywords — exactly as registered in source: *)
 keyword         = "let" | "in" | "fn" | "if" | "then" | "else"
                 | "import" | "as" | "export" | "match" | "using"
                 | "test" | "while" | "return"
                 | "true" | "false" | "null" ;
-(* "test", "while", "return" are reserved keywords in the lexer.
-   "int" is effectively reserved as an import alias —
-   import("std/int") as int is rejected. Use any other alias. *)
+(* Keywords ARE valid record keys: { ok: true, if: "allowed", return: 42 } *)
+(* Keywords ARE valid bind names in patterns (except true/false/null). *)
+(* "int" is NOT reserved — import("std/int") as int works fine. *)
 ```
 
 -----
@@ -76,16 +68,15 @@ keyword         = "let" | "in" | "fn" | "if" | "then" | "else"
 ```ebnf
 module          = { module_item } ;
 
-(* parse_module dispatch order — literal from source:
-   1) "test"    → test_item
-   2) "a"       → type_decl  (type declaration)
-   3) "import"  → import_item
-   4) "artifact"→ artifact_item
-   5) "export"  → export_item
-   6) "fn"      → fn_item
-   7) "let"     → try parse_expr first (handles let…in);
-                  if that fails, backtrack and parse let_item
-   8) anything else → expr
+(* parse_module dispatch order:
+   1) "test"     -> test_item
+   2) "a"        -> type_decl
+   3) "import"   -> import_item
+   4) "artifact" -> artifact_item
+   5) "export"   -> export_item
+   6) "fn"       -> fn_item
+   7) "let"      -> try parse_expr first; if fails, parse let_item
+   8) anything else -> expr
 *)
 
 module_item     = test_item
@@ -99,63 +90,53 @@ module_item     = test_item
 
 test_item       = "test" , string , "{" , fn_block_inner , "}" ;
 
-(* Type declarations — two forms: *)
 type_decl       = "a" , ident , "is" , ( record_type_body | sum_type_body ) ;
-
 record_type_body = "{" , { type_field , [ "," ] } , "}" ;
 type_field       = ident , ":" , ident ;
-
 sum_type_body    = variant , { "or" , variant } ;
 variant          = ident , [ "(" , { type_field , [ "," ] } , ")" ] ;
-
-(* Examples:
-   a Point is { x: Int, y: Int }
-   a Shape is Circle(r: Int) or Rect(w: Int, h: Int) *)
+(* Type declarations are parsed but NOT enforced at runtime. *)
+(* a Point is { x: Int, y: Int } *)
+(* a Shape is Circle(r: Int) or Rect(w: Int, h: Int) *)
 
 import_item     = "import" , "(" , string , ")" , "as" , ident ;
-(* "as alias" is mandatory. Path must be a string literal. *)
+(* "as alias" is mandatory. Path resolved relative to importing file, extensionless. *)
 
-artifact_item   = "artifact" , ident , "=" , sha256_string ;
-sha256_string   = string ;
-(* run_id string MUST start with "sha256:" or parse fails. *)
+artifact_item   = "artifact" , ident , "=" , string ;
+(* string MUST start with "sha256:". Validated against receipts/ at runtime. *)
 
 export_item     = "export" , "{" , ident , { "," , ident } , [ "," ] , "}" ;
 
-(* Module-level let binds IDENT or destructuring pattern *)
 let_item        = "let" , ( ident | obj_pat | list_pat ) , "=" , expr ;
+(* Module-level let — no "in" required. *)
+(* CONSTRAINT: list_pat at module level always fails — use let-in form. *)
+(* CONSTRAINT: obj_pat with ...rest at module level — rest is silently unbound. *)
 
 fn_item         = "fn" , ident , "(" , [ fn_param , { "," , fn_param } ] , ")"
                 , [ "->" , type ]
                 , "{" , fn_block_body ;
 
-fn_param        = pat , [ ":" , type ] ;
+fn_param        = pat , [ ":" , type ] , [ "=" , expr ] ;
+(* "= expr" default parameter syntax is PARSED but NOT implemented at runtime. *)
+(* Calling with fewer args than declared always causes arity mismatch. Do not use. *)
+```
 
-(* fn_block_body and fn_block_inner:
-   Zero or more "let" bindings, then a tail expression, then "}" (for body).
-   
-   Three forms of binding are supported inside a block:
-   1. let x = e         — block-local binding, no "in"
-   2. let x = e in body — inline let-in expression, terminates the binding sequence
-   3. let x = e | next  — sequencing: binds x, then continues with next
+-----
 
-   Additionally "expr | expr" at tail position acts as sequencing:
-   desugars to "let _ = lhs in rhs".
+## Function Bodies
 
-   CONSTRAINT: "let" may NOT appear as the direct body of an if/else
-   branch — extract to a named helper function. *)
-
+```ebnf
 fn_block_body   = fn_block_inner , "}" ;
 fn_block_inner  = { let_binding } , seq_expr ;
 
 let_binding     = "let" , ( ident | obj_pat | list_pat ) , "=" , expr ,
-                  ( "in" , expr               (* terminates — inline let-in *)
-                  | "|" , fn_block_inner      (* sequencing continuation *)
-                  | (* nothing — block binding, continues *)
+                  ( "in" , expr
+                  | "|" , fn_block_inner
+                  | (* nothing — block binding *)
                   ) ;
 
 seq_expr        = expr , { "|" , expr } ;
-(* Single "|" (not "||") between expressions acts as sequencing:
-   "e1 | e2" desugars to "let _ = e1 in e2" *)
+(* "|" between expressions is sequencing: e1 | e2  ==  let _ = e1 in e2 *)
 ```
 
 -----
@@ -172,95 +153,97 @@ expr            = using_expr
                 | infix_expr ;
 
 using_expr      = "using" , pat , "=" , expr , "in" , expr ;
+(* Verified: using x = 42 in x + 1  =>  43 *)
 
-match_expr      = "match" , expr , match_arms ;
-match_arms      = "{" , [ match_arm , { "," , match_arm } , [ "," ] ] , "}" ;
+match_expr      = "match" , expr , "{" , [ match_arm , { "," , match_arm } , [ "," ] ] , "}" ;
 match_arm       = pat , [ "if" , expr ] , "=>" , expr ;
+(* Guards: match x { n if n > 3 => "big", _ => "small" } *)
+(* Nested obj patterns: match p { { x: 0, y } => y, { x, y } => x + y } *)
 
-(* Expression let — binds a pattern, requires "in" *)
 let_expr        = "let" , pat , "=" , expr , "in" , expr ;
+(* Requires "in". Chain: let a = 1 in let b = 2 in a + b *)
 
-(* while takes three bare expressions: init state, condition fn, step fn *)
 while_expr      = "while" , expr , expr , expr ;
+(* Three bare expressions: init_state, condition_fn, step_fn. *)
+(* Returns: { chain_hex: string, steps: int, value: final_state } *)
+(* Example: while 0 fn(s) { s < 5 } fn(s) { s + 1 } *)
 
 return_expr     = "return" , expr ;
-(* "return" is only valid inside a fn body *)
+(* Exits the IMMEDIATELY ENCLOSING fn {} body only. *)
+(* Inside an anonymous fn passed to list.fold, return exits the closure *)
+(* not the outer named function. Use recursion for early exit from outer fns. *)
 
-(* if/then/else — both branches required.
-   The "then" branch MAY be a { } block if the token after "{" is
-   "let", "return", or "}" — the parser disambiguates from record literals. *)
 if_expr         = "if" , expr , "then" , ( block_expr | expr ) , "else" , expr ;
 block_expr      = "{" , fn_block_inner , "}" ;
+(* "then { }" blocks supported when first token is "let", "return", or "}". *)
+(* "then { k: v }" is parsed as a record literal — use "then ({ k: v })" if needed. *)
 
-(* Infix operators — precedence-climbing, all left-associative:
-   Prec 1 (lowest): || ??  (null-coalescing: x ?? default returns x if x != null, else default)
-   Prec 2:          &&
-   Prec 3:          == != < > <= >=
-   Prec 4:          + -
-   Prec 5 (highest):* / %
-*)
 infix_expr      = unary_expr , { infix_op , unary_expr } ;
 infix_op        = "||" | "??" | "&&"
                 | "==" | "!=" | "<" | ">" | "<=" | ">="
                 | "+" | "-"
                 | "*" | "/" | "%" ;
+(* Precedence low to high: || ??  /  &&  /  == != < > <= >=  /  + -  /  * / % *)
+(* "??" is null-coalescing: x ?? default returns x if x != null, else default. *)
+(* "+" does NOT concatenate strings — use str.concat([a, b]) instead. *)
 
-(* Both "-" and "!" are unary prefix operators *)
 unary_expr      = { "-" | "!" } , pipe_expr ;
 
-(* Pipe inserts lhs as first arg: x |> f(a, b) → f(x, a, b) *)
 pipe_expr       = postfix_expr , { "|>" , postfix_expr } ;
+(* "|>" inserts lhs as FIRST argument: "hello" |> str.split(" ")  =>  str.split("hello", " ") *)
 
-(* Postfix: "?", ".field", call "(…)", index "[…]"
-   Index "[expr]" is NOT parsed when:
-   - the base expression is a literal (Int, Float, Bool, Str, Null, List, Rec)
-   - there is a newline between the base expression and "["
-   This resolves the [[...]] fn-tail ambiguity — [[...]] now works correctly. *)
 postfix_expr    = primary_expr , { postfix_op } ;
-
-postfix_op      = "?" "."           (* safe navigation: e?.f -> null if e==null, else e.f *)
-                | "?"
-                | "." , ident
+postfix_op      = "?" , "."            (* safe nav: null?.f => null, rec?.f => rec.f *)
+                | "?"                  (* result unwrap — see note below *)
+                | "." , ident          (* field access *)
                 | "(" , arg_list , ")"
-                | "[" , expr , "]" ;
+                | "[" , expr , "]" ;   (* index: list[i] or record["key"] *)
+(* "?" unwraps {t:"ok",v:val} => val. On {t:"err",...} propagates error. *)
+(* On any other value: QMARK_EXPECT_RESULT error. *)
+(* "[expr]" NOT parsed when there is a newline between base and "[". *)
 
-(* Call arguments may be positional or named. Cannot mix in one call. *)
 arg_list        = [ pos_args | named_args ] ;
 pos_args        = expr , { "," , expr } , [ "," ] ;
 named_args      = named_arg , { "," , named_arg } , [ "," ] ;
 named_arg       = ident , ":" , expr ;
+(* Named args reorder by parameter name. Cannot mix positional and named. *)
+(* Verified working in v1.7.0: add(y: 3, x: 7) == 10 *)
 
 primary_expr    = lambda_expr
                 | multi_lambda
                 | anon_fn_expr
-                | interp_string
+                | string
                 | backtick_string
                 | float
-                | literal
+                | integer
+                | "true" | "false" | "null"
                 | ident
                 | "(" , expr , ")"
                 | list_lit
                 | rec_lit ;
 
 lambda_expr     = ident , "=>" , expr ;
+(* x => x * 2. Verified: f(5) => 10 *)
+
 multi_lambda    = "(" , [ ident , { "," , ident } ] , ")" , "=>" , expr ;
+(* (x, y) => x + y. Verified: f(3, 4) => 7 *)
+
 anon_fn_expr    = "fn" , "(" , [ pat , { "," , pat } ] , ")" ,
                   "{" , fn_block_inner , "}" ;
 
-interp_string   = "\"" , { string_char | "${" , expr , "}" } , "\"" ;
-backtick_string = "`" , { ? any char except backtick ? } , "`" ;
-
-literal         = integer | "true" | "false" | "null" ;
-
 list_lit        = "[" , [ expr , { "," , expr } , [ "," ] ] , "]" ;
 
-rec_lit         = "{" , [ rec_spread | rec_kv , { "," , rec_kv } , [ "," ] ] , "}" ;
+rec_lit         = "{" , [ rec_content ] , "}" ;
+rec_content     = rec_spread
+                | rec_kv , { "," , rec_kv } , [ "," ] ;
 rec_spread      = "..." , postfix_expr , { "," , rec_kv } ;
-(* { ...base, key: val } merges base with overrides. Last write wins. No import needed. *)
+(* { ...base, key: val } merges base with overrides. Last write wins. *)
+(* Verified: let base = {x:1,y:2} in {...base, z:3} => {x:1,y:2,z:3} *)
 rec_kv          = rec_key , ":" , expr
-                | "[" , expr , "]" , ":" , expr ;  (* computed key: { [k]: v } *)
-rec_key         = ident | keyword | string ;  (* static keys only; use [expr] form for dynamic keys *)
-(* Keywords are valid record keys: { ok: true, if: "allowed", return: 42 } *)
+                | "[" , expr , "]" , ":" , expr ;
+(* Computed keys: { [k]: v } — dynamic key evaluated at runtime. *)
+(* Verified: let k = "foo" in { [k]: 42 } => {"foo": 42} *)
+rec_key         = ident | keyword | string ;
 ```
 
 -----
@@ -269,27 +252,31 @@ rec_key         = ident | keyword | string ;  (* static keys only; use [expr] fo
 
 ```ebnf
 pat             = "true" | "false" | "null"
-                | "_"                          (* wildcard — Tok::Ident("_"), no binding *)
+                | "_"
                 | integer | string
                 | obj_pat | list_pat
                 | bind_name ;
 
 bind_name       = ident | keyword ;
-(* Keywords are valid bind names except true/false/null.
-   Duplicate bind names within a single pattern are a parse error
-   (pat_reject_duplicate_binds is called after parsing). *)
+(* Keywords valid as bind names except true/false/null. *)
+(* Duplicate bind names in a single pattern are a parse error. *)
 
 obj_pat         = "{" , [ obj_pat_body ] , "}" ;
-obj_pat_body    = { obj_field , "," } , obj_field , [ "," ]    (* exact fields *)
-                | { obj_field , "," } , obj_field , "," , "..." , ident  (* with rest *)
-                | "..." , ident ;                              (* rest only *)
-obj_field       = ident , ":" , pat ;
-
-(* NOTE: rest capture uses "..." ident directly — NOT ". ident" as in old docs *)
+obj_pat_body    = { obj_field , "," } , obj_field , [ "," ]
+                | { obj_field , "," } , obj_field , "," , "..." , ident
+                | "..." , ident ;
+obj_field       = ident , ":" , pat
+                | ident ;
+(* Shorthand { name } binds field "name" to variable "name". *)
+(* Rest capture { x, ...rest } works in let-in form. *)
+(* CONSTRAINT: { x, ...rest } at module level — rest is silently unbound. *)
 
 list_pat        = "[" , [ list_pat_body ] , "]" ;
 list_pat_body   = pat , { "," , pat } , [ "," , "..." , ident ]
                 | "..." , ident ;
+(* CONSTRAINT: list_pat in let_item (module level) always fails ERROR_PARSE. *)
+(* Use let-in form only: let [a, b, ...rest] = expr in body *)
+(* Verified: let [a, b, ...rest] = [1,2,3,4] in rest => [3,4] *)
 ```
 
 -----
@@ -305,7 +292,6 @@ type            = builtin_type
                 | "(" , type , ")" ;
 
 builtin_type    = "Int" | "String" | "Bool" | "Unit" | "Dynamic" ;
-(* These five are matched by name before falling through to named_type *)
 
 list_type       = "List" , "<" , type , ">" ;
 
@@ -315,61 +301,63 @@ rec_type_field  = ident , ":" , type ;
 
 func_type       = "Func" , "(" , [ type , { "," , type } ] , ")" , "->" , type ;
 
-(* Any other ident — optionally followed by "<" type_args ">" *)
 named_type      = ident , [ "<" , type , { "," , type } , ">" ] ;
 (* Examples: MyType, Option<Int>, Result<Text, Int> *)
 
-(* Types are optional everywhere — FARD is dynamically typed at runtime.
-   Type annotations on fn params and return use ":" and "->" syntax.
-   No "Tuple", "Option", or "Result" built-in type constructors exist —
-   use named_type for those. *)
+(* Type annotations are optional everywhere. Parsed but NOT enforced at runtime. *)
 ```
 
 -----
 
-## Runtime Value Types (fardrun `Val`)
+## Runtime Value Types
 
-|Variant                       |Description                                                          |
-|------------------------------|---------------------------------------------------------------------|
-|`Unit`                        |unit / null                                                          |
-|`Bool(bool)`                  |true / false                                                         |
-|`Int(i64)`                    |64-bit signed integer                                                |
-|`Float(f64)`                  |Produced only by `json.decode` on JSON floats or `std/math` constants|
-|`Text(String)`                |UTF-8 text (note: field is `Text`, not `Str`)                        |
-|`Bytes(Vec<u8>)`              |Raw bytes — produced by `std/bytes` operations. Not used for floats. |
-|`List(Vec<Val>)`              |Ordered list                                                         |
-|`Record(BTreeMap<String,Val>)`|Record with sorted string keys                                       |
-|`Err { code, data }`          |Error value with string code and data payload                        |
-|`Func`                        |Closure — params + body + captured env                               |
-|`Builtin`                     |Native stdlib function pointer                                       |
-|`BoundMethod(receiver, fn)`   |Method bound to a receiver value                                     |
-|`Chan`                        |Channel for concurrent communication (`std/chan`)                    |
-|`Mtx`                         |Mutex (`std/mutex`)                                                  |
-|`Big(BigInt)`                 |Arbitrary-precision integer (`std/bigint`)                           |
-|`Promise`                     |Async promise (`std/promise`)                                        |
+| Variant | type.of() | Description |
+|---|---|---|
+| `Unit` | `"unit"` | null |
+| `Bool(bool)` | `"bool"` | true / false |
+| `Int(i64)` | `"int"` | 64-bit signed integer |
+| `Float(f64)` | `"float"` | 64-bit float |
+| `Text(String)` | `"text"` | UTF-8 text — NOT "str" or "string" |
+| `Bytes(Vec<u8>)` | `"bytes"` | Raw bytes |
+| `List(Vec<Val>)` | `"list"` | Ordered list |
+| `Record(BTreeMap<String,Val>)` | `"record"` | Sorted string keys |
+| `Err { code, data }` | `"err"` | Error value |
+| `Func` | `"func"` | Closure |
+| `Builtin` | `"builtin"` | Native stdlib function |
+| `BoundMethod` | `"function"` | Method bound to receiver |
+| `Chan` | — | Channel (std/chan) |
+| `Mtx` | — | Mutex (std/mutex) |
+| `Big(BigInt)` | — | Arbitrary-precision integer (std/bigint) |
+| `Promise` | — | Async promise (std/promise) |
 
-**Float representation:** `Val::Float(f64)` is used consistently. Float literals, JSON-decoded floats, and `std/float` results all produce `Val::Float`. Int+float arithmetic is automatically promoted. Note: `==` on floats uses exact IEEE 754 bit comparison — `0.1 + 0.2 == 0.3` is `true` because both sides have the same bit pattern, but accumulated floating-point errors across many operations may produce unexpected results. Use tolerance checks for computed values.
-
-**`Val::Text` not `Val::Str`:** The field is named `Text` in the current source,
-not `Str` as in earlier versions. The `type_name()` method returns `"text"` for
-text values.
+**Key notes:**
+- `type.of(null)` returns `"unit"` — NOT `"null"`
+- `type.of("hello")` returns `"text"` — NOT `"str"` or `"string"`
+- `cast.text(65)` returns `"A"` (Unicode codepoint) — NOT number-to-string
+- Use `str.from(65)` for `"65"` (number to string representation)
+- Int + Float arithmetic auto-promotes: `1 + 0.5 == 1.5`
 
 -----
 
 ## Stdlib Modules — Complete Reference
 
-All modules verified from source. Only `std/artifact.ref` and `std/artifact.derive`
-remain as `Unimplemented` — all other registered builtins are functional.
-
 ### std/str
 
-`len`, `trim`, `split_lines`, `lower`, `to_lower`, `toLower`, `upper`, `to_upper`, `toUpper`, `concat`, `split`,
-`contains`, `starts_with`, `ends_with`, `replace`, `slice`, `format`,
+`len`, `trim`, `split_lines`, `lower`, `to_lower`, `toLower`, `upper`, `to_upper`, `toUpper`,
+`concat`, `split`, `contains`, `starts_with`, `ends_with`, `replace`, `slice`, `format`,
 `from_int`, `from_float`, `from`, `join`, `pad_left`, `pad_right`, `repeat`,
 `index_of`, `chars`
 
-> **Name note:** `lower` and `upper` are the correct names. `to_lower`/`to_upper`
-> do not exist and will produce a field-not-found error at runtime.
+**Verified:**
+- `str.concat(a, b)` and `str.concat([a, b, c])` both work
+- `str.pad_left("hi", 5, "0")` => `"000hi"`
+- `str.pad_right("hi", 5, ".")` => `"hi..."`
+- `str.repeat("ab", 3)` => `"ababab"`
+- `str.index_of("hello", "ll")` => `2`
+- `str.join(["a","b","c"], "-")` => `"a-b-c"`
+- `str.chars("hi")` => `["h","i"]`
+- `str.lower`, `str.to_lower`, `str.toLower` all work (same for upper)
+- `"+"` does NOT concatenate strings — always use `str.concat`
 
 ### std/list
 
@@ -377,28 +365,49 @@ remain as `Unimplemented` — all other registered builtins are functional.
 `get`, `head`, `tail`, `last`, `append`, `zip`, `reverse`, `flatten`, `set`,
 `any`, `all`, `find`, `find_index`, `take`, `drop`, `flat_map`, `par_map`,
 `zip_with`, `chunk`, `sort_by`, `sort_by_int_key`, `sort_int`,
-`dedupe`, `dedupe_sorted_int`, `hist_int`
+`dedupe`, `dedupe_sorted_int`, `hist_int`, `build`
+
+**Verified:**
+- `list.range(0, 5)` => `[0,1,2,3,4]`
+- `list.zip([1,2,3], ["a","b","c"])` => `[[1,"a"],[2,"b"],[3,"c"]]`
+- `list.find([1,2,3], fn(x) { x == 2 })` => `{"some": 2}` — access with `.some`
+- `list.sort_int([3,1,2])` => `[1,2,3]`
+- `list.chunk([1,2,3,4,5], 2)` => `[[1,2],[3,4],[5]]`
+- `list.flat_map([1,2,3], fn(x) { [x, x*10] })` => `[1,10,2,20,3,30]`
+- `list.concat` takes ONE argument — a list of lists
+- `list.build(n, fn(i) { expr })` => list of n items where item[i] = fn(i)
 
 ### std/rec
 
 `empty`, `keys`, `values`, `has`, `get`, `getOr`, `getOrErr`, `set`,
 `remove`, `merge`, `select`, `rename`, `update`
 
-> **`rec.get` behavior:** returns `Unit` (null) for missing keys — silent, no error.
-> Use `rec.has(r, key)` before `rec.get` when key presence is uncertain.
-> Use `rec.getOr(r, key, default)` for safe access with a fallback value.
-> Use `rec.getOrErr(r, key)` to get an error value on missing key.
+**Verified:**
+- `rec.get(r, "missing")` returns `null` — silent, no error
+- `rec.getOr(r, "missing", default)` returns default
+- `rec.remove(r, "key")` — use `remove` not `delete`
+- `rec.merge({x:1}, {y:2})` => `{x:1,y:2}`
+- `rec.select(r, ["a","c"])` => record with only those keys
+
+> `std/record` aliases `std/rec`. Both work identically.
 
 ### std/map
 
 `get`, `set`, `keys`, `values`, `has`, `delete`, `entries`, `new`, `from_entries`
 
-> `std/record` — aliases `std/rec`. Both work identically. `import("std/record") as rec` is valid.
+**Verified:**
+- `map.new()` creates empty map
+- `map.set(m, "x", 42)` returns new map
+- `map.get(m, "x")` => `42`
+- `map.keys(m)` => list of keys
 
 ### std/set
 
-`new`, `add`, `remove`, `has`, `union`, `intersect`, `diff`, `to_list`,
-`from_list`, `size`
+`new`, `add`, `remove`, `has`, `union`, `intersect`, `diff`, `to_list`, `from_list`, `size`
+
+**Verified:**
+- `set.from_list([1,2,3,2,1])` deduplicates => size 3
+- `set.to_list(s)` => `[1,2,3]`
 
 ### std/int
 
@@ -406,7 +415,10 @@ remain as `Unimplemented` — all other registered builtins are functional.
 `abs`, `min`, `max`, `to_text`, `to_string`, `from_text`, `neg`, `clamp`, `mod`,
 `lt`, `gt`, `le`, `ge`, `to_str_padded`
 
-> **Note:** `import("std/int") as int` works correctly. `int` is not a reserved alias.
+**Verified:**
+- `int.parse("42")` returns `{t: "ok", v: 42}` — access with `.v` not `.ok`
+- `int.parse("42")?` => `42` (unwrap with `?`)
+- `int.parse("abc")?` propagates error
 
 ### std/float
 
@@ -419,36 +431,38 @@ remain as `Unimplemented` — all other registered builtins are functional.
 `abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`,
 `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`
 
-Constants: `pi`, `e`, `inf` (registered as `Val::Float` values, not functions)
+Constants: `pi`, `e`, `inf` (Val::Float values, not functions)
 
 ### std/bigint
 
-`from_int`, `from_str`, `to_str`, `add`, `sub`, `mul`, `div`, `mod`,
-`pow`, `eq`, `lt`, `gt`
+`from_int`, `from_str`, `to_str`, `add`, `sub`, `mul`, `div`, `mod`, `pow`, `eq`, `lt`, `gt`
 
 ### std/bits
 
 `band`, `bor`, `bxor`, `bnot`, `bshl`, `bshr`, `popcount`
 
-> `std/bits` is used internally by `image-core/src/crc32` for CRC-32 computation.
-> `bits.band(n, 4294967295)` is the canonical u32 mask. `bits.bshr(n, k)` is logical right shift.
-> All bit operations accept `Int` and return `Int`.
+> All bit operations accept Int and return Int. `bits.band(n, 4294967295)` is the canonical u32 mask.
 
 ### std/json
 
 `encode`, `decode`, `canonicalize`
 
-> `encode_pretty` was present in earlier versions — verify before using.
+**Verified:**
+- `json.encode({a: 1, b: [1,2,3]})` => `'{"a":1,"b":[1,2,3]}'`
+- `json.decode('{"x":42}')` => `{x: 42}`
 
 ### std/bytes
 
 `concat`, `to_str`, `to_string`, `from_string`, `len`, `get`, `of_list`, `to_list`,
 `of_str`, `merkle_root`, `eq`, `to_hex`, `to_base64`, `from_hex`, `from_base64`, `slice`
 
+**Verified:**
+- `bytes.of_str("hello")` => Bytes of length 5
+- `bytes.to_hex(bytes.of_str("hi"))` => `"6869"`
+
 ### std/codec
 
-`base64url_encode`, `base64url_encode_hex`, `base64url_decode`,
-`hex_encode`, `hex_decode`
+`base64url_encode`, `base64url_encode_hex`, `base64url_decode`, `hex_encode`, `hex_decode`
 
 ### std/base64
 
@@ -460,64 +474,27 @@ Constants: `pi`, `e`, `inf` (registered as `Val::Float` values, not functions)
 
 `parse`, `encode`
 
+> CSV values are type-inferred — numbers come back as Int or Float, not Text.
+
 ### std/hash
 
 `sha256_text`, `sha256_bytes`
 
-Returns hex string prefixed `sha256:`.
+**Verified:**
+- `hash.sha256_text("hello")` => `"sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"`
 
 ### std/crypto
 
-`hmac_sha256(key_hex_or_bytes, msg)`, `ed25519_verify(pk_hex, msg_hex, sig_hex)`,
+`hmac_sha256(key, msg)`, `ed25519_verify(pk_hex, msg_hex, sig_hex)`,
 `sha512`, `aes_encrypt`, `aes_decrypt`, `merkle_root`
-
-> `ed25519_verify` is fully functional. Backed by `ed25519-dalek` directly in fardrun.
 
 ### std/uuid
 
 `v4`, `validate`
 
-### std/rand
-
-`uuid_v4`
-
-### std/random
+### std/rand / std/random
 
 `uuid_v4`, `int`, `float`
-
-> Non-deterministic oracle — results recorded in trace. `int` returns random int, `float` returns random float in [0,1].
-
-### std/avro
-
-> Implemented via `packages/avro-core`. Import by path — see Integration Packages.
-
-### std/duckdb
-
-> Implemented via `packages/duckdb-core`. Import by path — see Integration Packages.
-
-### std/parquet
-
-> Implemented via `packages/parquet-core`. Import by path — see Integration Packages.
-
-### std/postgres
-
-> Implemented via `packages/postgres-core`. Import by path — see Integration Packages.
-
-### std/wasm
-
-> Implemented via `packages/wasm-core`. Import by path — see Integration Packages.
-
-### std/watch
-
-> Implemented via `packages/watch-core`. Import by path — see Integration Packages.
-
-### std/ws
-
-> Implemented via `packages/ws-core`. Import by path — see Integration Packages.
-
-### std/xlsx
-
-> Implemented via `packages/xlsx-core`. Import by path — see Integration Packages.
 
 ### std/datetime
 
@@ -527,18 +504,20 @@ Returns hex string prefixed `sha256:`.
 
 `now`, `parse`, `format`, `add`, `sub`
 
-`Duration` record: `{ ms, sec, min }` — each is a builtin function.
+Duration record: `{ ms, sec, min }` — each is a builtin function.
 
 ### std/io
 
 `read_file`, `write_file`, `append_file`, `read_lines`, `file_exists`,
 `delete_file`, `read_stdin`, `read_stdin_lines`, `list_dir`, `make_dir`
 
+> `io.read_file` returns `{ ok: text }` on success — no `err` field. Accessing `.err` crashes.
+
 ### std/fs
 
 `read_text`, `write_text`, `write_bytes`, `exists`, `read_dir`, `stat`, `delete`, `make_dir`
 
-> `write_bytes(path, bytes)` — writes a `Bytes` value to a file. Sandbox-restricted to relative paths.
+> `write_bytes(path, bytes)` writes a Bytes value. Sandbox-restricted to relative paths.
 
 ### std/path
 
@@ -552,7 +531,7 @@ Returns hex string prefixed `sha256:`.
 
 `spawn`, `exit`, `capture`
 
-> `capture(cmd, args) -> { ok, exit_code, stdout, stderr }` — runs a subprocess and captures output.
+> `capture(cmd, args)` => `{ ok, exit_code, stdout, stderr }`
 
 ### std/http
 
@@ -560,23 +539,14 @@ Returns hex string prefixed `sha256:`.
 
 ### std/net
 
-`serve(port, handler_fn)` — blocking HTTP server.
-
-`connect(host, port) -> { ok: conn_id } | { err: text }` — opens a TCP connection. Returns an integer connection handle.
-
-`send(conn_id, bytes) -> { ok: null } | { err: text }` — writes bytes to an open connection. Accepts `Bytes` or `List(Int)`.
-
-`recv(conn_id, max_bytes) -> { ok: Bytes } | { err: text }` — reads up to `max_bytes` from an open connection.
-
-`close_conn(conn_id) -> Unit` — closes and removes the connection.
-
-> TCP client primitives are used by `postgres-core` and `ws-core`. Connection handles are integers assigned sequentially per process.
+`serve(port, handler_fn)`, `connect(host, port)`, `send(conn_id, bytes)`,
+`recv(conn_id, max_bytes)`, `close_conn(conn_id)`
 
 ### std/promise
 
 `spawn`, `await`, `spawn_ordered`
 
-> `spawn_ordered(fns)` spawns a list of zero-argument functions concurrently and joins in spawn order. Returns a list of results with guaranteed ordering — same digest across runs.
+> `spawn_ordered(fns)` spawns concurrently, joins in spawn order.
 
 ### std/chan
 
@@ -590,22 +560,17 @@ Returns hex string prefixed `sha256:`.
 
 `open`, `exec`, `query`, `close`
 
-> `sqlite.open(path)` — returns a db handle record. Use `":memory:"` for in-memory.
-> `sqlite.exec(db, sql)` — execute DDL/DML, returns db handle.
-> `sqlite.query(db, sql)` — returns list of records.
+> `sqlite.open(":memory:")` for in-memory. `exec` returns db handle. `query` returns list of records.
 
 ### std/menv
 
 `new`, `set`, `get`, `has`, `child`, `call_eval`, `apply_closure`
 
-> Mutable environment used for self-hosting bootstrap. `menv.set` returns `Unit`.
-> `menv.call_eval(body, env, eval_fn)` — evaluates FIR body natively.
+> `menv.set` returns Unit — always `let _ = menv.set(...)`.
 
 ### std/async
 
 `sleep`, `spawn`, `await`, `all`, `resolved`, `rejected`, `yield`, `race`, `timeout`
-
-> Stub implementation — operations complete synchronously in current runtime.
 
 ### std/cell
 
@@ -617,8 +582,6 @@ Returns hex string prefixed `sha256:`.
 `from_nullable`/`fromNullable`, `to_nullable`/`toNullable`,
 `map`, `and_then`/`andThen`, `unwrap_or`/`unwrapOr`,
 `unwrap_or_else`/`unwrapOrElse`, `to_result`/`toResult`
-
-> Both snake_case and camelCase aliases are registered for all functions.
 
 ### std/result
 
@@ -633,13 +596,24 @@ Returns hex string prefixed `sha256:`.
 
 `of`
 
+**Verified type.of return values:**
+- `type.of(42)` => `"int"`
+- `type.of("hi")` => `"text"` (NOT "str")
+- `type.of([1,2])` => `"list"`
+- `type.of({a:1})` => `"record"`
+- `type.of(null)` => `"unit"` (NOT "null")
+- `type.of(true)` => `"bool"`
+
 ### std/cast
 
 `float`, `int`, `text`
 
-> **`cast.text` converts integers to Unicode characters** — `cast.text(65)` returns `"A"`, not `"65"`.
-> Use `str.from(n)` to convert a number to its string representation.
-> `cast.text` is correct for Unicode codepoint conversion only.
+**CRITICAL:**
+- `cast.text(65)` => `"A"` (Unicode codepoint 65) — NOT `"65"`
+- `cast.text` is for Unicode codepoint conversion ONLY
+- Use `str.from(n)` for number-to-string: `str.from(65)` => `"65"`
+- `cast.int("42")` => `42`
+- `cast.float("3.14")` => `3.14`
 
 ### std/re
 
@@ -657,21 +631,15 @@ Returns hex string prefixed `sha256:`.
 
 `open`/`load`, `call`, `call_pure`, `call_checked`, `call_str`, `close`
 
-> `call_checked` calls the function twice and verifies identical results (determinism check). Emits `ffi_checked` trace event on success. `call` emits `ffi_oracle` boundary event.
-
 ### std/compress
 
 `gzip`, `gunzip`
 
-> Note: registered as `gzip`/`gunzip`, not the previously documented
-> `gzip_compress`/`gzip_decompress`. `zstd` is not present.
+> Registered as `gzip`/`gunzip` — NOT `gzip_compress`/`gzip_decompress`.
 
 ### std/graph
 
 `of`, `ancestors`, `leaves`, `to_dot`
-
-> Note: registered API differs from previously documented
-> (`add_node`, `add_edge`, `bfs`, `dfs`, `shortest_path`, `topo_sort` are not present).
 
 ### std/linalg
 
@@ -682,21 +650,11 @@ Returns hex string prefixed `sha256:`.
 
 `id`, `pipe`, `tap`
 
-### std/grow
-
-`append`, `merge`, `unfold_tree`, `unfold`
-
-### std/sembit
-
-`partition`
-
 ### std/artifact
 
 `import`, `emit`
 
-> `ref` and `derive` are registered as `Unimplemented("std/trace.ref")` /
-> `Unimplemented("std/trace.derive")` — the only two remaining unimplemented
-> builtins in the entire stdlib.
+> `ref` and `derive` are Unimplemented — the only two unimplemented builtins.
 
 ### std/witness
 
@@ -710,11 +668,6 @@ Returns hex string prefixed `sha256:`.
 
 `red_1x1`, `encode`, `encode_rgb`, `encode_rgba`, `encode_palette`
 
-> `encode(width, height, pixels)` — pixels is `List({r,g,b,a})`, returns `Bytes`.
-> `encode_rgb(width, height, bytes)` — bytes is `Bytes` (flat RGB).
-> `encode_rgba(width, height, bytes)` — bytes is `Bytes` (flat RGBA).
-> `encode_palette(width, height, indices, palette)` — indices is `List(Int)`, palette is `List({r,g,b})` or `List({r,g,b,a})`.
-
 ### std/cli
 
 `args`
@@ -723,229 +676,136 @@ Returns hex string prefixed `sha256:`.
 
 ## Media Stack Modules
 
-The following workspace packages ship with FARD. Import by relative path — they are not in the package registry.
+Import by relative path — not in the package registry.
 
 ### media-core/src/types
 
-`image_spec(width, height, encoding)` — returns `{ width, height, encoding }` spec record used by raster values.
-`video_spec(width, height, fps_num, fps_den, encoding)` — returns `{ width, height, fps_num, fps_den, encoding }` spec record used by video values.
+`image_spec(width, height, encoding)`, `video_spec(width, height, fps_num, fps_den, encoding)`
 
 ### media-core/src/bytes
 
-`concat(a, b)`, `concat_many(list)` — byte concatenation.
-`u32le(n)` — 4-byte little-endian unsigned int.
-`u16le(n)` — 2-byte little-endian unsigned int.
-`i16le(n)` — 2-byte little-endian signed int.
-`ascii_bytes(str)` — encodes an ASCII string to bytes.
-
-All functions return `Bytes`.
+`concat(a, b)`, `concat_many(list)`, `u32le(n)`, `u16le(n)`, `i16le(n)`, `ascii_bytes(str)`
 
 ### media-core/src/artifact
 
-`write_receipt(path, payload_bytes, meta)` — writes `path.receipt.json` containing the SHA-256 digest of `payload_bytes` merged with `meta`. Returns the enriched metadata record. Used by all media exporters.
+`write_receipt(path, payload_bytes, meta)`
 
 ### image-core/src/color
 
-`clamp8(x) -> Int` — clamps integer to [0, 255].
-`rgb(r, g, b) -> Record` — `{ r: Int, g: Int, b: Int }` with values clamped via `clamp8`.
+`clamp8(x)`, `rgb(r, g, b)`
 
 ### image-core/src/raster
 
-`make(width, height, pixel_fn) -> Record`
+`make(width, height, pixel_fn)`
 
-Calls `pixel_fn(x, y)` for every position in `[0, width) × [0, height)`, row-major. Returns:
-
-```ebnf
-raster_value    = "{" , "spec" , ":" , image_spec_record , "," ,
-                  "pixels" , ":" , pixel_list , "}" ;
-image_spec_rec  = "{" , "width" , ":" , integer , "," ,
-                  "height" , ":" , integer , "," ,
-                  "encoding" , ":" , string , "}" ;
-pixel_list      = "[" , { rgb_record , [ "," ] } , "]" ;
-rgb_record      = "{" , "r" , ":" , integer , "," ,
-                  "g" , ":" , integer , "," ,
-                  "b" , ":" , integer , "}" ;
-```
+> `pixel_fn(x, y)` called for every position row-major. Returns `{spec, pixels}`.
+> To build from existing list: `fn(x, y) { list.get(pixels, y * width + x) }`
 
 ### image-core/src/draw
 
-`gradient(width, height) -> raster_value` — produces an RGB gradient raster. R increases left-to-right, G increases top-to-bottom, B is fixed at 128.
+`gradient(width, height)`
 
 ### image-core/src/ppm
 
-`ppm_bytes(width, height, pixels) -> Bytes` — P6 binary PPM encoder. Header: `"P6\n{width} {height}\n255\n"` followed by raw RGB bytes.
-
-`ppm_header(width, height) -> Bytes`, `ppm_pixel_bytes(pixels) -> Bytes` also exported.
+`ppm_bytes(width, height, pixels)`, `ppm_header(width, height)`, `ppm_pixel_bytes(pixels)`
 
 ### image-core/src/png
 
-`png_bytes(width, height, pixels) -> Bytes` — complete PNG encoder. Encoding: 8-bit RGB (colour type 2).
-
-Chunk layout:
-
-```
-PNG signature   8 bytes: 137 80 78 71 13 10 26 10
-IHDR            width u32be, height u32be, bit_depth=8, colour_type=2,
-                compression=0, filter=0, interlace=0
-IDAT            zlib level-0 stored blocks over filter-0 scanlines
-IEND            empty body
-```
-
-Each chunk: `u32be(data_len) || tag_bytes || data || u32be(crc32(tag || data))`.
-CRC-32 computed by `image-core/src/crc32` using `std/bits`.
-IDAT payload produced by `image-core/src/zlib0`.
-
-`be32(n)`, `chunk(tag, data)`, `scanlines(width, height, pixels)` also exported.
+`png_bytes(width, height, pixels)`
 
 ### image-core/src/zlib0
 
-`zlib_bytes(bs) -> Bytes` — zlib level-0 (no compression). Handles input of any size via multi-block framing.
-
-Format:
-
-```
-CMF=0x78, FLG=0x01
-{ stored_block }+         one block per 65535 bytes of input
-adler32_be(full_input)    4-byte big-endian Adler-32
-```
-
-Each stored block: `flag(1 byte) || u16le(len) || u16le(65535 - len) || data`. Final block flag = 1, all preceding blocks flag = 0.
-
-`stored_block(flag, bs)`, `zlib_blocks(bs)`, `u16le_bytes(n)` also exported.
+`zlib_bytes(bs)`
 
 ### image-core/src/adler32
 
-`adler32_int(bs) -> Int` — Adler-32 checksum. `a` starts at 1, `b` at 0; both reduced mod 65521 per byte. Result: `b * 65536 + a`.
-`adler32_be_bytes(bs) -> Bytes` — 4-byte big-endian encoding of the checksum.
-
-`mod65521(n)`, `adler32_parts(bs)` also exported.
+`adler32_int(bs)`, `adler32_be_bytes(bs)`
 
 ### image-core/src/crc32
 
-`crc32_bytes(bs) -> Int` — CRC-32 (polynomial 0xEDB88320). Initial value `0xFFFFFFFF`, final XOR `0xFFFFFFFF`. Implemented with `std/bits`: `bits.bxor`, `bits.band`, `bits.bshr`.
-`crc32_be_bytes(bs) -> Bytes` — 4-byte big-endian encoding.
-
-`xor_byte(a, b)`, `xor_u32(a, b)` also exported.
+`crc32_bytes(bs)`, `crc32_be_bytes(bs)`
 
 ### audio-core/src/pcm
 
-`encode_pcm_s16le(samples) -> Bytes` — encodes `List(Float)` in [-1.0, 1.0] to 16-bit signed little-endian PCM. Each sample: `floor(clamp_unit(s) * 32767.0)` cast to `Int`, then encoded as `i16le`.
+`encode_pcm_s16le(samples)`
+
+> Only `encode_pcm_s16le` is exported. `f32_to_pcm_s16` was inlined and removed.
 
 ### audio-core/src/synth
 
-`sine(freq, duration_s, sample_rate) -> List(Float)` — generates `floor(duration_s * sample_rate)` float samples of a sine wave at `freq` Hz.
+`sine(freq, duration_s, sample_rate)`
 
 ### audio-core/src/export
 
-`write_wav(path, title, sample_rate, channels, samples)` — encodes samples to PCM S16LE, wraps in WAV container, emits file via `artifact_std.emit`, writes `.receipt.json`. Receipt includes `artifact_type`, `encoding`, `sample_rate`, `channels`, `byte_len`, `duration_seconds`.
+`write_wav(path, title, sample_rate, channels, samples)`
 
 ### video-core/src/frame
 
-`make(index, pts_num, pts_den, raster) -> Record` — `{ index, pts_num, pts_den, raster }`.
-`test_pattern(width, height, index) -> Record` — gradient raster frame at the given index.
+`make(index, pts_num, pts_den, raster)`, `test_pattern(width, height, index)`
 
 ### video-core/src/rawvid
 
-`rawvid_bytes(width, height, fps_num, fps_den, frames) -> Bytes` — encodes to FARDVID1 binary format.
-
-```ebnf
-rawvid_file     = magic , u32le , u32le , u32le , u32le , u32le , { frame_rgb } ;
-(* magic:      ascii "FARDVID1"  (8 bytes)                        *)
-(* u32le[0]:   width                                              *)
-(* u32le[1]:   height                                             *)
-(* u32le[2]:   fps_num                                            *)
-(* u32le[3]:   fps_den                                            *)
-(* u32le[4]:   frame_count                                        *)
-(* frame_rgb:  width * height * 3 bytes, row-major packed RGB     *)
-(* total header size: 28 bytes                                    *)
-```
-
-`frame_rgb_bytes(frame) -> Bytes` also exported.
+`rawvid_bytes(width, height, fps_num, fps_den, frames)`, `frame_rgb_bytes(frame)`
 
 ### video-core/src/rawvid_decode
 
-`header(bs) -> Record` — parses bytes 8–27: `{ width, height, fps_num, fps_den, frames }`.
-`frame_byte_len(h) -> Int` — `h.width * h.height * 3`.
-`frame_offset(h, index) -> Int` — `28 + index * frame_byte_len(h)`.
-`frame_bytes(bs, index) -> Bytes` — extracts raw RGB bytes for frame at `index`.
-
-`u32le_at(bs, off)` also exported.
+`header(bs)`, `frame_byte_len(h)`, `frame_offset(h, index)`, `frame_bytes(bs, index)`, `u32le_at(bs, off)`
 
 ### video-core/src/timeline
 
-`make(width, height, fps_num, fps_den, frames) -> Record` — `{ spec: video_spec(...), frames: List }`.
-`test_pattern_video(width, height, fps_num, fps_den, count) -> Record` — builds a video of `count` gradient frames.
+`make(width, height, fps_num, fps_den, frames)`, `test_pattern_video(width, height, fps_num, fps_den, count)`
 
 ### video-core/src/mux
 
-`av_pair(video, audio) -> Record` — `{ video, audio }`.
-`with_audio(video, wav_artifact) -> Record` — `{ video, audio: wav_artifact }`.
+`av_pair(video, audio)`, `with_audio(video, wav_artifact)`
 
 ### video-core/src/avbundle
 
-`make(title, video_artifact, audio_artifact) -> Record` — `{ artifact_type: "video/x-fard-avbundle", title, video, audio }`.
+`make(title, video_artifact, audio_artifact)`
 
 ### video-core/src/mp4_manifest
 
-`make(title, video_artifact, audio_artifact) -> Record` — MP4 transcode manifest. Container: `mp4`. Codecs: H.264 (video), AAC (audio). Carries full path, dimension, fps, frame count, and duration metadata from the source artifacts.
+`make(title, video_artifact, audio_artifact)`
 
 ### video-core/src/webm_manifest
 
-`make(title, video_artifact, audio_artifact) -> Record` — WebM transcode manifest. Container: `webm`. Codecs: VP9 (video), Opus (audio). Same metadata shape as `mp4_manifest`.
+`make(title, video_artifact, audio_artifact)`
 
 ### video-core/src/transcode_contract
 
-`make(kind, input_artifact, output_artifact_type, container, video_codec, audio_codec) -> Record` — base transcode contract. `bridge_state` is `"contract_only"`.
-
-`rawvid_wav_to_mp4(input_artifact) -> Record` — contract targeting `video/mp4`, H.264/AAC.
-`rawvid_wav_to_webm(input_artifact) -> Record` — contract targeting `video/webm`, VP9/Opus.
-
-Contract record fields: `artifact_type` (`"video/x-fard-transcode-contract"`), `kind`, `input_artifact`, `input_artifact_type`, `input_path`, `output_artifact_type`, `container`, `video_codec`, `audio_codec`, `bridge_state`.
+`make(kind, input_artifact, output_artifact_type, container, video_codec, audio_codec)`,
+`rawvid_wav_to_mp4(input_artifact)`, `rawvid_wav_to_webm(input_artifact)`
 
 ### video-core/src/transcode_pipeline
 
-`rawvid_frames_to_mp4(rawvid_bytes, wav_path, frames_dir, output_path)` — materialises PPM frame sequence to `frames_dir`, then calls `transcode_exec.transcode_mp4` with ffmpeg pattern `frames_dir/frame_%06d.ppm`.
-`rawvid_frames_to_webm(rawvid_bytes, wav_path, frames_dir, output_path)` — same, targeting WebM.
+`rawvid_frames_to_mp4(rawvid_bytes, wav_path, frames_dir, output_path)`,
+`rawvid_frames_to_webm(rawvid_bytes, wav_path, frames_dir, output_path)`
 
 ### video-core/src/gifbridge
 
-`gif_stub(video_artifact) -> Record` — `{ artifact_type: "image/gif", source_artifact_type, source_path, bridge: "rawvid_to_gif_stub" }`. Stub pointing at a rawvid source for downstream GIF conversion.
+`gif_stub(video_artifact)`
 
 ### video-core/src/export
 
-`write_rawvid(path, title, video)` — encodes video to FARDVID1, emits via `artifact_std.emit`, writes `.receipt.json`. Receipt includes `artifact_type`, `encoding`, `width`, `height`, `fps_num`, `fps_den`, `frames`, `title`, `byte_len`.
+`write_rawvid(path, title, video)`
 
 ### pdf_v0/src/model
 
-```ebnf
-bbox_record     = "{" , "x0" , ":" , number , "," , "y0" , ":" , number , ","
-                  "x1" , ":" , number , "," , "y1" , ":" , number , "}" ;
-
-match_record    = "{" , "page" , ":" , integer , "," , "match_id" , ":" , string , ","
-                  "text" , ":" , string , "," , "span_ids" , ":" , list , ","
-                  "bbox" , ":" , bbox_record , "}" ;
-
-overlay_item    = "{" , "page" , ":" , integer , "," , "type" , ":" , string , ","
-                  "x0" , ":" , number , "," , "y0" , ":" , number , ","
-                  "x1" , ":" , number , "," , "y1" , ":" , number , ","
-                  "fill_rgb" , ":" , "[" , integer , "," , integer , "," , integer , "]" , ","
-                  "opacity_mode" , ":" , string , "}" ;
-```
-
-`make_bbox(x0, y0, x1, y1)`, `make_match(page, id, text, span_ids, bbox)`, `make_overlay_item(page, kind, bbox, fill_rgb)`, `make_matches_doc(query, matches)`, `make_overlay_plan(items)`.
+`make_bbox(x0,y0,x1,y1)`, `make_match(page,id,text,span_ids,bbox)`,
+`make_overlay_item(page,kind,bbox,fill_rgb)`, `make_matches_doc(query,matches)`,
+`make_overlay_plan(items)`
 
 ### pdf_v0/src/write_pdf
 
-`build_pdf(rects) -> Text` — generates a complete PDF-1.4 document. Structure: catalog (obj 1) → pages (obj 2) → page (obj 3, MediaBox 200×200) → content stream (obj 4). Content stream contains `rg` colour ops and `re f` fill ops for each rect. Returns the full PDF as a text string.
+`build_pdf(rects)`
 
 ### pdf_v0/src/highlight
 
-`find_matches(spans, query) -> List` — folds over a list of span records `{ text, page, bbox }`, returning match records for any span whose text contains `query`.
-`make_overlay(matches) -> List` — maps matches to yellow (`[255, 235, 59]`) `highlight_rect` overlay items.
+`find_matches(spans, query)`, `make_overlay(matches)`
 
 ### pdf_patch/src/patch_pdf
 
-`patch_pdf(pdf_text, x0, y0, x1, y1) -> Text` — injects a yellow rectangle overlay into an existing PDF. Appends a new content stream object (obj 5) with a `re f` drawing op, updates the page `/Contents` from `4 0 R` to `[4 0 R 5 0 R]`, and replaces the trailing `%%EOF` marker. Returns the patched PDF as text.
+`patch_pdf(pdf_text, x0, y0, x1, y1)`
 
 -----
 
@@ -953,32 +813,21 @@ overlay_item    = "{" , "page" , ":" , integer , "," , "type" , ":" , string , "
 
 ### audio-core/src/wav_decode
 
-`decode(bs) -> { ok: { header, samples } } | { err: text }`
+`decode(bs)` => `{ ok: { header, samples } } | { err: text }`
 
-Parses a WAV file from `Bytes`. Locates `fmt ` and `data` chunks by scanning the RIFF container. Returns:
-
-- `header` — `{ channels, sample_rate, bits_per_sample }`
-- `samples` — `List(Int)`, PCM values. 16-bit: signed integers in [-32768, 32767]. 8-bit: unsigned offset by -128.
-
-Exports: `u16le_at`, `u32le_at`, `i16le_at`, `find_chunk`, `decode`.
+> `header` = `{ channels, sample_rate, bits_per_sample }`. `samples` = `List(Int)`.
 
 ### image-core/src/ppm_decode
 
-`decode(bs) -> { ok: { width, height, maxval, pixels } } | { err: text }`
+`decode(bs)` => `{ ok: { width, height, maxval, pixels } } | { err: text }`
 
-Parses a P6 binary PPM file from `Bytes`. Skips whitespace and `#` comment lines between tokens. Returns `pixels` as `List({ r, g, b })`.
-
-Exports: `read_token`, `decode`.
-
-> `width`, `height`, `maxval` are `Int` — parsed via `int.parse(...).v`.
+> `width`, `height`, `maxval` are Int. `pixels` = `List({ r, g, b })`.
 
 ### image-core/src/png_decode
 
-`decode(bs) -> { ok: { width, height, pixels } } | { err: text }`
+`decode(bs)` => `{ ok: { width, height, pixels } } | { err: text }`
 
-Parses an 8-bit RGB PNG file from `Bytes`. Validates the 8-byte signature. Decompresses IDAT using a pure-FARD zlib stored-block decompressor. Unfilters scanlines (filter types 0=None, 1=Sub, 2=Up). Returns `pixels` as `List({ r, g, b })`.
-
-Exports: `be32_at`, `valid_signature`, `parse_chunks`, `parse_ihdr`, `zlib_decompress`, `unfilter_row`, `decode_pixels`, `decode`.
+> Filter types 0 (None), 1 (Sub), 2 (Up) supported. Types 3 and 4 not implemented.
 
 -----
 
@@ -986,196 +835,116 @@ Exports: `be32_at`, `valid_signature`, `parse_chunks`, `parse_ihdr`, `zlib_decom
 
 ### image-core/src/transform
 
-All functions take a raster value and return a new raster value.
-
-`resize(src, new_width, new_height)` — nearest-neighbour resampling.
-
-`crop(src, x0, y0, w, h)` — extract sub-rectangle at `(x0, y0)` with dimensions `w × h`.
-
-`flip_h(src)` — mirror horizontally.
-
-`flip_v(src)` — mirror vertically.
-
-`composite(dst, src, dx, dy)` — overlay `src` onto `dst` at offset `(dx, dy)`. Pixels outside `src` bounds taken from `dst`.
-
-`brightness(src, factor)` — scale each channel by `factor` (Float). Channels clamped to [0, 255].
-
-`grayscale(src)` — convert to grayscale using luminance weights: R×0.299 + G×0.587 + B×0.114.
+`resize(src, new_width, new_height)`, `crop(src, x0, y0, w, h)`,
+`flip_h(src)`, `flip_v(src)`, `composite(dst, src, dx, dy)`,
+`brightness(src, factor)`, `grayscale(src)`
 
 ### audio-core/src/transform
 
-All functions operate on sample lists. Samples may be `Float` (synth output) or `Int` (decoded PCM).
-
-`gain(samples, factor)` — scale all samples by `factor` (Float). Integer samples clamped to [-32768, 32767].
-
-`trim(samples, sample_rate, start_ms, end_ms)` — extract the slice from `start_ms` to `end_ms`. Uses `floor(ms * sample_rate / 1000)` for sample-accurate boundaries.
-
-`mix(a, b)` — sum two sample lists element-wise. Output length is `max(len(a), len(b))`. Missing samples treated as 0.
-
-`fade_in(samples, fade_samples)` — ramp gain from 0 to 1 over the first `fade_samples` samples.
-
-`fade_out(samples, fade_samples)` — ramp gain from 1 to 0 over the last `fade_samples` samples.
-
-`mono_to_stereo(samples)` — duplicate each sample into an interleaved stereo pair.
-
-`stereo_to_mono(samples)` — average interleaved stereo pairs into a mono list.
+`gain(samples, factor)`, `trim(samples, sample_rate, start_ms, end_ms)`,
+`mix(a, b)`, `fade_in(samples, fade_samples)`, `fade_out(samples, fade_samples)`,
+`mono_to_stereo(samples)`, `stereo_to_mono(samples)`
 
 -----
 
 ## Integration Packages
 
-All packages import by relative path. No native dependencies.
-
 ### packages/postgres-core
 
-PostgreSQL wire protocol v3 client, pure FARD.
+`connect(host, port, user, password, database)`, `exec(conn_id, sql)`,
+`query(conn_id, sql)`, `close(conn_id)`
 
-**conn.fard** — public API:
-
-`connect(host, port, user, password, database) -> { ok: conn_id } | { err: text }` — opens a TCP connection, sends startup message, handles cleartext auth.
-
-`exec(conn_id, sql) -> { ok: null } | { err: text }` — executes DDL or DML, reads until `ReadyForQuery`.
-
-`query(conn_id, sql) -> { ok: List(Record) } | { err: text }` — executes a query, parses `RowDescription` and `DataRow` messages, returns rows as records keyed by column name.
-
-`close(conn_id)` — sends `Terminate` message and closes TCP connection.
-
-**wire.fard** — `be32`, `be16`, `be32_at`, `be16_at`, `cstr`, `msg` — big-endian encoding helpers for the PG wire protocol.
-
-**auth.fard** — `startup_msg`, `password_msg`, `auth_type` — startup and authentication message builders.
-
-**query.fard** — `simple_query`, `parse_msg`, `parse_all`, `parse_data_row`, `parse_row_description`, `msgs_to_rows` — message parsing and row assembly.
+> `std/postgres` is an empty stub — import by path from packages/postgres-core.
 
 ### packages/ws-core
 
-WebSocket client, pure FARD (RFC 6455).
-
-**conn.fard** — `connect(host, port, path)`, `send_text`, `send_binary`, `recv`, `close` — full client lifecycle. Auto-responds to ping frames with pong.
-
-**frame.fard** — `encode(op, payload, mask)`, `decode(bs, off)` — frame encoder/decoder. Supports 7-bit, 16-bit, and 64-bit payload length fields. Opcodes: 1=text, 2=binary, 8=close, 9=ping, 10=pong.
-
-**handshake.fard** — `upgrade_request`, `handshake_ok`, `split_http` — HTTP upgrade request builder and response validator.
+`connect(host, port, path)`, `send_text`, `send_binary`, `recv`, `close`
 
 ### packages/watch-core
 
-Poll-based filesystem watcher, pure FARD.
+`watch(paths, poll_ms, max_iters, handler)`, `watch_dir(path, poll_ms, max_iters, handler)`
 
-**watch.fard** — `watch(paths, poll_ms, max_iters, handler)`, `watch_dir(path, poll_ms, max_iters, handler)` — calls `handler({ added, removed, changed })` whenever the snapshot changes. Pass `max_iters: -1` for infinite polling.
-
-**stat.fard** — `snapshot(paths) -> Record` — maps each path to its current byte length. `snapshot_dir(path)` — lists a directory and returns `{ path, name }` records.
-
-**diff.fard** — `diff(before, after) -> { added, removed, changed }`, `any_change(d) -> Bool` — snapshot comparison.
+> `diff(before, after)` => `{ added, removed, changed }`. Pass `max_iters: -1` for infinite polling.
 
 ### packages/xlsx-core
 
-Excel workbook writer (OOXML), pure FARD.
+`build_xlsx(sheets)`, `write_xlsx(path, sheets)`
 
-**write.fard** — `build_xlsx(sheets) -> Bytes`, `write_xlsx(path, sheets)` — builds a complete `.xlsx` file. `sheets` is `List({ name, rows })` where `rows` is `List(List(value))`. Values may be `Int`, `Float`, or `Text`.
-
-**sheet.fard** — `sheet_xml(rows)`, `col_letter(n)`, `cell_ref(col, row)` — worksheet XML generation. Numeric values use `<c>` with `<v>`, strings use `inlineStr`.
-
-**zip.fard** — `build(files) -> Bytes` — minimal ZIP writer (store method, no compression). `files` is `List({ name, data })`.
-
-**xml.fard** — `escape`, `attr`, `tag`, `self_closing`, `declaration` — XML helpers.
-
-**workbook.fard** — `workbook_xml`, `rels_xml`, `content_types_xml`, `root_rels_xml` — OOXML relationship and manifest XML.
+> `sheets` is `List({ name, rows })` where `rows` is `List(List(value))`.
 
 ### packages/avro-core
 
-Apache Avro OCF encoder/decoder, pure FARD.
-
-**container.fard** — `write_ocf(records) -> Bytes` — writes an Avro Object Container File. Infers schema from the first record. Encodes all records in a single block with a fixed 16-byte sync marker.
-
-**encode.fard** — `varint(n)`, `encode_string(s)`, `encode_long(n)`, `encode_boolean(b)`, `encode_record(record, fields)` — Avro binary encoding. Uses zigzag LEB128 for integers.
-
-**decode.fard** — `decode_varint(bs, off)`, `decode_string(bs, off)`, `decode_long(bs, off)`, `decode_boolean(bs, off)`, `decode_record(bs, off, fields)` — Avro binary decoding. All return `{ value, next_off }`.
-
-**schema.fard** — `infer(records) -> schema_record` — infers an Avro record schema from a list of FARD records. Type mapping: `Int -> long`, `Float -> double`, `Bool -> boolean`, `Text -> string`.
+`write_ocf(records)` — writes Avro Object Container File. Infers schema from first record.
 
 ### packages/parquet-core
 
-Apache Parquet writer, pure FARD.
-
-**write.fard** — `build_parquet(records) -> Bytes`, `write_parquet(path, records)` — writes a valid Parquet file with one row group. Magic: `PAR1`. Metadata encoded with Thrift compact protocol.
-
-**thrift.fard** — `uvarint`, `varint`, `field_header`, `i32_field`, `i64_field`, `string_field`, `binary_field`, `list_header`, `stop` — Thrift compact protocol encoder.
-
-**schema.fard** — `infer_columns(records)` — infers column types. Type mapping: `Bool -> BOOLEAN (0)`, `Int -> INT64 (2)`, `Float -> DOUBLE (4)`, other -> `BYTE_ARRAY (5)`. Keys sorted lexicographically (BTreeMap order).
-
-**encode.fard** — `encode_plain(v)`, `encode_column(values)` — plain encoding. INT64: 8-byte LE. DOUBLE: 8-byte LE (integer cast). BYTE_ARRAY: 4-byte LE length prefix + UTF-8 bytes.
+`build_parquet(records)`, `write_parquet(path, records)`
 
 ### packages/duckdb-core
 
-In-memory analytical query engine, pure FARD.
+`run(plan)` — executes query plan
 
-**query.fard** — `run(plan) -> List(Record)` — executes a query plan. Plan fields: `from` (rows), `where` (expr), `select` (list of `{ name, expr }`), `group_by` (col names), `aggs` (list of `{ name, fn_name, col }`), `order_by` (col name), `limit` (int). All fields optional.
-
-**expr.fard** — `eval(row, expr)`, `filter(rows, pred)`, `project(rows, selects)` — expression evaluator. Expr formats: `"col_name"` (field lookup), `{ "lit": value }` (literal), `{ "col": "name" }` (explicit field), `{ "op": "==", "left": e, "right": e }` (binary op). Use `{ "lit": v }` for literal values in predicates to distinguish from field names.
-
-**agg.fard** — `sum`, `count`, `avg`, `min_val`, `max_val`, `group_by(rows, key_cols)`, `aggregate(groups, aggs)` — aggregation. `fn_name` values: `"sum"`, `"count"`, `"avg"`, `"min"`, `"max"`.
-
-**join.fard** — `inner_join(left, right, left_key, right_key)`, `left_join(...)`, `cross_join(left, right)` — relational joins. Matching rows merged via `rec.merge`.
+> `std/duckdb` is an empty stub — import by path from packages/duckdb-core.
+> Expr literals must use `{ "lit": value }` to distinguish from field name lookups.
 
 ### packages/wasm-core
 
-WASM binary format decoder and stack machine interpreter, pure FARD.
-
-**decode.fard** — `parse(bs) -> { ok: { sections } } | { err: text }` — validates magic/version and parses all sections. `parse_sections(bs)` returns `List({ id, name, size, body })`. `parse_type_section(body)` returns function type signatures. `parse_export_section(body)` returns `List({ name, kind, index })`.
-
-`leb128_u(bs, off) -> { value, next_off }`, `leb128_s(bs, off) -> { value, next_off }` — LEB128 unsigned and signed decode.
-
-**encode.fard** — `leb128_u(n)`, `leb128_s(n)` — LEB128 encode. `section(id, body)`, `vec(items)`, `functype(params, results)` — module structure helpers. Instructions: `i32_const`, `i64_const`, `i32_add`, `i32_sub`, `i32_mul`, `local_get`, `local_set`, `end_op`, `return_op`. `build_module(type_sec, func_sec, export_sec, code_sec)` — assembles a complete WASM binary.
-
-**interp.fard** — `call(wasm_bytes, fn_name, args) -> { ok: value } | { err: text }` — executes an exported function by name. Supported opcodes: `i32.const` (65), `i64.const` (66), `local.get` (32), `local.set` (33), `i32.add` (106), `i32.sub` (107), `i32.mul` (108), `return` (15), `end` (11).
-
-`exec_body(body, locals) -> value` — executes a raw code body with initial local values.
+`parse(bs)`, `call(wasm_bytes, fn_name, args)`, `exec_body(body, locals)`
 
 -----
 
-## Known Parser Constraints
+## Known Constraints and Gotchas
 
-1. **`+` does not concatenate strings** — `"hello" + " world"` is a type error. Use `str.concat("hello", " world")` for two strings, or `str.concat([a, b, c])` for multiple. The error hint in fardrun suggests the list form.
+1. **`+` does not concatenate strings** — `"a" + "b"` is a type error. Use `str.concat("a", "b")` or `str.concat(["a", "b", "c"])`. The list form is preferred for 3+ parts.
 
-1. **`str.concat` accepts either two strings or a list of strings** — both `str.concat(a, b)` and `str.concat([a, b, c])` are valid. The list form is preferred when joining more than two parts.
+1. **`str.concat` accepts two strings OR a list of strings** — both forms verified working.
 
-1. **Missing `std/str` import causes silent failures** — files using `str.concat`, `str.len`, `str.replace` etc. must explicitly `import("std/str") as str`. Common omission in helper modules like `payloads.fard`, `rbac.fard`, `cas.fard`.
+1. **Missing imports cause runtime failures** — no auto-import. Always explicitly import `std/list`, `std/str`, etc.
 
-1. **`let` inside `if/else` branches works in both forms.** `if c then let x = e in body` and `if c then { let x = e\n body }` both work correctly.
-1. **`[[…]]` as fn tail is FIXED.** The postfix parser now checks for newlines and
-   literal bases before treating `[` as an index operator. `[[a, b], [c, d]]` works
-   correctly as a tail expression.
-1. **`then { }` blocks ARE supported** when the first token inside `{` is `let`,
-   `return`, or `}` (empty block). `then { k: v }` is still parsed as a record literal.
-1. **`!=` IS implemented** — lexed as a two-char operator. Use it directly.
-1. **`\r` not a valid escape.** Only `\n \t \" \\` accepted.
-1. **`str.lower`, `str.to_lower`, `str.toLower` all work.** All three aliases exist for case conversion. Same for upper.
-1. **`list.find` returns `{some: value}` or `{none: unit}`.** Check with `rec.has(r, "some")` or access `.some` directly. There is no `.data` or `.value` field.
-1. **`list.concat` takes one argument** — a list of lists.
-1. **`rec.remove` not `rec.delete`.**
-1. **`int` as import alias works.** `import("std/int") as int` is valid. Previously documented as reserved — this was incorrect.
-1. **Destructuring in `let`** — `let { a, b } = expr` works at top-level and in fn bodies. Shorthand `{ name }` without `: pat` binds to variable `name`. List destructuring `let [a, b] = list` is also supported.
-1. **Float literals are `Val::Float`.** `1.5` produces `Val::Float(1.5)`. Int+float arithmetic is automatically promoted: `1 + 0.5 == 1.5`. The previous documentation claiming float literals produce `Val::Bytes` was incorrect.
-1. **`std/compress` uses `gzip`/`gunzip`**, not `gzip_compress`/`gzip_decompress`.
-1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`**, not the previously documented API.
-1. **`Val` field is `Text` not `Str`.** The runtime type name is `"text"`, returned by `type.of()`.
-1. **Computed record keys `[expr]: val`** — dynamic keys evaluated at runtime. Works in both top-level and fn bodies. Can be combined with spread: `{ ...base, [key]: val }`.
-1. **`str.from(v)` converts any scalar to string.** `str.from(42)` gives `"42"`. **`cast.text(42)` gives `"*"` (Unicode codepoint 42) — never use it for number-to-string conversion.**
-1. **`float + int` is automatically promoted.** `1 + 0.5 == 1.5` works without explicit casting. `cast.float` is no longer needed for mixed arithmetic.
-1. **`list.find` returns `{some: value}` or `{none: unit}`.** Access value with `.some`, not `.data` or `.value`.
-1. **`menv.set` returns `Unit`.** Never use it in value position. Always `let _ = menv.set(...)`.
-1. **`and`/`or` are not keywords.** Use `&&` and `||` instead.
-1. **`&&` and `||` are fully implemented** with short-circuit evaluation. `if x > 0 && x < 10` works correctly. Previously documented as broken — now fixed.
-1. **CSV values are type-inferred.** `csv.parse_csv` calls `int.parse` and `float.parse` on each cell. Numbers come back as `Int` or `Float`, not `Text`.
-1. **SQLite exec is per-connection.** `sqlite.open` on a file path creates a new connection each call. Use a single `db` handle throughout a pipeline.
-1. **`raster.make` takes a `pixel_fn(x, y)`**, not a pre-built pixel list. The function is called for each `(x, y)` position row-major. To build a raster from an existing list, wrap it: `fn(x, y) { list.get(pixels, y * width + x) }`.
-1. **`audio-core/src/pcm` no longer exports `f32_to_pcm_s16`.** The function was inlined. Only `encode_pcm_s16le` is exported.
-1. **All media exporters use `artifact_std.emit`**, not `io.write_file`. Output files are content-addressed and appear in the execution trace as oracle boundary events.
-1. **`int.parse` returns `{ t: "ok", v: n }`**, not `{ ok: n }`. Access the value with `.v`, not `.ok`.
-1. **`io.read_file` returns `{ ok: text }`** on success with no `err` field. Accessing `.err` on a successful result crashes — check for `.ok` instead.
-1. **`duckdb-core` expr literals must use `{ "lit": value }`** to distinguish from field name lookups. A bare string like `"eng"` in an expr is treated as a field name, not a string value.
-1. **`audio-core/src/transform` operates on float or int samples.** `gain` accepts both. `fade_in`/`fade_out` use float multiplication. `stereo_to_mono` uses integer division — apply after PCM conversion for best results.
-1. **`png_decode` supports filter types 0, 1, and 2 only.** Filter type 3 (Average) and 4 (Paeth) are not yet implemented — unfiltered scanlines are returned as-is for unsupported filter types.
+1. **List destructuring `let [a, b] = expr` fails at module level** — use `let [a, b] = expr in body` or use `list.get` at module level.
+
+1. **Rest capture `...rest` only works in `let...in` form** — at module level, rest bindings are silently dropped and unbound.
+
+1. **`return` exits the immediately enclosing `fn {}` body only** — inside closures passed to `list.fold` etc., `return x` returns from the closure, not the outer function. Use recursion for early exit.
+
+1. **Default parameters are NOT implemented** — `fn f(x, y = 0)` parses but calling `f(1)` causes arity mismatch. Always pass all arguments.
+
+1. **Named args work in v1.7.0** — `add(y: 3, x: 7)` works for all function types. Fixed regression from earlier v1.7.0 builds.
+
+1. **`while` returns a structured result** — `{ chain_hex: string, steps: int, value: final_state }`. Access the result with `.value`.
+
+1. **`type.of(null)` returns `"unit"`** — not `"null"`. Null is `Val::Unit` internally.
+
+1. **`cast.text(n)` converts to Unicode codepoint** — `cast.text(65)` => `"A"`. Use `str.from(n)` for number-to-string.
+
+1. **`int.parse` returns `{t: "ok", v: n}`** — access value with `.v`. Use `?` to unwrap: `int.parse("42")?` => `42`.
+
+1. **`?` operator requires a result record** — unwraps `{t:"ok",v:val}`, propagates `{t:"err",...}`. On other values: `QMARK_EXPECT_RESULT` error.
+
+1. **`list.find` returns `{some: value}` or `{none: unit}`** — access with `.some`.
+
+1. **`list.concat` takes one argument** — a list of lists: `list.concat([[1,2],[3,4]])` => `[1,2,3,4]`.
+
+1. **`rec.remove` not `rec.delete`** — correct function name is `remove`.
+
+1. **`std/compress` uses `gzip`/`gunzip`** — not `gzip_compress`/`gzip_decompress`.
+
+1. **`std/graph` uses `of`/`ancestors`/`leaves`/`to_dot`** — not add_node/add_edge/bfs.
+
+1. **`std/duckdb` and `std/postgres` are empty stubs** — import from packages/ by path.
+
+1. **`io.read_file` returns `{ok: text}`** on success — no `err` field. Accessing `.err` crashes.
+
+1. **`menv.set` returns Unit** — always `let _ = menv.set(...)`.
+
+1. **Parser limit on deep if/else chains with complex record expressions** — 4+ branch if/else with complex record literals can fail. Hoist sub-expressions into `let` bindings first.
+
+1. **`[[...]]` as fn tail works correctly** — newline check before `[` resolves list-of-lists ambiguity.
+
+1. **`raster.make` takes `pixel_fn(x, y)`** — not a pre-built pixel list.
+
+1. **`duckdb-core` expr literals must use `{ "lit": value }`** — bare strings are treated as field name lookups.
 
 -----
 
-*Audited against fardrun v1.7.0. Canonical sources: `src/bin/fardrun.rs`, `packages/`.*
+*Fully verified against fardrun v1.7.0 — 2 May 2026*
