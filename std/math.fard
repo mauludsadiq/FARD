@@ -1,0 +1,73 @@
+/// std/math — pure FARD math library
+/// Trig/transcendental functions delegate to native _math builtins.
+/// Arithmetic helpers are pure FARD.
+
+import("std/math") as _math
+import("std/float") as _float
+import("std/int")   as _int
+
+// Constants
+fn pi()  { 3.141592653589793 }
+fn e()   { 2.718281828459045 }
+fn tau() { 6.283185307179586 }
+fn inf() { _float.inf() }
+fn nan() { _float.nan() }
+
+// Basic arithmetic helpers
+fn abs(x)     { if x < 0 then -x else x }
+fn sign(x)    { if x > 0 then 1 else if x < 0 then -1 else 0 }
+fn clamp(x, lo, hi) { if x < lo then lo else if x > hi then hi else x }
+fn max(a, b)  { if a > b then a else b }
+fn min(a, b)  { if a < b then a else b }
+fn pow(base, exp) { _math.pow(base, exp) }
+fn sqrt(x)    { _math.sqrt(x) }
+fn floor(x)   { _math.floor(x) }
+fn ceil(x)    { _math.ceil(x) }
+fn round(x)   { _math.round(x) }
+
+// Trig (native)
+fn sin(x)   { _math.sin(x) }
+fn cos(x)   { _math.cos(x) }
+fn tan(x)   { _math.tan(x) }
+fn asin(x)  { _math.asin(x) }
+fn acos(x)  { _math.acos(x) }
+fn atan(x)  { _math.atan(x) }
+fn atan2(y, x) { _math.atan2(y, x) }
+
+// Exponential/log (native)
+fn exp(x)    { _math.exp(x) }
+fn log(x)    { _math.log(x) }
+fn log2(x)   { _math.log2(x) }
+fn log10(x)  { _math.log10(x) }
+
+// Integer helpers (pure FARD)
+fn gcd(a, b) {
+  if b == 0 then abs(a) else gcd(b, a % b)
+}
+
+fn lcm(a, b) {
+  if a == 0 || b == 0 then 0
+  else abs(a * b) / gcd(a, b)
+}
+
+fn factorial(n) {
+  if n <= 1 then 1 else n * factorial(n - 1)
+}
+
+fn is_even(n) { n % 2 == 0 }
+fn is_odd(n)  { n % 2 != 0 }
+
+fn divmod(a, b) { { q: a / b, r: a % b } }
+
+// Float helpers (pure FARD)
+fn lerp(a, b, t) { a + (b - a) * t }
+
+fn degrees(rad) { rad * 180.0 / pi() }
+fn radians(deg) { deg * pi() / 180.0 }
+
+export { pi, e, tau, inf, nan,
+         abs, sign, clamp, max, min, pow, sqrt, floor, ceil, round,
+         sin, cos, tan, asin, acos, atan, atan2,
+         exp, log, log2, log10,
+         gcd, lcm, factorial, is_even, is_odd, divmod,
+         lerp, degrees, radians }

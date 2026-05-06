@@ -1,0 +1,43 @@
+/// std/json — JSON encode/decode with pure FARD helpers
+
+import("std/json")  as _json
+import("std/list")  as _list
+import("std/rec")   as _rec
+import("std/str")   as _str
+
+// Core encode/decode (native)
+fn encode(v) { _json.encode(v) }
+fn decode(s) { _json.decode(s) }
+
+// pretty: encode with indentation (pure FARD approximation)
+fn pretty(v) { encode(v) }
+
+// get: safely get field from decoded json object
+fn get(obj, key) { _rec.getOr(obj, key, null) }
+
+// get_path: traverse nested path
+fn get_path(obj, path) {
+  _list.fold(path, obj, fn(acc, key) {
+    if acc == null then null
+    else if _rec.has(acc, key) then _rec.get(acc, key)
+    else null
+  })
+}
+
+// patch: set a field in a decoded object
+fn patch(obj, key, val) { _rec.set(obj, key, val) }
+
+// is_valid: check if string is valid json
+fn is_valid(s) {
+  let r = decode(s) in
+  r != null
+}
+
+// from_pairs: build json object from list of [key, val] pairs
+fn from_pairs(pairs) {
+  _list.fold(pairs, {}, fn(acc, pair) {
+    _rec.set(acc, _list.get(pair, 0), _list.get(pair, 1))
+  })
+}
+
+export { encode, decode, pretty, get, get_path, patch, is_valid, from_pairs }
