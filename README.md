@@ -164,7 +164,7 @@ Full reference: `FARD-EBNF.md`
 
 ## Application Packages
 
-13 pure-FARD packages covering the full ordinary application path. Import by relative path.
+17 pure-FARD packages covering the full production application spine. Import by relative path.
 
 | Package | Contents |
 |---|---|
@@ -181,6 +181,10 @@ Full reference: `FARD-EBNF.md`
 | `packages/template-core/` | HTML/text templating with escaping and layouts |
 | `packages/queue-core/` | Durable jobs, retry, dead-letter queue |
 | `packages/deploy-core/` | Dockerfile/compose generation, deployment manifests |
+| `packages/cache-core/` | LRU cache, TTL, get_or_set, prefix invalidation |
+| `packages/email-core/` | MIME construction, multipart, attachments, templates |
+| `packages/migration-core/` | SQLite migrations, version table, checksum, rollback |
+| `packages/secret-core/` | Env secret loading, redaction, sealing, safe_dump |
 
 ### Full-Stack Example
 
@@ -206,6 +210,9 @@ app.run(server, cfg.get_int(config, "port", 8080))
 
 ```
 CLI (cli-core) -> config (config-core) -> web routes (web-core)
+  -> auth (auth-core) -> database (orm-core) -> migration (migration-core)
+  -> templates (template-core) -> background jobs (queue-core) -> email (email-core)
+  -> cache (cache-core) -> metrics (metrics-core) -> secrets (secret-core) -> deploy (deploy-core)
   -> auth (auth-core) -> database (orm-core) -> templates (template-core)
   -> background jobs (queue-core) -> metrics (metrics-core) -> deploy (deploy-core)
 ```
