@@ -1,0 +1,32 @@
+/// std/path — filesystem path helpers
+
+import("std/path") as _path
+import("std/str")  as str
+import("std/list") as list
+
+// Native wrappers
+fn join(a, b)     { _path.join(a, b) }
+fn join_all(xs)   { _path.join_all(xs) }
+fn base(p)        { _path.base(p) }
+fn dir(p)         { _path.dir(p) }
+fn ext(p)         { _path.ext(p) }
+fn is_abs(p)      { _path.is_abs(p) }
+fn normalize(p)   { _path.normalize(p) }
+
+// Pure helpers
+fn stem(p) {
+  let b = base(p) in
+  let e = ext(p) in
+  if e == null || e == "" then b
+  else str.slice(b, 0, str.len(b) - str.len(e) - 1)
+}
+
+fn with_ext(p, new_ext) {
+  let d = dir(p) in
+  let s = stem(p) in
+  join(d, str.concat([s, ".", new_ext]))
+}
+
+fn parts(p) { str.split(normalize(p), "/") }
+
+export { join, join_all, base, dir, ext, is_abs, normalize, stem, with_ext, parts }

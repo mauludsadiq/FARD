@@ -1,0 +1,29 @@
+/// std/hash — cryptographic hashing
+
+import("std/hash") as _hash
+
+// Native wrappers
+fn sha256_text(s)   { _hash.sha256_text(s) }
+fn sha256_bytes(b)  { _hash.sha256_bytes(b) }
+fn sha512_bytes(b)  { _hash.sha512_bytes(b) }
+fn blake3_bytes(b)  { _hash.blake3_bytes(b) }
+fn structural(v)    { _hash.structural(v) }
+
+// Pure FARD helpers
+fn short(s) {
+  let h = sha256_text(s) in
+  str.slice(h, 7, 15)
+}
+
+fn verify(s, expected_digest) {
+  sha256_text(s) == expected_digest
+}
+
+fn content_id(v) {
+  str.concat(["sha256:", sha256_text(str.from(v))])
+}
+
+import("std/str") as str
+
+export { sha256_text, sha256_bytes, sha512_bytes, blake3_bytes, structural,
+         short, verify, content_id }
