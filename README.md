@@ -164,7 +164,7 @@ Full reference: `FARD-EBNF.md`
 
 ## Application Packages
 
-17 pure-FARD packages covering the full production application spine. Import by relative path.
+21 pure-FARD packages covering the full production spine and developer tooling. Import by relative path.
 
 | Package | Contents |
 |---|---|
@@ -185,6 +185,10 @@ Full reference: `FARD-EBNF.md`
 | `packages/email-core/` | MIME construction, multipart, attachments, templates |
 | `packages/migration-core/` | SQLite migrations, version table, checksum, rollback |
 | `packages/secret-core/` | Env secret loading, redaction, sealing, safe_dump |
+| `packages/bench-core/` | Deterministic benchmarks, timing envelopes, comparison |
+| `packages/docsite-core/` | Package doc extraction, markdown/HTML generation |
+| `packages/debug-core/` | Snapshots, step traces, diffs, breakpoints, watch |
+| `packages/lsp-core/` | JSON-RPC, diagnostics, completions, hover, capabilities |
 
 ### Full-Stack Example
 
