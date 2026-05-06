@@ -1,0 +1,109 @@
+/// lsp-core — Language Server Protocol helpers for FARD tooling
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/json") as json
+
+// Position and range types
+fn position(line, character) { { line: line, character: character } }
+fn range(start, end_pos) { { start: start, end: end_pos } }
+fn location(uri, rng) { { uri: uri, range: rng } }
+
+// Diagnostic severity
+fn severity_error()   { 1 }
+fn severity_warning() { 2 }
+fn severity_info()    { 3 }
+fn severity_hint()    { 4 }
+
+fn diagnostic(rng, message, severity, source) {
+  { range: rng, message: message, severity: severity, source: source }
+}
+
+// Completion item kinds
+fn kind_text()     { 1 }
+fn kind_method()   { 2 }
+fn kind_function() { 3 }
+fn kind_variable() { 6 }
+fn kind_module()   { 9 }
+fn kind_keyword()  { 14 }
+
+fn completion_item(label, kind, detail, documentation) {
+  { label: label, kind: kind, detail: detail,
+    documentation: { kind: "markdown", value: documentation } }
+}
+
+fn hover(contents, rng) {
+  { contents: { kind: "markdown", value: contents }, range: rng }
+}
+
+fn symbol(name, kind, location) {
+  { name: name, kind: kind, location: location }
+}
+
+// JSON-RPC message helpers
+fn rpc_request(id, method, params) {
+  { jsonrpc: "2.0", id: id, method: method, params: params }
+}
+
+fn rpc_response(id, result) {
+  { jsonrpc: "2.0", id: id, result: result }
+}
+
+fn rpc_error(id, code, message) {
+  { jsonrpc: "2.0", id: id, error: { code: code, message: message } }
+}
+
+fn rpc_notification(method, params) {
+  { jsonrpc: "2.0", method: method, params: params }
+}
+
+fn encode_message(msg) {
+  let body = json.encode(msg) in
+  let len  = str.len(body) in
+  str.concat(["Content-Length: ", str.from(len), " | ", body])
+}
+
+// Keyword and stdlib completion list
+fn fard_keywords() {
+  ["fn", "let", "in", "if", "then", "else", "match", "while",
+   "import", "export", "as", "true", "false", "null", "rec.empty"]
+}
+
+fn stdlib_completions() {
+  let mods = ["str", "list", "rec", "json", "math", "bytes", "hash",
+              "crypto", "uuid", "fs", "env", "sqlite", "datetime"] in
+  list.map(mods, fn(m) {
+    completion_item(m, kind_module(), str.concat(["std/", m, " module"]), "")
+  })
+}
+
+fn keyword_completions() {
+  list.map(fard_keywords(), fn(kw) {
+    completion_item(kw, kind_keyword(), "keyword", "")
+  })
+}
+
+fn text_document_sync() { 1 }
+
+fn server_capabilities() {
+  { textDocumentSync: text_document_sync(),
+    completionProvider: { triggerCharacters: ["."] },
+    hoverProvider: true,
+    definitionProvider: true,
+    referencesProvider: true,
+    documentSymbolProvider: true }
+}
+
+fn initialize_result() {
+  { capabilities: server_capabilities(),
+    serverInfo: { name: "fard-lsp", version: "1.0.0" } }
+}
+
+export { position, range, location, diagnostic,
+         severity_error, severity_warning, severity_info, severity_hint,
+         completion_item, hover, symbol,
+         rpc_request, rpc_response, rpc_error, rpc_notification, encode_message,
+         fard_keywords, stdlib_completions, keyword_completions,
+         server_capabilities, initialize_result,
+         kind_text, kind_method, kind_function, kind_variable, kind_module, kind_keyword }

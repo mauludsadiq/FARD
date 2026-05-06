@@ -1,0 +1,67 @@
+/// debug-core — trace inspection, variable snapshots, step execution
+
+import("std/json") as json
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn snapshot(label, value) {
+  { label: label, value: value, type: typ.of(value),
+    json: json.encode(value) }
+}
+
+fn trace(label, value) {
+  let snap = snapshot(label, value) in
+  { ...snap, printed: str.concat([label, " = ", snap.json]) }
+}
+
+fn assert_snapshot(label, value, expected_json) {
+  let actual = json.encode(value) in
+  if actual == expected_json
+    then { ok: true, label: label }
+    else { ok: false, label: label,
+           expected: expected_json, actual: actual,
+           diff: str.concat(["expected: ", expected_json, "\nactual:   ", actual]) }
+}
+
+fn watch(values) {
+  let keys = rec.keys(values) in
+  list.fold(keys, {}, fn(acc, k) {
+    let v = rec.get(values, k) in
+    rec.set(acc, k, { value: v, type: typ.of(v), json: json.encode(v) })
+  })
+}
+
+fn diff_snapshots(s1, s2) {
+  let keys = list.dedupe(list.concat([rec.keys(s1), rec.keys(s2)])) in
+  list.fold(keys, [], fn(acc, k) {
+    let v1 = rec.getOr(s1, k, null) in
+    let v2 = rec.getOr(s2, k, null) in
+    if json.encode(v1) == json.encode(v2) then acc
+    else list.append(acc, { key: k, before: v1, after: v2 })
+  })
+}
+
+fn step_trace(initial, steps) {
+  list.fold(steps, { state: initial, history: [initial] }, fn(acc, step_fn) {
+    let next = step_fn(acc.state) in
+    { state: next, history: list.append(acc.history, next) }
+  })
+}
+
+fn format_trace(t) {
+  let lines = list.map(t.history, fn(s) { json.encode(s) }) in
+  str.join(lines, "\n-> ")
+}
+
+fn breakpoint(condition, value, label) {
+  if condition
+    then { break: true, label: label, value: value,
+           msg: str.concat(["BREAK at ", label, ": ", json.encode(value)]) }
+    else { break: false, value: value }
+}
+
+import("std/type") as typ
+
+export { snapshot, trace, assert_snapshot, watch, diff_snapshots,
+         step_trace, format_trace, breakpoint }

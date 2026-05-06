@@ -1,0 +1,73 @@
+/// bench-core — deterministic benchmarks, timing envelopes, memory stats
+
+import("std/list")     as list
+import("std/rec")      as rec
+import("std/str")      as str
+import("std/datetime") as dt
+import("std/json")     as json
+
+fn new() { { benches: [], results: [] } }
+
+fn bench(name, fn_body, iterations) {
+  { name: name, fn_body: fn_body, iterations: iterations }
+}
+
+fn run_bench(b) {
+  let n = b.iterations in
+  let t0 = dt.now() in
+  let _ = list.build(n, fn(i) { b.fn_body(i) }) in
+  let t1 = dt.now() in
+  let elapsed_ms = t1 - t0 in
+  { name: b.name, iterations: n, elapsed_ms: elapsed_ms,
+    ns_per_iter: if n == 0 then 0 else (elapsed_ms * 1000000) / n,
+    ms_per_iter: if n == 0 then 0 else elapsed_ms / n }
+}
+
+fn run_all(suite) {
+  let results = list.map(suite.benches, run_bench) in
+  { suite: suite.name, results: results,
+    fastest: list.fold(results, null, fn(acc, r) {
+      if acc == null then r
+      else if r.ns_per_iter < acc.ns_per_iter then r else acc
+    }),
+    slowest: list.fold(results, null, fn(acc, r) {
+      if acc == null then r
+      else if r.ns_per_iter > acc.ns_per_iter then r else acc
+    })
+  }
+}
+
+fn add(suite, b) {
+  { ...suite, benches: list.append(suite.benches, b) }
+}
+
+fn named(name) { { name: name, benches: [] } }
+
+fn compare(r1, r2) {
+  let ratio = if r2.ns_per_iter == 0 then 0
+              else r1.ns_per_iter / r2.ns_per_iter in
+  { faster: if ratio < 1 then r1.name else r2.name,
+    ratio: ratio,
+    r1: r1, r2: r2 }
+}
+
+fn format_result(r) {
+  str.concat([r.name, ": ", str.from(r.elapsed_ms), "ms / ",
+              str.from(r.iterations), " iters = ",
+              str.from(r.ns_per_iter), "ns per iter"])
+}
+
+fn format_suite(s) {
+  let lines = list.map(s.results, format_result) in
+  str.join(list.concat([[str.concat(["=== ", s.suite, " ==="])], lines]), "\n")
+}
+
+fn assert_under(result, max_ms) {
+  if result.elapsed_ms <= max_ms then { ok: true, result: result }
+  else { ok: false, result: result,
+         err: str.concat([result.name, " took ", str.from(result.elapsed_ms),
+                         "ms, expected under ", str.from(max_ms), "ms"]) }
+}
+
+export { new, named, bench, add, run_bench, run_all, compare,
+         format_result, format_suite, assert_under }

@@ -1,0 +1,81 @@
+/// docsite-core — generate package docs from FARD module exports
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+import("std/json") as json
+import("std/fs")   as fs
+
+fn parse_doc_comment(source) {
+  let lines = str.split(source, "\n") in
+  let doc_lines = list.filter(lines, fn(l) { str.starts_with(str.trim(l), "///") }) in
+  list.fold(doc_lines, [], fn(acc, l) {
+    let trimmed = str.trim(l) in
+    let content = str.slice(trimmed, 3, str.len(trimmed)) in
+    list.append(acc, str.trim(content))
+  })
+}
+
+fn extract_fns(source) {
+  let lines = str.split(source, "\n") in
+  list.fold(lines, { fns: [], prev_doc: [] }, fn(acc, line) {
+    let trimmed = str.trim(line) in
+    if str.starts_with(trimmed, "///") then
+      let content = str.trim(str.slice(trimmed, 3, str.len(trimmed))) in
+      { ...acc, prev_doc: list.append(acc.prev_doc, content) }
+    else if str.starts_with(trimmed, "fn ") then
+      let sig_end = str.index_of(trimmed, "{") in
+      let sig = if sig_end < 0 then trimmed
+                else str.trim(str.slice(trimmed, 0, sig_end)) in
+      { fns: list.append(acc.fns, { sig: sig, doc: acc.prev_doc }),
+        prev_doc: [] }
+    else
+      { ...acc, prev_doc: [] }
+  }).fns
+}
+
+fn module_doc(name, source) {
+  let fns = extract_fns(source) in
+  let doc_lines = parse_doc_comment(source) in
+  { name: name, description: str.join(doc_lines, " "), fns: fns }
+}
+
+fn to_markdown(doc) {
+  let header = str.concat(["# ", doc.name, "\n\n", doc.description, "\n\n"]) in
+  let fn_lines = list.fold(doc.fns, [], fn(acc, f) {
+    let doc_str = if list.len(f.doc) == 0 then ""
+                  else str.concat(["\n> ", str.join(f.doc, " ")]) in
+    list.append(acc, str.concat(["## `", f.sig, "`", doc_str, "\n"]))
+  }) in
+  str.concat([header, str.join(fn_lines, "\n")])
+}
+
+fn to_html(doc) {
+  let title = str.concat(["<h1>", doc.name, "</h1>"]) in
+  let desc  = str.concat(["<p>", doc.description, "</p>"]) in
+  let fn_html = list.fold(doc.fns, [], fn(acc, f) {
+    let doc_str = if list.len(f.doc) == 0 then ""
+                  else str.concat(["<p class=\"doc\">", str.join(f.doc, " "), "</p>"]) in
+    list.append(acc, str.concat([
+      "<div class=\"fn\"><code>", f.sig, "</code>", doc_str, "</div>"
+    ]))
+  }) in
+  str.concat([
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>",
+    doc.name, "</title></head><body>",
+    title, desc, str.join(fn_html, "\n"),
+    "</body></html>"
+  ])
+}
+
+fn site(packages) {
+  let index = list.fold(packages, [], fn(acc, p) {
+    list.append(acc, str.concat(["- [", p.name, "](", p.name, ".md)"]))
+  }) in
+  { index: str.concat(["# Package Index\n\n", str.join(index, "\n")]),
+    pages: list.map(packages, fn(p) {
+      { name: p.name, content: to_markdown(p) }
+    }) }
+}
+
+export { parse_doc_comment, extract_fns, module_doc, to_markdown, to_html, site }
