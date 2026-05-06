@@ -11,6 +11,7 @@ import("std/array")   as array
 import("std/list")    as list
 import("std/str")     as str
 import("std/fs")      as fs
+import("std/bytes")   as bytes
 
 fn elf_magic()    { [127, 69, 76, 70] }
 fn load_addr()    { 4194304 }
@@ -168,7 +169,7 @@ fn link(objects, entry_sym, out_path) {
   let text_size = x86.buf_len(text_buf) in
   let binary = elf_writer.emit_elf_from_text(text_buf, text_size, code_start) in
   let _ = fs.write_bytes(out_path, binary) in
-  { ok: true, size: list.len(binary), n_syms: list.len(global_syms) }
+  { ok: true, size: bytes.len(binary), n_syms: list.len(global_syms) }
 }
 
 

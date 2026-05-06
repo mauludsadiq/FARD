@@ -288,9 +288,9 @@ fn emit_stdlib_call(buf, ctx, dst, module_name, method, args) {
   else
     let did = get_dispatch_id(module_name, method) in
     if did < 0 && !is_stdlib_module(module_name) then
-      // Cross-module call — emit placeholder and record relocation
+      // Cross-module call — same ABI as emit_call
       let n = list.len(args) in
-      let _ = x86.push_reg(buf, x86.reg_rax()) in
+      let _ = x86.sub_reg_imm32(buf, x86.reg_rsp(), 8) in
       let _ = emit_push_args(buf, args, n - 1) in
       let ext_site = x86.buf_len(buf) in
       let _ = x86.call_rel32(buf, 0) in

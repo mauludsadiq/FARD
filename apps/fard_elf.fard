@@ -476,8 +476,11 @@ fn emit_elf_from_text(text_buf, text_size, code_start) {
   let _ = emit64(buf, code_start + text_size) in  // memsz
   let _ = emit64(buf, page_size()) in         // align
 
-  // Program header: LOAD rw (heap/bss)
-  let heap_vaddr = load_base + code_start + text_size in
+  // Program header: LOAD rw (heap/bss) — must be page-aligned
+  let raw_end    = load_base + code_start + text_size in
+  let page       = page_size() in
+  let heap_vaddr = if raw_end % page == 0 then raw_end
+                   else raw_end + page - raw_end % page in
   let heap_size  = 67108864 in  // 64MB heap
   let _ = emit32(buf, pt_load()) in
   let _ = emit32(buf, pf_rw()) in
