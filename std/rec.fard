@@ -1,0 +1,123 @@
+/// std/rec — pure FARD record library built on native primitives
+
+import("std/rec")  as _rec
+import("std/list") as _list
+
+// Native primitive aliases
+fn _has(r, k)      { _rec.has(r, k) }
+fn _get(r, k)      { _rec.get(r, k) }
+fn _set(r, k, v)   { _rec.set(r, k, v) }
+fn _remove(r, k)   { _rec.remove(r, k) }
+fn _keys(r)        { _rec.keys(r) }
+fn _merge(a, b)    { _rec.merge(a, b) }
+fn _empty()        { _rec.empty() }
+
+// getOr: get with default
+fn getOr(r, k, default_val) {
+  if _has(r, k) then _get(r, k) else default_val
+}
+
+// getOrErr: get or error record
+fn getOrErr(r, k) {
+  if _has(r, k) then { ok: true, v: _get(r, k) }
+  else { ok: false, err: k }
+}
+
+// values: list of all values
+fn values(r) {
+  _list.map(_keys(r), fn(k) { _get(r, k) })
+}
+
+// entries: list of {key, value} pairs
+fn entries(r) {
+  _list.map(_keys(r), fn(k) { { key: k, value: _get(r, k) } })
+}
+
+// from_entries: build record from list of {key, value} pairs
+fn from_entries(pairs) {
+  _list.fold(pairs, _empty(), fn(acc, p) { _set(acc, p.key, p.value) })
+}
+
+// map_values: apply f to each value
+fn map_values(r, f) {
+  _list.fold(_keys(r), _empty(), fn(acc, k) {
+    _set(acc, k, f(_get(r, k)))
+  })
+}
+
+// filter_keys: keep only keys where pred(key) is true
+fn filter_keys(r, pred) {
+  _list.fold(_keys(r), _empty(), fn(acc, k) {
+    if pred(k) then _set(acc, k, _get(r, k)) else acc
+  })
+}
+
+// filter_values: keep only entries where pred(value) is true
+fn filter_values(r, pred) {
+  _list.fold(_keys(r), _empty(), fn(acc, k) {
+    let v = _get(r, k) in
+    if pred(v) then _set(acc, k, v) else acc
+  })
+}
+
+// fold: fold over key-value pairs
+fn fold(r, init, f) {
+  _list.fold(_keys(r), init, fn(acc, k) { f(acc, k, _get(r, k)) })
+}
+
+// pick: keep only specified keys
+fn pick(r, ks) {
+  _list.fold(ks, _empty(), fn(acc, k) {
+    if _has(r, k) then _set(acc, k, _get(r, k)) else acc
+  })
+}
+
+// omit: remove specified keys
+fn omit(r, ks) {
+  _list.fold(ks, r, fn(acc, k) { _remove(acc, k) })
+}
+
+// size: number of keys
+fn size(r) { _list.len(_keys(r)) }
+
+// is_empty: true if no keys
+fn is_empty(r) { size(r) == 0 }
+
+// rename: rename a key
+fn rename(r, old_key, new_key) {
+  if !_has(r, old_key) then r
+  else
+    let v = _get(r, old_key) in
+    _set(_remove(r, old_key), new_key, v)
+}
+
+// update: apply f to value at key if present
+fn update(r, k, f) {
+  if !_has(r, k) then r
+  else _set(r, k, f(_get(r, k)))
+}
+
+// deep_merge: merge recursively
+fn deep_merge(a, b) {
+  _list.fold(_keys(b), a, fn(acc, k) {
+    let bv = _get(b, k) in
+    if _has(acc, k) && typ.of(_get(acc, k)) == "record" && typ.of(bv) == "record"
+      then _set(acc, k, deep_merge(_get(acc, k), bv))
+      else _set(acc, k, bv)
+  })
+}
+
+// Aliases for native primitives
+fn has(r, k)     { _has(r, k) }
+fn get(r, k)     { _get(r, k) }
+fn set(r, k, v)  { _set(r, k, v) }
+fn remove(r, k)  { _remove(r, k) }
+fn keys(r)       { _keys(r) }
+fn merge(a, b)   { _merge(a, b) }
+fn empty()       { _empty() }
+
+import("std/type") as typ
+
+export { getOr, getOrErr, values, entries, from_entries, map_values,
+         filter_keys, filter_values, fold, pick, omit, size, is_empty,
+         rename, update, deep_merge, has, get, set, remove, keys, merge, empty }

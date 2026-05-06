@@ -1,0 +1,123 @@
+/// std/str — pure FARD string library built on native primitives
+
+import("std/str") as _str
+import("std/list") as _list
+
+// Native primitive aliases
+fn _len(s)          { _str.len(s) }
+fn _concat(xs)      { _str.concat(xs) }
+fn _char_at(s, i)   { _str.char_at(s, i) }
+fn _slice(s, a, b)  { _str.slice(s, a, b) }
+fn _split(s, sep)   { _str.split(s, sep) }
+fn _trim(s)         { _str.trim(s) }
+fn _contains(s, t)  { _str.contains(s, t) }
+
+// starts_with: does s start with prefix?
+fn starts_with(s, prefix) {
+  let pl = _len(prefix) in
+  if pl > _len(s) then false
+  else _slice(s, 0, pl) == prefix
+}
+
+// ends_with: does s end with suffix?
+fn ends_with(s, suffix) {
+  let sl = _len(s) in
+  let tl = _len(suffix) in
+  if tl > sl then false
+  else _slice(s, sl - tl, sl) == suffix
+}
+
+// replace: replace all occurrences of old with new
+fn replace(s, old, new_str) {
+  let parts = _split(s, old) in
+  _str.join(parts, new_str)
+}
+
+// upper: uppercase (ASCII only)
+fn upper(s) {
+  let n = _len(s) in
+  let chars = _list.build(n, fn(i) {
+    let c = _char_at(s, i) in
+    if c >= 97 && c <= 122 then c - 32 else c
+  }) in
+  _str.from_chars(chars)
+}
+
+// lower: lowercase (ASCII only)
+fn lower(s) {
+  let n = _len(s) in
+  let chars = _list.build(n, fn(i) {
+    let c = _char_at(s, i) in
+    if c >= 65 && c <= 90 then c + 32 else c
+  }) in
+  _str.from_chars(chars)
+}
+
+// repeat: repeat string n times
+fn repeat(s, n) {
+  _concat(_list.build(n, fn(_) { s }))
+}
+
+// pad_left: pad string to length with char
+fn pad_left(s, len, pad_char) {
+  let sl = _len(s) in
+  if sl >= len then s
+  else _concat([repeat(pad_char, len - sl), s])
+}
+
+// pad_right: pad string to length with char
+fn pad_right(s, len, pad_char) {
+  let sl = _len(s) in
+  if sl >= len then s
+  else _concat([s, repeat(pad_char, len - sl)])
+}
+
+// index_of: find first occurrence of needle in haystack, -1 if not found
+fn index_of(s, needle) {
+  let sl = _len(s) in
+  let nl = _len(needle) in
+  if nl > sl then -1 else
+    let result = _list.fold(_list.build(sl - nl + 1, fn(i) { i }), -1, fn(acc, i) {
+      if acc >= 0 then acc
+      else if _slice(s, i, i + nl) == needle then i
+      else -1
+    }) in
+    result
+}
+
+// lines: split by newline
+fn lines(s) { _split(s, "\n") }
+
+// words: split by space
+fn words(s) { _split(s, " ") }
+
+// join: join list of strings with separator (alias)
+fn join(xs, sep) { _str.join(xs, sep) }
+
+// from: convert value to string (alias)
+fn from(v) { _str.from(v) }
+
+// len: string length (alias)
+fn len(s) { _len(s) }
+
+// slice: substring (alias)
+fn slice(s, a, b) { _slice(s, a, b) }
+
+// split: split by separator (alias)
+fn split(s, sep) { _split(s, sep) }
+
+// trim: trim whitespace (alias)
+fn trim(s) { _trim(s) }
+
+// contains: check containment (alias)
+fn contains(s, t) { _contains(s, t) }
+
+// concat: concatenate list of strings (alias)
+fn concat(xs) { _concat(xs) }
+
+// char_at: character code at index (alias)
+fn char_at(s, i) { _char_at(s, i) }
+
+export { starts_with, ends_with, replace, upper, lower, repeat,
+         pad_left, pad_right, index_of, lines, words, join, from,
+         len, slice, split, trim, contains, concat, char_at }

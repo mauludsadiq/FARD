@@ -1,0 +1,212 @@
+/// std/list — pure FARD list library built on native primitives
+/// Native primitives accessed via std/list: len, get, append, tail, fold, build, concat
+
+import("std/list") as _list
+import("std/rec")  as rec
+import("std/str")  as str
+
+// Aliases for native primitives
+fn _len(xs)        { _list.len(xs) }
+fn _get(xs, i)     { _list.get(xs, i) }
+fn _append(xs, x)  { _list.append(xs, x) }
+fn _tail(xs)       { _list.tail(xs) }
+fn _fold(xs, i, f) { _list.fold(xs, i, f) }
+fn _build(n, f)    { _list.build(n, f) }
+fn _concat(xss)    { _list.concat(xss) }
+
+/// std/list — pure FARD list library
+/// Primitives (native): len, get, append, tail, fold, build, concat
+/// Everything else is derived from these.
+
+// map: apply f to each element
+fn map(xs, f) {
+  _fold(xs, [], fn(acc, x) { _append(acc, f(x)) })
+}
+
+// filter: keep elements where pred is true
+fn filter(xs, pred) {
+  _fold(xs, [], fn(acc, x) { if pred(x) then _append(acc, x) else acc })
+}
+
+// any: true if pred holds for at least one element
+fn any(xs, pred) {
+  _fold(xs, false, fn(acc, x) { if acc then true else pred(x) })
+}
+
+// all: true if pred holds for all elements
+fn all(xs, pred) {
+  _fold(xs, true, fn(acc, x) { if !acc then false else pred(x) })
+}
+
+// find: return first element matching pred, or {none: null}
+fn find(xs, pred) {
+  _fold(xs, { none: null }, fn(acc, x) {
+    if rec.has(acc, "some") then acc
+    else if pred(x) then { some: x }
+    else acc
+  })
+}
+
+// find_index: return index of first match, or -1
+fn find_index(xs, pred) {
+  let r = _fold(xs, { i: 0, found: -1 }, fn(acc, x) {
+    if acc.found >= 0 then acc
+    else if pred(x) then { i: acc.i + 1, found: acc.i }
+    else { i: acc.i + 1, found: -1 }
+  }) in
+  r.found
+}
+
+// head: first element
+fn head(xs) { _get(xs, 0) }
+
+// last: last element
+fn last(xs) {
+  let n = _len(xs) in
+  if n == 0 then null else _get(xs, n - 1)
+}
+
+// take: first n elements
+fn take(xs, n) {
+  _build(n, fn(i) { _get(xs, i) })
+}
+
+// drop: all but first n elements
+fn drop(xs, n) {
+  let len = _len(xs) in
+  let count = if n > len then 0 else len - n in
+  _build(count, fn(i) { _get(xs, i + n) })
+}
+
+// reverse: reverse a list
+fn reverse(xs) {
+  let n = _len(xs) in
+  _build(n, fn(i) { _get(xs, n - 1 - i) })
+}
+
+// zip: zip two lists into list of [a, b] pairs
+fn zip(xs, ys) {
+  let n = if _len(xs) < _len(ys) then _len(xs) else _len(ys) in
+  _build(n, fn(i) { [_get(xs, i), _get(ys, i)] })
+}
+
+// flat_map: map then flatten
+fn flat_map(xs, f) {
+  _fold(xs, [], fn(acc, x) { _concat([acc, f(x)]) })
+}
+
+// flatten: flatten list of lists
+fn flatten(xss) {
+  _fold(xss, [], fn(acc, xs) { _concat([acc, xs]) })
+}
+
+// range: integers from start (inclusive) to end (exclusive)
+fn range(start, end_val) {
+  let n = if end_val > start then end_val - start else 0 in
+  _build(n, fn(i) { start + i })
+}
+
+// repeat: list of n copies of val
+fn repeat(val, n) {
+  _build(n, fn(_) { val })
+}
+
+// chunk: split into chunks of size n
+fn chunk(xs, n) {
+  let len = _len(xs) in
+  let num_chunks = if len == 0 then 0
+                   else if len % n == 0 then len / n
+                   else len / n + 1 in
+  _build(num_chunks, fn(i) {
+    let start = i * n in
+    let end_v = if start + n > len then len else start + n in
+    _build(end_v - start, fn(j) { _get(xs, start + j) })
+  })
+}
+
+// dedupe: remove consecutive duplicates
+fn dedupe(xs) {
+  let n = _len(xs) in
+  if n == 0 then [] else
+    _fold(drop(xs, 1), [_get(xs, 0)], fn(acc, x) {
+      if last(acc) == x then acc else _append(acc, x)
+    })
+}
+
+// sort_by: sort using comparator fn(a, b) -> int
+fn sort_by(xs, cmp) {
+  let n = _len(xs) in
+  if n <= 1 then xs else
+    let pivot = _get(xs, n / 2) in
+    let left   = filter(xs, fn(x) { cmp(x, pivot) < 0 }) in
+    let middle = filter(xs, fn(x) { cmp(x, pivot) == 0 }) in
+    let right  = filter(xs, fn(x) { cmp(x, pivot) > 0 }) in
+    _concat([sort_by(left, cmp), middle, sort_by(right, cmp)])
+}
+
+// sort_by_int_key: sort by integer key function
+fn sort_by_int_key(xs, key_fn) {
+  sort_by(xs, fn(a, b) {
+    let ka = key_fn(a) in
+    let kb = key_fn(b) in
+    if ka < kb then -1 else if ka > kb then 1 else 0
+  })
+}
+
+// group_by: group elements by key function, returns record
+fn group_by(xs, key_fn) {
+  _fold(xs, {}, fn(acc, x) {
+    let k = key_fn(x) in
+    let existing = rec.getOr(acc, k, []) in
+    rec.set(acc, k, _append(existing, x))
+  })
+}
+
+// set: replace element at index
+fn set(xs, i, val) {
+  let n = _len(xs) in
+  _build(n, fn(j) { if j == i then val else _get(xs, j) })
+}
+
+// sum: sum of integer list
+fn sum(xs) { _fold(xs, 0, fn(acc, x) { acc + x }) }
+
+// max_by: maximum by key function
+fn max_by(xs, key_fn) {
+  if _len(xs) == 0 then null else
+    _fold(tail(xs), _get(xs, 0), fn(acc, x) {
+      if key_fn(x) > key_fn(acc) then x else acc
+    })
+}
+
+// min_by: minimum by key function  
+fn min_by(xs, key_fn) {
+  if _len(xs) == 0 then null else
+    _fold(tail(xs), _get(xs, 0), fn(acc, x) {
+      if key_fn(x) < key_fn(acc) then x else acc
+    })
+}
+
+// join: join list of strings with separator
+fn join(xs, sep) {
+  if _len(xs) == 0 then "" else
+    _fold(drop(xs, 1), _get(xs, 0), fn(acc, x) {
+      str.concat([acc, sep, x])
+    })
+}
+
+// apply: apply list of functions to a value in sequence
+fn apply(val, fns) {
+  _fold(fns, val, fn(acc, f) { f(acc) })
+}
+
+// par_map: same as map (no parallelism in FARD, deterministic)
+fn par_map(xs, f) { map(xs, f) }
+
+// tail alias
+fn tail(xs) { _tail(xs) }
+
+export { map, filter, any, all, find, find_index, head, last, take, drop,
+         reverse, zip, flat_map, flatten, range, repeat, chunk, dedupe,
+         sort_by, sort_by_int_key, group_by, set, sum, max_by, min_by,
+         join, apply, par_map, tail }
