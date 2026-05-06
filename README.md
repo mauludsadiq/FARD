@@ -215,10 +215,8 @@ app.run(server, cfg.get_int(config, "port", 8080))
 ```
 CLI (cli-core) -> config (config-core) -> web routes (web-core)
   -> auth (auth-core) -> database (orm-core) -> migration (migration-core)
-  -> templates (template-core) -> background jobs (queue-core) -> email (email-core)
+  -> templates (template-core) -> jobs (queue-core) -> email (email-core)
   -> cache (cache-core) -> metrics (metrics-core) -> secrets (secret-core) -> deploy (deploy-core)
-  -> auth (auth-core) -> database (orm-core) -> templates (template-core)
-  -> background jobs (queue-core) -> metrics (metrics-core) -> deploy (deploy-core)
 ```
 
 -----
@@ -379,24 +377,13 @@ Syntax highlighting, dot-completion, hover docs, go-to-definition, find-all-refe
 
 ## Package Registry
 
-21 application packages built and tested. Semver ranges supported. SHA-256 verified and locally cached.
-
-```toml
-[deps]
-greet = "greet@1.6.0"
-jwt   = "jwt@^1.6.0"
-```
-
-```bash
-fardrun install --manifest fard.toml
-fardrun search jwt
-```
+All 21 packages are imported by relative path — no registry required:
 
 -----
 
 ## Testing
 
-**194 test suites passing** across core language, stdlib, and application packages.
+**231 test suites passing** across core language, stdlib, and application packages.
 
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
