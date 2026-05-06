@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**6 May 2026 · v1.7.0 · fully verified against fardrun source and runtime**
+**6 May 2026 · v1.7.1 · list destructuring at module level fixed**
 
 This document covers the **fardrun** production dialect. All grammar rules and stdlib
 entries verified directly by running test programs against fardrun v1.7.0.
@@ -109,8 +109,8 @@ export_item     = "export" , "{" , ident , { "," , ident } , [ "," ] , "}" ;
 
 let_item        = "let" , ( ident | obj_pat | list_pat ) , "=" , expr ;
 (* Module-level let — no "in" required. *)
-(* CONSTRAINT: list_pat at module level always fails — use let-in form. *)
-(* CONSTRAINT: obj_pat with ...rest at module level — rest is silently unbound. *)
+(* NOTE: list_pat at module level works as of v1.7.1 — fixed in Rust evaluator. *)
+(* NOTE: obj_pat with ...rest at module level — rest works as of v1.7.1. *)
 
 fn_item         = "fn" , ident , "(" , [ fn_param , { "," , fn_param } ] , ")"
                 , [ "->" , type ]
@@ -269,12 +269,12 @@ obj_field       = ident , ":" , pat
                 | ident ;
 (* Shorthand { name } binds field "name" to variable "name". *)
 (* Rest capture { x, ...rest } works in let-in form. *)
-(* CONSTRAINT: { x, ...rest } at module level — rest is silently unbound. *)
+(* NOTE: { x, ...rest } at module level — rest works as of v1.7.1. *)
 
 list_pat        = "[" , [ list_pat_body ] , "]" ;
 list_pat_body   = pat , { "," , pat } , [ "," , "..." , ident ]
                 | "..." , ident ;
-(* CONSTRAINT: list_pat in let_item (module level) always fails ERROR_PARSE. *)
+(* NOTE: list_pat in let_item (module level) works as of v1.7.1. *)
 (* Use let-in form only: let [a, b, ...rest] = expr in body *)
 (* Verified: let [a, b, ...rest] = [1,2,3,4] in rest => [3,4] *)
 ```
@@ -901,9 +901,9 @@ Import by relative path — not in the package registry.
 
 1. **Missing imports cause runtime failures** — no auto-import. Always explicitly import `std/list`, `std/str`, etc.
 
-1. **List destructuring `let [a, b] = expr` fails at module level** — use `let [a, b] = expr in body` or use `list.get` at module level.
+1. **List destructuring `let [a, b] = expr` works at module level** — fixed in v1.7.1. Both `let [a, b] = expr` and `let [a, b, ...rest] = expr` work. Verified: `let [first, second, ...rest] = [10, 20, 30, 40]` => `first=10, second=20, rest=[30,40]`.
 
-1. **Rest capture `...rest` only works in `let...in` form** — at module level, rest bindings are silently dropped and unbound.
+1. **Rest capture `...rest` works at module level** — fixed in v1.7.1. Uses `list.drop(tmp, n)` desugaring.
 
 1. **`return` exits the immediately enclosing `fn {}` body only** — inside closures passed to `list.fold` etc., `return x` returns from the closure, not the outer function. Use recursion for early exit.
 
