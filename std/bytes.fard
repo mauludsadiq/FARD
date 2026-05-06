@@ -1,0 +1,49 @@
+/// std/bytes — byte buffer operations
+
+import("std/bytes") as _bytes
+import("std/list")  as _list
+import("std/str")   as str
+
+// Native wrappers
+fn of_str(s)      { _bytes.of_str(s) }
+fn of_list(xs)    { _bytes.of_list(xs) }
+fn to_hex(b)      { _bytes.to_hex(b) }
+fn to_str(b)      { _bytes.to_str(b) }
+fn to_base64(b)   { _bytes.to_base64(b) }
+fn get(b, i)      { _bytes.get(b, i) }
+fn len(b)         { _bytes.len(b) }
+
+// Pure helpers
+fn empty()        { of_list([]) }
+fn is_empty(b)    { len(b) == 0 }
+
+fn to_hex_upper(b) { str.upper(to_hex(b)) }
+
+fn from_hex(hex_str) {
+  let n = str.len(hex_str) / 2 in
+  let nibble = fn(ch) {
+    if ch == "0" then 0 else if ch == "1" then 1
+    else if ch == "2" then 2 else if ch == "3" then 3
+    else if ch == "4" then 4 else if ch == "5" then 5
+    else if ch == "6" then 6 else if ch == "7" then 7
+    else if ch == "8" then 8 else if ch == "9" then 9
+    else if ch == "a" || ch == "A" then 10
+    else if ch == "b" || ch == "B" then 11
+    else if ch == "c" || ch == "C" then 12
+    else if ch == "d" || ch == "D" then 13
+    else if ch == "e" || ch == "E" then 14
+    else if ch == "f" || ch == "F" then 15
+    else 0
+  } in
+  let bytes = _list.build(n, fn(i) {
+    let hi = nibble(str.slice(hex_str, i*2, i*2+1)) in
+    let lo = nibble(str.slice(hex_str, i*2+1, i*2+2)) in
+    hi * 16 + lo
+  }) in
+  of_list(bytes)
+}
+
+import("std/str") as str
+
+export { of_str, of_list, to_hex, to_str, to_base64, get, len,
+         empty, is_empty, to_hex_upper, from_hex }
