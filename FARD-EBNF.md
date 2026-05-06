@@ -365,7 +365,7 @@ named_type      = ident , [ "<" , type , { "," , type } , ">" ] ;
 `get`, `head`, `tail`, `last`, `append`, `zip`, `reverse`, `flatten`, `set`,
 `any`, `all`, `find`, `find_index`, `take`, `drop`, `flat_map`, `par_map`,
 `zip_with`, `chunk`, `sort_by`, `sort_by_int_key`, `sort_int`,
-`dedupe`, `dedupe_sorted_int`, `hist_int`, `build`
+`dedupe`, `dedupe_sorted_int`, `hist_int`, `build`, `build`
 
 **Verified:**
 - `list.range(0, 5)` => `[0,1,2,3,4]`
@@ -375,7 +375,7 @@ named_type      = ident , [ "<" , type , { "," , type } , ">" ] ;
 - `list.chunk([1,2,3,4,5], 2)` => `[[1,2],[3,4],[5]]`
 - `list.flat_map([1,2,3], fn(x) { [x, x*10] })` => `[1,10,2,20,3,30]`
 - `list.concat` takes ONE argument — a list of lists
-- `list.build(n, fn(i) { expr })` => list of n items where item[i] = fn(i)
+- `list.build(n, fn(i) { expr })` => list of n items where item[i] = fn(i). Verified: `list.build(4, fn(i){i*2})` => `[0,2,4,6]`
 
 ### std/rec
 
