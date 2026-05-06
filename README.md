@@ -283,7 +283,7 @@ Pure-FARD PDF-1.4 generation and annotation. `write_pdf` builds complete documen
 
 ## Self-Hosting
 
-FARD compiles itself to native x86_64 ELF. The entire compiler pipeline is written in FARD.
+FARD compiles itself to native x86_64 ELF. The compiler pipeline is written in FARD. Stage 8 is underway: replacing 438 Rust builtins with pure FARD implementations.
 
 ### Pipeline
 
@@ -304,6 +304,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
+| 8 | FARD stdlib replaces Rust builtins | **in progress** — std/list, std/str, std/rec in pure FARD; module loader prefers .fard over Rust |
 
 ### Compiler Components
 
@@ -316,6 +317,9 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | `apps/fard_elf.fard` | Linux ELF writer (40 fns, 52KB native ELF) |
 | `apps/fard_obj.fard` | Relocatable object format |
 | `apps/fard_link.fard` | Native linker — resolves cross-module calls |
+| `std/list.fard` | List stdlib — 30 fns replacing Rust builtins |
+| `std/str.fard` | String stdlib — 14 fns replacing Rust builtins |
+| `std/rec.fard` | Record stdlib — 16 fns replacing Rust builtins |
 
 ### Verified Native Results
 
@@ -383,7 +387,7 @@ All 21 packages are imported by relative path — no registry required:
 
 ## Testing
 
-**231 test suites passing** across core language, stdlib, and application packages.
+**199 test suites passing** across core language, stdlib, and application packages.
 
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
