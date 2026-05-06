@@ -3197,6 +3197,32 @@ impl Parser {
                         Pat::Bind(name) => {
                             items.push(Item::Let(name, Expr::Var(tmp), None));
                         }
+                        Pat::List { items: elems, rest } => {
+                            for (idx, sub_pat) in elems.iter().enumerate() {
+                                let idx_expr = Expr::Index(
+                                    Box::new(Expr::Var(tmp.clone())),
+                                    Box::new(Expr::Int(idx as i64))
+                                );
+                                let bind_name = match sub_pat {
+                                    Pat::Bind(n) => n.clone(),
+                                    _ => format!("__destruct_elem_{}__", idx),
+                                };
+                                items.push(Item::Let(bind_name, idx_expr, None));
+                            }
+                            if let Some(rest_name) = rest {
+                                let n = elems.len();
+                                // Desugar rest as: list.drop(tmp, n)
+                                // Use __list_drop__ builtin via Get chain
+                                let drop_expr = Expr::Call(
+                                    Box::new(Expr::Get(
+                                        Box::new(Expr::Var("list".to_string())),
+                                        "drop".to_string()
+                                    )),
+                                    vec![Expr::Var(tmp.clone()), Expr::Int(n as i64)]
+                                );
+                                items.push(Item::Let(rest_name.clone(), drop_expr, None));
+                            }
+                        }
                         _ => {}
                     }
                     continue;
