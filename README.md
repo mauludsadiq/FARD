@@ -379,7 +379,7 @@ Syntax highlighting, dot-completion, hover docs, go-to-definition, find-all-refe
 
 ## Package Registry
 
-164 packages. Semver ranges supported. SHA-256 verified and locally cached.
+21 application packages built and tested. Semver ranges supported. SHA-256 verified and locally cached.
 
 ```toml
 [deps]
