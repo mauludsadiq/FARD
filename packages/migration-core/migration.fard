@@ -1,0 +1,64 @@
+/// migration-core — database migrations with version table and rollback
+
+import("std/sqlite") as sqlite
+import("std/list")   as list
+import("std/str")    as str
+import("std/rec")    as rec
+import("std/hash")   as hash
+
+fn open(path) { { db: sqlite.open(path), path: path } }
+fn open_memory() { open("/tmp/fard_migration_test.db") }
+
+fn _ensure(conn) {
+  let _ = sqlite.exec(conn.db,
+    "CREATE TABLE IF NOT EXISTS _migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL)"
+  ) in conn
+}
+
+fn _applied(conn) {
+  let rows = sqlite.query(conn.db, "SELECT name, checksum FROM _migrations ORDER BY id") in
+  list.fold(rows, {}, fn(acc, row) { rec.set(acc, row.name, row.checksum) })
+}
+
+fn migration(name, up_sql, down_sql) {
+  { name: name, up: up_sql, down: down_sql,
+    checksum: hash.sha256_text(str.concat([name, ":", up_sql])) }
+}
+
+fn run(conn, migrations) {
+  let _ = _ensure(conn) in
+  let done = _applied(conn) in
+  list.fold(migrations, { applied: [], skipped: [], errors: [], ok: true }, fn(acc, m) {
+    if rec.has(done, m.name) then
+      if rec.get(done, m.name) != m.checksum
+        then { ...acc, ok: false, errors: list.append(acc.errors, str.concat(["checksum mismatch: ", m.name])) }
+        else { ...acc, skipped: list.append(acc.skipped, m.name) }
+    else
+      let _ = sqlite.exec(conn.db, m.up) in
+      let _ = sqlite.exec(conn.db, str.concat([
+        "INSERT INTO _migrations (name, checksum, applied_at) VALUES ('",
+        m.name, "', '", m.checksum, "', 0)"
+      ])) in
+      { ...acc, applied: list.append(acc.applied, m.name) }
+  })
+}
+
+fn rollback(conn, m) {
+  let _ = _ensure(conn) in
+  let _ = sqlite.exec(conn.db, m.down) in
+  let _ = sqlite.exec(conn.db, str.concat(["DELETE FROM _migrations WHERE name = '", m.name, "'"])) in
+  { ok: true, rolled_back: m.name }
+}
+
+fn status(conn) {
+  let _ = _ensure(conn) in
+  sqlite.query(conn.db, "SELECT name, checksum, applied_at FROM _migrations ORDER BY id")
+}
+
+fn pending(conn, migrations) {
+  let _ = _ensure(conn) in
+  let done = _applied(conn) in
+  list.filter(migrations, fn(m) { !rec.has(done, m.name) })
+}
+
+export { open, open_memory, migration, run, rollback, status, pending }

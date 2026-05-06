@@ -1,0 +1,68 @@
+/// email-core
+
+import("std/str")   as str
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/bytes") as bytes
+
+fn message(from, to, subject, body) {
+  { from: from, to: to, subject: subject, body: body,
+    cc: [], bcc: [], attachments: [], html: null, headers: {} }
+}
+
+fn with_html(msg, html_body) { { ...msg, html: html_body } }
+fn with_cc(msg, cc) { { ...msg, cc: cc } }
+fn with_bcc(msg, bcc) { { ...msg, bcc: bcc } }
+fn with_header(msg, key, val) { { ...msg, headers: rec.set(msg.headers, key, val) } }
+
+fn with_attachment(msg, filename, content_type, data) {
+  { ...msg, attachments: list.append(msg.attachments,
+    { filename: filename, content_type: content_type, data: data }) }
+}
+
+fn sep() { " | " }
+fn hdr(key, val) { str.concat([key, ": ", val, " | "]) }
+fn boundary() { "----FARDMimeBoundary001" }
+
+fn to_mime(msg) {
+  let b = boundary() in
+  let has_html = msg.html != null in
+  let has_att  = list.len(msg.attachments) > 0 in
+  let ct = if has_att
+    then str.concat(["multipart/mixed; boundary=", b])
+    else if has_html
+    then str.concat(["multipart/alternative; boundary=", b])
+    else "text/plain; charset=utf-8" in
+  let hdrs = str.concat([
+    hdr("From", msg.from),
+    hdr("To", str.join(msg.to, ", ")),
+    hdr("Subject", msg.subject),
+    hdr("MIME-Version", "1.0"),
+    hdr("Content-Type", ct)
+  ]) in
+  if !has_html && !has_att then
+    str.concat([hdrs, msg.body])
+  else
+    let plain = str.concat(["--", b, " | ",
+      hdr("Content-Type", "text/plain; charset=utf-8"), msg.body]) in
+    let html  = if !has_html then "" else str.concat(["--", b, " | ",
+      hdr("Content-Type", "text/html; charset=utf-8"), msg.html]) in
+    let atts  = list.fold(msg.attachments, [], fn(acc, att) {
+      list.append(acc, str.concat([
+        "--", b, " | ",
+        hdr("Content-Type", str.concat([att.content_type, "; name=", att.filename])),
+        hdr("Content-Transfer-Encoding", "base64"),
+        bytes.to_base64(att.data)
+      ]))
+    }) in
+    str.concat([hdrs, plain, html, str.join(atts, ""), "--", b, "--"])
+}
+
+fn template(tmpl, vars) {
+  let keys = rec.keys(vars) in
+  list.fold(keys, tmpl, fn(t, key) {
+    str.replace(t, str.concat(["{{", key, "}}"]), str.from(rec.get(vars, key)))
+  })
+}
+
+export { message, with_html, with_cc, with_bcc, with_header, with_attachment, to_mime, template }

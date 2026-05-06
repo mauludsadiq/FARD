@@ -1,0 +1,69 @@
+/// cache-core — in-memory cache with TTL, LRU eviction, and deterministic invalidation
+
+import("std/rec")      as rec
+import("std/list")     as list
+import("std/str")      as str
+import("std/datetime") as dt
+
+fn new(max_size) { { entries: {}, order: [], max_size: max_size, hits: 0, misses: 0 } }
+
+fn _evict(cache) {
+  if list.len(cache.order) <= cache.max_size then cache
+  else
+    let oldest = list.get(cache.order, 0) in
+    let order2 = list.tail(cache.order) in
+    { ...cache, order: order2, entries: rec.remove(cache.entries, oldest) }
+}
+
+fn set(cache, key, value, ttl_ms) {
+  let entry = { value: value, ttl_ms: ttl_ms, born: 0 } in
+  let order2 = if rec.has(cache.entries, key)
+    then list.filter(cache.order, fn(k) { k != key })
+    else cache.order in
+  let cache2 = { ...cache,
+    entries: rec.set(cache.entries, key, entry),
+    order: list.append(order2, key) } in
+  _evict(cache2)
+}
+
+fn get(cache, key) {
+  if !rec.has(cache.entries, key) then
+    { cache: { ...cache, misses: cache.misses + 1 }, value: null, hit: false }
+  else
+    let entry = rec.get(cache.entries, key) in
+    { cache: { ...cache, hits: cache.hits + 1 }, value: entry.value, hit: true }
+}
+
+fn delete(cache, key) {
+  { ...cache,
+    entries: rec.remove(cache.entries, key),
+    order: list.filter(cache.order, fn(k) { k != key }) }
+}
+
+fn has(cache, key) { rec.has(cache.entries, key) }
+
+fn clear(cache) { { ...cache, entries: {}, order: [] } }
+
+fn size(cache) { list.len(cache.order) }
+
+fn stats(cache) {
+  let total = cache.hits + cache.misses in
+  { hits: cache.hits, misses: cache.misses, size: size(cache),
+    hit_rate: if total == 0 then 0 else cache.hits / total }
+}
+
+fn get_or_set(cache, key, compute_fn, ttl_ms) {
+  let r = get(cache, key) in
+  if r.hit then { cache: r.cache, value: r.value }
+  else
+    let value = compute_fn() in
+    let cache2 = set(r.cache, key, value, ttl_ms) in
+    { cache: cache2, value: value }
+}
+
+fn invalidate_prefix(cache, prefix) {
+  let keys = list.filter(cache.order, fn(k) { str.starts_with(k, prefix) }) in
+  list.fold(keys, cache, fn(c, k) { delete(c, k) })
+}
+
+export { new, set, get, delete, has, clear, size, stats, get_or_set, invalidate_prefix }
