@@ -1,0 +1,67 @@
+/// config-core — TOML/env config loading with validation and profiles
+
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/list") as list
+import("std/env")  as env
+import("std/json") as json
+
+fn new(defaults) { { values: defaults, errors: [] } }
+
+fn from_env(cfg, mapping) {
+  // mapping: list of { key, env_var, required, default }
+  list.fold(mapping, cfg, fn(c, m) {
+    let val = env.get(m.env_var) in
+    if val != null then
+      { ...c, values: rec.set(c.values, m.key, val) }
+    else if rec.has(m, "default") then
+      { ...c, values: rec.set(c.values, m.key, m.default) }
+    else if rec.getOr(m, "required", false) then
+      { ...c, errors: list.append(c.errors, str.concat(["missing required env var: ", m.env_var])) }
+    else c
+  })
+}
+
+fn get(cfg, key) { rec.getOr(cfg.values, key, null) }
+fn get_or(cfg, key, default_val) { rec.getOr(cfg.values, key, default_val) }
+fn get_int(cfg, key, default_val) {
+  let v = rec.getOr(cfg.values, key, null) in
+  if v == null then default_val
+  else if typ.of(v) == "int" then v
+  else
+    let parsed = int.parse(str.from(v)) in
+    if parsed.t == "ok" then parsed.v else default_val
+}
+fn get_bool(cfg, key, default_val) {
+  let v = rec.getOr(cfg.values, key, null) in
+  if v == null then default_val
+  else if v == "true" || v == true then true
+  else if v == "false" || v == false then false
+  else default_val
+}
+
+fn set(cfg, key, val) { { ...cfg, values: rec.set(cfg.values, key, val) } }
+
+fn validate(cfg, rules) {
+  // rules: list of { key, type, min, max, required }
+  list.fold(rules, cfg, fn(c, rule) {
+    let val = rec.getOr(c.values, rule.key, null) in
+    if val == null && rec.getOr(rule, "required", false) then
+      { ...c, errors: list.append(c.errors, str.concat(["required config key missing: ", rule.key])) }
+    else if val != null && rec.has(rule, "type") && typ.of(val) != rule.type then
+      { ...c, errors: list.append(c.errors, str.concat([rule.key, " must be ", rule.type])) }
+    else c
+  })
+}
+
+fn is_valid(cfg) { list.len(cfg.errors) == 0 }
+
+fn profile(base_cfg, profile_name, profiles) {
+  let overrides = rec.getOr(profiles, profile_name, {}) in
+  { ...base_cfg, values: rec.merge(base_cfg.values, overrides) }
+}
+
+import("std/type") as typ
+import("std/int")  as int
+
+export { new, from_env, get, get_or, get_int, get_bool, set, validate, is_valid, profile }

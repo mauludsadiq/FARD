@@ -1,0 +1,91 @@
+/// metrics-core — counters, gauges, histograms, Prometheus export
+
+import("std/rec")  as rec
+import("std/list") as list
+import("std/str")  as str
+
+fn new() { { counters: {}, gauges: {}, histograms: {} } }
+
+// Counters — monotonically increasing
+fn inc(m, name) { inc_by(m, name, 1) }
+fn inc_by(m, name, n) {
+  let cur = rec.getOr(m.counters, name, 0) in
+  { ...m, counters: rec.set(m.counters, name, cur + n) }
+}
+fn counter(m, name) { rec.getOr(m.counters, name, 0) }
+
+// Gauges — current value
+fn set_gauge(m, name, val) {
+  { ...m, gauges: rec.set(m.gauges, name, val) }
+}
+fn gauge(m, name) { rec.getOr(m.gauges, name, 0) }
+
+// Histograms — list of observed values
+fn observe(m, name, val) {
+  let cur = rec.getOr(m.histograms, name, []) in
+  { ...m, histograms: rec.set(m.histograms, name, list.append(cur, val)) }
+}
+
+fn histogram_count(m, name) { list.len(rec.getOr(m.histograms, name, [])) }
+fn histogram_sum(m, name) {
+  list.fold(rec.getOr(m.histograms, name, []), 0, fn(acc, v) { acc + v })
+}
+fn histogram_avg(m, name) {
+  let vals = rec.getOr(m.histograms, name, []) in
+  if list.len(vals) == 0 then 0
+  else histogram_sum(m, name) / list.len(vals)
+}
+fn histogram_max(m, name) {
+  let vals = rec.getOr(m.histograms, name, []) in
+  if list.len(vals) == 0 then 0
+  else list.fold(vals, list.get(vals, 0), fn(acc, v) { if v > acc then v else acc })
+}
+fn histogram_min(m, name) {
+  let vals = rec.getOr(m.histograms, name, []) in
+  if list.len(vals) == 0 then 0
+  else list.fold(vals, list.get(vals, 0), fn(acc, v) { if v < acc then v else acc })
+}
+
+// Prometheus text format export
+fn to_prometheus(m, prefix) {
+  let p = if prefix == null then "" else str.concat([prefix, "_"]) in
+  let counter_lines = list.fold(rec.keys(m.counters), [], fn(acc, k) {
+    let name = str.concat([p, k]) in
+    list.concat([acc, [
+      str.concat(["# TYPE ", name, " counter"]),
+      str.concat([name, " ", str.from(rec.get(m.counters, k))])
+    ]])
+  }) in
+  let gauge_lines = list.fold(rec.keys(m.gauges), [], fn(acc, k) {
+    let name = str.concat([p, k]) in
+    list.concat([acc, [
+      str.concat(["# TYPE ", name, " gauge"]),
+      str.concat([name, " ", str.from(rec.get(m.gauges, k))])
+    ]])
+  }) in
+  let hist_lines = list.fold(rec.keys(m.histograms), [], fn(acc, k) {
+    let name = str.concat([p, k]) in
+    list.concat([acc, [
+      str.concat(["# TYPE ", name, " histogram"]),
+      str.concat([name, "_count ", str.from(histogram_count(m, k))]),
+      str.concat([name, "_sum ",   str.from(histogram_sum(m, k))])
+    ]])
+  }) in
+  str.join(list.concat([counter_lines, gauge_lines, hist_lines]), "\n")
+}
+
+fn merge(a, b) {
+  let counters = list.fold(rec.keys(b.counters), a.counters, fn(acc, k) {
+    rec.set(acc, k, rec.getOr(acc, k, 0) + rec.get(b.counters, k))
+  }) in
+  let gauges = rec.merge(a.gauges, b.gauges) in
+  let histograms = list.fold(rec.keys(b.histograms), a.histograms, fn(acc, k) {
+    let combined = list.concat([rec.getOr(acc, k, []), rec.get(b.histograms, k)]) in
+    rec.set(acc, k, combined)
+  }) in
+  { counters: counters, gauges: gauges, histograms: histograms }
+}
+
+export { new, inc, inc_by, counter, set_gauge, gauge, observe,
+         histogram_count, histogram_sum, histogram_avg, histogram_max, histogram_min,
+         to_prometheus, merge }
