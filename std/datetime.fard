@@ -1,0 +1,31 @@
+/// std/datetime — date/time helpers
+
+import("std/datetime") as _dt
+import("std/str")      as str
+import("std/int")      as int
+
+// Native wrappers
+fn now()            { _dt.now() }
+fn parse(s, fmt)    { _dt.parse(s, fmt) }
+fn format(ts, fmt)  { _dt.format(ts, fmt) }
+fn add(ts, ms)      { _dt.add(ts, ms) }
+fn sub(ts, ms)      { _dt.sub(ts, ms) }
+fn diff(t0, t1)     { _dt.diff(t0, t1) }
+fn field(ts, f)     { _dt.field(ts, f) }
+
+// Pure helpers
+fn now_ms()         { now() }
+
+fn seconds(n)       { n * 1000 }
+fn minutes(n)       { n * 60000 }
+fn hours(n)         { n * 3600000 }
+fn days(n)          { n * 86400000 }
+
+fn elapsed_ms(t0)   { diff(t0, now()) }
+
+fn iso(ts) { format(ts, "%Y-%m-%dT%H:%M:%S") }
+fn date(ts) { format(ts, "%Y-%m-%d") }
+fn time(ts) { format(ts, "%H:%M:%S") }
+
+export { now, parse, format, add, sub, diff, field, now_ms,
+         seconds, minutes, hours, days, elapsed_ms, iso, date, time }

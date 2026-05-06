@@ -1,0 +1,57 @@
+/// std/result — result type helpers
+
+import("std/result") as _res
+
+// Constructors
+fn ok(v)   { _res.ok(v) }
+fn err(e)  { _res.err(e) }
+
+// Predicates (pure FARD)
+fn is_ok(r)  { _res.is_ok(r) }
+fn is_err(r) { _res.is_err(r) }
+
+// Transforms (pure FARD)
+fn map(r, f) {
+  if is_ok(r) then ok(f(_res.unwrap_ok(r)))
+  else r
+}
+
+fn map_err(r, f) {
+  if is_err(r) then err(f(_res.unwrap_err(r)))
+  else r
+}
+
+fn and_then(r, f) {
+  if is_ok(r) then f(_res.unwrap_ok(r))
+  else r
+}
+
+fn or_else(r, f) {
+  if is_err(r) then f(_res.unwrap_err(r))
+  else r
+}
+
+fn unwrap_or(r, default_val) {
+  if is_ok(r) then _res.unwrap_ok(r)
+  else default_val
+}
+
+fn unwrap_ok(r)  { _res.unwrap_ok(r) }
+fn unwrap_err(r) { _res.unwrap_err(r) }
+
+fn from_nullable(v, err_val) {
+  if v == null then err(err_val) else ok(v)
+}
+
+fn collect(results) {
+  list.fold(results, ok([]), fn(acc, r) {
+    if is_err(acc) then acc
+    else if is_err(r) then r
+    else ok(list.append(unwrap_ok(acc), unwrap_ok(r)))
+  })
+}
+
+import("std/list") as list
+
+export { ok, err, is_ok, is_err, map, map_err, and_then, or_else,
+         unwrap_or, unwrap_ok, unwrap_err, from_nullable, collect }
