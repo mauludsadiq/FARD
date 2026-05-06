@@ -283,7 +283,7 @@ Pure-FARD PDF-1.4 generation and annotation. `write_pdf` builds complete documen
 
 ## Self-Hosting
 
-FARD compiles itself to native x86_64 ELF. The compiler pipeline is written in FARD. Stage 8 is underway: replacing 438 Rust builtins with pure FARD implementations.
+Stage 8 is underway: 15 stdlib modules (list, str, rec, math, type, json, hash, uuid, env, path, option, result, datetime, crypto, bytes) now run as pure FARD — replacing ~180 Rust builtins.
 
 ### Pipeline
 
@@ -317,9 +317,21 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | `apps/fard_elf.fard` | Linux ELF writer (40 fns, 52KB native ELF) |
 | `apps/fard_obj.fard` | Relocatable object format |
 | `apps/fard_link.fard` | Native linker — resolves cross-module calls |
-| `std/list.fard` | List stdlib — 30 fns replacing Rust builtins |
-| `std/str.fard` | String stdlib — 14 fns replacing Rust builtins |
-| `std/rec.fard` | Record stdlib — 16 fns replacing Rust builtins |
+| `std/list.fard` | 30 list fns replacing Rust builtins |
+| `std/str.fard` | 14 string fns replacing Rust builtins |
+| `std/rec.fard` | 16 record fns replacing Rust builtins |
+| `std/math.fard` | 17 math fns — gcd, lcm, factorial, trig wrappers |
+| `std/type.fard` | 13 type predicates — is_int, is_list, is_truthy etc. |
+| `std/json.fard` | JSON encode/decode + get_path, from_pairs |
+| `std/option.fard` | Option monad — map, and_then, filter, to_result |
+| `std/result.fard` | Result monad — map, and_then, collect, map_err |
+| `std/bytes.fard` | Byte ops — from_hex, to_hex_upper, empty |
+| `std/crypto.fard` | Crypto wrappers + hmac_hex, constant_time_eq |
+| `std/datetime.fard` | Time helpers — seconds/minutes/hours/days, iso, date |
+| `std/hash.fard` | Hash wrappers + short, verify, content_id |
+| `std/uuid.fard` | UUID helpers — nil, is_nil, short |
+| `std/env.fard` | Env helpers — get_or, require, get_int, get_bool |
+| `std/path.fard` | Path helpers — stem, with_ext, parts |
 
 ### Verified Native Results
 
