@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**2 May 2026 · v1.7.0 · fully verified against fardrun source and runtime**
+**6 May 2026 · v1.7.0 · fully verified against fardrun source and runtime**
 
 This document covers the **fardrun** production dialect. All grammar rules and stdlib
 entries verified directly by running test programs against fardrun v1.7.0.
