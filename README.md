@@ -38,15 +38,16 @@ curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
 Goal: eliminate Rust entirely. FARD compiles to native machine code with no
 foreign runtime. See ROADMAP.md for the full plan.
 
-Current status: Stage 6 complete. Stage 7 planned: eliminate Rust host entirely via native module linking.
+Current status: Stage 7 complete. FARD native linker resolves cross-module calls and links independent compiled objects into a single executable with no Rust at runtime.
 
 Rust host: 13,632 lines
-FARD implementation: 3,500+ lines
-Native backend: working for integer programs
+FARD implementation: 5,000+ lines (compiler pipeline + 11 application packages)
+Native backend: full pipeline + native linker complete
 
 ### Pipeline
 
-    source -> fardlex2 -> fardparse -> fard_lower -> fard_codegen -> fard_elf -> native ELF
+    source -> fardlex -> fardparse -> fard_lower -> fard_codegen -> fard_elf -> native ELF
+    fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 
 All stages written in FARD. Native ELF runs without VM or interpreter.
 
