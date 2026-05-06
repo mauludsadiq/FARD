@@ -1,0 +1,92 @@
+/// dataframe-core/frame — columnar dataframe
+
+import("std/list") as list
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn from_records(rows) {
+  if list.len(rows) == 0 then { cols: {}, nrows: 0 }
+  else
+    let keys = rec.keys(list.get(rows, 0)) in
+    let cols = list.fold(keys, {}, fn(acc, k) {
+      rec.set(acc, k, list.map(rows, fn(r) { rec.get(r, k) }))
+    }) in
+    { cols: cols, nrows: list.len(rows) }
+}
+
+fn to_records(df) {
+  let keys = rec.keys(df.cols) in
+  list.build(df.nrows, fn(i) {
+    list.fold(keys, {}, fn(acc, k) {
+      rec.set(acc, k, list.get(rec.get(df.cols, k), i))
+    })
+  })
+}
+
+fn col(df, name) { rec.getOr(df.cols, name, null) }
+
+fn add_col(df, name, values) {
+  { ...df, cols: rec.set(df.cols, name, values) }
+}
+
+fn select_cols(df, names) {
+  let new_cols = list.fold(names, {}, fn(acc, n) {
+    rec.set(acc, n, col(df, n))
+  }) in
+  { cols: new_cols, nrows: df.nrows }
+}
+
+fn filter_rows(df, pred) {
+  let rows = to_records(df) in
+  from_records(list.filter(rows, pred))
+}
+
+fn map_col(df, name, f) {
+  let vals = list.map(col(df, name), f) in
+  add_col(df, name, vals)
+}
+
+fn sort_by_col(df, name) {
+  let rows = to_records(df) in
+  let sorted = list.sort_by(rows, fn(a, b) {
+    let va = rec.get(a, name) in
+    let vb = rec.get(b, name) in
+    if va < vb then -1 else if va > vb then 1 else 0
+  }) in
+  from_records(sorted)
+}
+
+fn group_by_col(df, key) {
+  let rows = to_records(df) in
+  list.group_by(rows, fn(r) { rec.get(r, key) })
+}
+
+fn agg(df, key, agg_specs) {
+  let groups = group_by_col(df, key) in
+  list.fold(rec.keys(groups), [], fn(acc, k) {
+    let group_rows = rec.get(groups, k) in
+    let result = list.fold(agg_specs, { [key]: k }, fn(row, spec) {
+      let vals = list.map(group_rows, fn(r) { rec.get(r, spec.col) }) in
+      let v = if spec.agg_fn == "sum"   then list.fold(vals, 0, fn(a, x) { a + x })
+              else if spec.agg_fn == "count" then list.len(vals)
+              else if spec.agg_fn == "avg"   then list.fold(vals, 0, fn(a, x) { a + x }) / list.len(vals)
+              else if spec.agg_fn == "min"   then list.fold(vals, list.get(vals, 0), fn(a, x) { if x < a then x else a })
+              else if spec.agg_fn == "max"   then list.fold(vals, list.get(vals, 0), fn(a, x) { if x > a then x else a })
+              else null in
+      rec.set(row, spec.name, v)
+    }) in
+    list.append(acc, result)
+  })
+}
+
+fn head(df, n) {
+  let rows = list.take(to_records(df), n) in
+  from_records(rows)
+}
+
+fn ncols(df) { list.len(rec.keys(df.cols)) }
+fn nrows(df) { df.nrows }
+fn columns(df) { rec.keys(df.cols) }
+
+export { from_records, to_records, col, add_col, select_cols, filter_rows,
+         map_col, sort_by_col, group_by_col, agg, head, ncols, nrows, columns }

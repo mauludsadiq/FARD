@@ -1,0 +1,30 @@
+/// cli-core/subcommand — subcommand dispatch
+
+import("std/list") as list
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn new() { { commands: [] } }
+
+fn add(cli, name, desc, handler) {
+  { commands: list.append(cli.commands, { name: name, desc: desc, handler: handler }) }
+}
+
+fn run(cli, argv) {
+  if list.len(argv) == 0 then { ok: false, err: "no command given" }
+  else
+    let cmd_name = list.get(argv, 0) in
+    let rest     = list.tail(argv) in
+    let matched  = list.find(cli.commands, fn(c) { c.name == cmd_name }) in
+    if rec.has(matched, "none") then { ok: false, err: str.concat(["unknown command: ", cmd_name]) }
+    else matched.some.handler(rest)
+}
+
+fn help(cli, program_name) {
+  let lines = list.fold(cli.commands, [str.concat(["Usage: ", program_name, " <command>"]), "Commands:"], fn(acc, c) {
+    list.append(acc, str.concat(["  ", c.name, "\t", c.desc]))
+  }) in
+  str.join(lines, "\n")
+}
+
+export { new, add, run, help }

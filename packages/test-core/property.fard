@@ -1,0 +1,24 @@
+/// test-core/property — property-based testing helpers
+
+import("std/list")   as list
+import("std/random") as random
+import("std/str")    as str
+
+fn run_property(label, gen, prop, n) {
+  let trials = list.build(n, fn(i) {
+    let v = gen(i) in
+    { i: i, v: v, ok: prop(v) }
+  }) in
+  let failures = list.filter(trials, fn(t) { !t.ok }) in
+  if list.len(failures) == 0 then { ok: true, label: label, trials: n }
+  else
+    let first = list.get(failures, 0) in
+    { ok: false, label: label,
+      msg: str.concat(["failed on input: ", str.from(first.v)]),
+      counterexample: first.v }
+}
+
+fn int_gen(min, max) { fn(i) { min + (i % (max - min + 1)) } }
+fn list_gen(elem_gen, max_len) { fn(i) { list.build(i % (max_len + 1), elem_gen) } }
+
+export { run_property, int_gen, list_gen }

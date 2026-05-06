@@ -1,0 +1,53 @@
+/// web-core/middleware — composable middleware
+
+import("std/rec")  as rec
+import("std/str")  as str
+import("std/uuid") as uuid
+
+fn compose(middlewares, handler) {
+  list.fold(list.reverse(middlewares), handler, fn(next, mw) {
+    fn(req) { mw(req, next) }
+  })
+}
+
+fn logger(req, next) {
+  let res = next(req) in
+  { ...res, _log: str.concat([req.method, " ", req.path, " -> ", str.from(res.status)]) }
+}
+
+fn request_id(req, next) {
+  let id = uuid.v4() in
+  let req2 = { ...req, headers: rec.set(req.headers, "x-request-id", id) } in
+  let res = next(req2) in
+  { ...res, headers: rec.set(res.headers, "x-request-id", id) }
+}
+
+fn cors(origins) {
+  fn(req, next) {
+    let origin = rec.getOr(req.headers, "origin", "*") in
+    let allowed = if list.len(origins) == 0 then true
+                  else list.any(origins, fn(o) { o == origin || o == "*" }) in
+    if req.method == "OPTIONS" then
+      { status: 204, headers: {
+          "access-control-allow-origin": origin,
+          "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
+          "access-control-allow-headers": "content-type,authorization"
+        }, body: "" }
+    else
+      let res = next(req) in
+      { ...res, headers: rec.set(res.headers, "access-control-allow-origin",
+          if allowed then origin else "") }
+  }
+}
+
+fn body_limit(max_bytes) {
+  fn(req, next) {
+    if str.len(rec.getOr(req, "body", "")) > max_bytes
+    then { status: 413, headers: {}, body: "Request Too Large" }
+    else next(req)
+  }
+}
+
+import("std/list") as list
+
+export { compose, logger, request_id, cors, body_limit }

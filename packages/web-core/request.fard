@@ -1,0 +1,38 @@
+/// web-core/request — HTTP request record helpers
+
+import("std/str")  as str
+import("std/rec")  as rec
+import("std/json") as json
+import("std/list") as list
+
+fn make(method, path, headers, body) {
+  { method: method, path: path, headers: headers, body: body, params: {}, query: {} }
+}
+
+fn header(req, name) {
+  rec.getOr(req.headers, str.lower(name), null)
+}
+
+fn json_body(req) {
+  if req.body == null || req.body == "" then { ok: false, err: "empty body" }
+  else
+    let decoded = json.decode(req.body) in
+    if decoded == null then { ok: false, err: "invalid json" }
+    else { ok: true, v: decoded }
+}
+
+fn query_param(req, key) {
+  rec.getOr(req.query, key, null)
+}
+
+fn parse_query(qs) {
+  if qs == null || qs == "" then rec.empty()
+  else
+    list.fold(str.split(qs, "&"), {}, fn(acc, pair) {
+      let parts = str.split(pair, "=") in
+      if list.len(parts) < 2 then acc
+      else rec.set(acc, list.get(parts, 0), list.get(parts, 1))
+    })
+}
+
+export { make, header, json_body, query_param, parse_query }

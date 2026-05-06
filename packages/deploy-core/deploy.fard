@@ -1,0 +1,62 @@
+/// deploy-core — deployment artifact contracts
+
+import("std/json") as json
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn dockerfile(spec) {
+  let base    = rec.getOr(spec, "base", "ubuntu:22.04") in
+  let workdir = rec.getOr(spec, "workdir", "/app") in
+  let copy    = rec.getOr(spec, "copy", []) in
+  let run     = rec.getOr(spec, "run", []) in
+  let env     = rec.getOr(spec, "env", {}) in
+  let expose  = rec.getOr(spec, "expose", []) in
+  let cmd     = rec.getOr(spec, "cmd", []) in
+
+  let lines = [str.concat(["FROM ", base]),
+               str.concat(["WORKDIR ", workdir])] in
+  let env_lines = list.fold(rec.keys(env), [], fn(acc, k) {
+    list.append(acc, str.concat(["ENV ", k, "=", rec.get(env, k)]))
+  }) in
+  let copy_lines = list.map(copy, fn(c) {
+    str.concat(["COPY ", c.src, " ", c.dst])
+  }) in
+  let run_lines = list.map(run, fn(r) {
+    str.concat(["RUN ", r])
+  }) in
+  let expose_lines = list.map(expose, fn(p) {
+    str.concat(["EXPOSE ", str.from(p)])
+  }) in
+  let cmd_str = json.encode(cmd) in
+  let cmd_line = str.concat(["CMD ", cmd_str]) in
+  str.join(list.concat([lines, env_lines, copy_lines, run_lines, expose_lines, [cmd_line]]), "\n")
+}
+
+fn compose(services) {
+  let svc_lines = list.fold(rec.keys(services), [], fn(acc, name) {
+    let svc = rec.get(services, name) in
+    let image = rec.getOr(svc, "image", name) in
+    let ports = rec.getOr(svc, "ports", []) in
+    let env   = rec.getOr(svc, "env", {}) in
+    let port_lines = list.map(ports, fn(p) { str.concat(["      - \"", p, "\""]) }) in
+    let env_lines  = list.fold(rec.keys(env), [], fn(a, k) {
+      list.append(a, str.concat(["      ", k, ": ", rec.get(env, k)]))
+    }) in
+    let svc_block = list.concat([
+      [str.concat(["  ", name, ":"]),
+       str.concat(["    image: ", image])],
+      if list.len(ports) > 0 then list.concat([["    ports:"], port_lines]) else [],
+      if list.len(env_lines) > 0 then list.concat([["    environment:"], env_lines]) else []
+    ]) in
+    list.concat([acc, svc_block])
+  }) in
+  str.join(list.concat([["version: '3.8'", "services:"], svc_lines]), "\n")
+}
+
+fn manifest(name, version, target, spec) {
+  { artifact_type: "deploy/manifest",
+    name: name, version: version, target: target, spec: spec }
+}
+
+export { dockerfile, compose, manifest }

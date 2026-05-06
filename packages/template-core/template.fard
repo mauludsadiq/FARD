@@ -1,0 +1,39 @@
+/// template-core — simple text/HTML templating
+
+import("std/str")  as str
+import("std/list") as list
+import("std/rec")  as rec
+
+fn escape_html(s) {
+  let s1 = str.replace(s, "&", "&amp;") in
+  let s2 = str.replace(s1, "<", "&lt;") in
+  let s3 = str.replace(s2, ">", "&gt;") in
+  let s4 = str.replace(s3, "\"", "&quot;") in
+  str.replace(s4, "'", "&#39;")
+}
+
+fn render(template, vars) {
+  rec.fold(vars, template, fn(tmpl, key, val) {
+    let placeholder = str.concat(["{{", key, "}}"] ) in
+    str.replace(tmpl, placeholder, str.from(val))
+  })
+}
+
+fn render_safe(template, vars) {
+  rec.fold(vars, template, fn(tmpl, key, val) {
+    let placeholder = str.concat(["{{", key, "}}"] ) in
+    str.replace(tmpl, placeholder, escape_html(str.from(val)))
+  })
+}
+
+fn layout(base, slot, content) {
+  str.replace(base, str.concat(["{{", slot, "}}"]), content)
+}
+
+fn each(template, items, key) {
+  str.join(list.map(items, fn(item) {
+    render(template, { [key]: item })
+  }), "")
+}
+
+export { escape_html, render, render_safe, layout, each }

@@ -1,0 +1,59 @@
+/// orm-core/query — query builder
+
+import("std/list") as list
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn from(table_name) {
+  { table: table_name, conditions: [], order: null, limit_n: null,
+    offset_n: null, selects: ["*"] }
+}
+
+fn where(q, cond) { { ...q, conditions: list.append(q.conditions, cond) } }
+fn order_by(q, col, dir) { { ...q, order: str.concat([col, " ", dir]) } }
+fn limit(q, n)   { { ...q, limit_n: n } }
+fn offset(q, n)  { { ...q, offset_n: n } }
+fn select(q, cols) { { ...q, selects: cols } }
+
+fn to_sql(q) {
+  let sel  = str.join(q.selects, ", ") in
+  let base = str.concat(["SELECT ", sel, " FROM ", q.table]) in
+  let base2 = if list.len(q.conditions) == 0 then base
+              else str.concat([base, " WHERE ", str.join(q.conditions, " AND ")]) in
+  let base3 = if q.order == null then base2
+              else str.concat([base2, " ORDER BY ", q.order]) in
+  let base4 = if q.limit_n == null then base3
+              else str.concat([base3, " LIMIT ", str.from(q.limit_n)]) in
+  if q.offset_n == null then base4
+  else str.concat([base4, " OFFSET ", str.from(q.offset_n)])
+}
+
+fn insert_sql(table_name, data) {
+  let keys = rec.keys(data) in
+  let vals = list.fold(keys, [], fn(acc, k) {
+    let v = rec.get(data, k) in
+    list.append(acc, if typ.of(v) == "text" then str.concat(["'", v, "'"]) else str.from(v))
+  }) in
+  str.concat(["INSERT INTO ", table_name, " (",
+              str.join(keys, ", "), ") VALUES (",
+              str.join(vals, ", "), ")"])
+}
+
+fn update_sql(table_name, data, condition) {
+  let keys = rec.keys(data) in
+  let sets = list.fold(keys, [], fn(acc, k) {
+    let v = rec.get(data, k) in
+    let vstr = if typ.of(v) == "text" then str.concat(["'", v, "'"]) else str.from(v) in
+    list.append(acc, str.concat([k, " = ", vstr]))
+  }) in
+  str.concat(["UPDATE ", table_name, " SET ", str.join(sets, ", "),
+              " WHERE ", condition])
+}
+
+fn delete_sql(table_name, condition) {
+  str.concat(["DELETE FROM ", table_name, " WHERE ", condition])
+}
+
+import("std/type") as typ
+
+export { from, where, order_by, limit, offset, select, to_sql, insert_sql, update_sql, delete_sql }

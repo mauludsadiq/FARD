@@ -1,15 +1,37 @@
-import("../packages/test-core/main") as tc
+import("../packages/test-core/assert") as assert
+import("../packages/test-core/runner") as runner
 
-let p = tc.pass("ok")
-let f = tc.fail("bad", "wrong value")
-let s = tc.skip("skip", "not ready")
+test "assert eq pass" {
+  let r = assert.eq("numbers", 1 + 1, 2) in
+  r.ok
+}
 
-test "pass t"    { p.t == "pass" }
-test "fail t"    { f.t == "fail" }
-test "skip t"    { s.t == "skip" }
-test "is_pass"   { tc.is_pass(p) == true }
-test "is_fail"   { tc.is_fail(f) == true }
-test "is_skip"   { tc.is_skip(s) == true }
-test "run pass"  { tc.is_pass(tc.run("x", fn() { 1 == 1 })) == true }
-test "run fail"  { tc.is_fail(tc.run("x", fn() { 1 == 2 })) == true }
-test "summary"   { tc.summary([p, f, s]).pass == 1 }
+test "assert eq fail" {
+  let r = assert.eq("numbers", 1 + 1, 3) in
+  !r.ok
+}
+
+test "assert is_true" {
+  assert.is_true("true val", true).ok
+}
+
+test "assert is_false" {
+  assert.is_false("false val", false).ok
+}
+
+test "runner suite" {
+  let s = runner.suite("math", [
+    runner.make_test("add", fn() { assert.eq("add", 1+1, 2) }),
+    runner.make_test("sub", fn() { assert.eq("sub", 5-3, 2) })
+  ]) in
+  let r = runner.run_suite(s) in
+  r.passed == 2 && r.failed == 0
+}
+
+test "runner failure" {
+  let s = runner.suite("bad", [
+    runner.make_test("fail", fn() { assert.eq("x", 1, 2) })
+  ]) in
+  let r = runner.run_suite(s) in
+  r.failed == 1
+}

@@ -1,0 +1,51 @@
+/// log-core/logger — structured logging
+
+import("std/json")     as json
+import("std/datetime") as dt
+import("std/str")      as str
+import("std/rec")      as rec
+import("std/uuid")     as uuid
+
+fn new(service, level) {
+  { service: service, level: level, trace_id: uuid.v4(), fields: {} }
+}
+
+fn with_field(logger, key, val) {
+  { ...logger, fields: rec.set(logger.fields, key, val) }
+}
+
+fn with_trace(logger, trace_id) { { ...logger, trace_id: trace_id } }
+
+fn level_num(level) {
+  if level == "debug" then 0
+  else if level == "info"  then 1
+  else if level == "warn"  then 2
+  else if level == "error" then 3
+  else 1
+}
+
+fn should_log(logger, msg_level) {
+  level_num(msg_level) >= level_num(logger.level)
+}
+
+fn make_entry(logger, level, msg, fields) {
+  let base = { level: level, msg: msg, service: logger.service,
+               trace_id: logger.trace_id } in
+  let merged = rec.merge(base, rec.merge(logger.fields, fields)) in
+  json.encode(merged)
+}
+
+fn log(logger, level, msg, fields) {
+  if !should_log(logger, level) then null
+  else make_entry(logger, level, msg, fields)
+}
+
+fn debug(logger, msg)  { log(logger, "debug", msg, {}) }
+fn info(logger, msg)   { log(logger, "info",  msg, {}) }
+fn warn(logger, msg)   { log(logger, "warn",  msg, {}) }
+fn error(logger, msg)  { log(logger, "error", msg, {}) }
+
+fn info_with(logger, msg, fields)  { log(logger, "info",  msg, fields) }
+fn error_with(logger, msg, fields) { log(logger, "error", msg, fields) }
+
+export { new, with_field, with_trace, log, debug, info, warn, error, info_with, error_with }

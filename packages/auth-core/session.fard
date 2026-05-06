@@ -1,0 +1,22 @@
+/// auth-core/session — in-memory session store
+
+import("std/uuid") as uuid
+import("std/rec")  as rec
+
+fn new_store() { { sessions: {} } }
+
+fn create(store, data) {
+  let id = uuid.v4() in
+  { store: { sessions: rec.set(store.sessions, id, data) }, id: id }
+}
+
+fn get(store, id) { rec.getOr(store.sessions, id, null) }
+
+fn destroy(store, id) { { sessions: rec.remove(store.sessions, id) } }
+
+fn update(store, id, data) {
+  if !rec.has(store.sessions, id) then store
+  else { sessions: rec.set(store.sessions, id, data) }
+}
+
+export { new_store, create, get, destroy, update }

@@ -1,0 +1,56 @@
+/// web-core/router — HTTP routing table
+/// Routes: list of { method, pattern, handler }
+/// handler: fn(req) -> res
+
+import("std/list") as list
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn new() { { routes: [] } }
+
+fn add(router, method, pattern, handler) {
+  { routes: list.append(router.routes, { method: method, pattern: pattern, handler: handler }) }
+}
+
+fn get(router, pattern, handler)    { add(router, "GET",    pattern, handler) }
+fn post(router, pattern, handler)   { add(router, "POST",   pattern, handler) }
+fn put(router, pattern, handler)    { add(router, "PUT",    pattern, handler) }
+fn delete_route(router, pattern, handler) { add(router, "DELETE", pattern, handler) }
+fn patch(router, pattern, handler)  { add(router, "PATCH",  pattern, handler) }
+
+fn match_pattern(pattern, path) {
+  let p_parts = str.split(pattern, "/") in
+  let r_parts = str.split(path, "/") in
+  if list.len(p_parts) != list.len(r_parts) then { ok: false, params: {} }
+  else
+    list.fold(
+      list.zip(p_parts, r_parts),
+      { ok: true, params: {} },
+      fn(acc, pair) {
+        if !acc.ok then acc
+        else
+          let p = list.get(pair, 0) in
+          let r = list.get(pair, 1) in
+          if str.starts_with(p, ":") then
+            let key = str.slice(p, 1, str.len(p)) in
+            { ok: true, params: rec.set(acc.params, key, r) }
+          else if p == r then acc
+          else { ok: false, params: {} }
+      }
+    )
+}
+
+fn dispatch(router, req) {
+  list.fold(router.routes, null, fn(acc, route) {
+    if acc != null then acc
+    else if route.method != req.method then null
+    else
+      let m = match_pattern(route.pattern, req.path) in
+      if !m.ok then null
+      else
+        let req2 = { ...req, params: m.params } in
+        route.handler(req2)
+  })
+}
+
+export { new, get, post, put, delete_route, patch, add, dispatch, match_pattern }

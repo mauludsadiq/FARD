@@ -1,0 +1,37 @@
+/// web-core/app — top-level application builder
+
+import("../web-core/router")     as router
+import("../web-core/request")    as req_mod
+import("../web-core/response")   as res_mod
+import("../web-core/middleware") as mw
+import("std/list") as list
+import("std/rec")  as rec
+
+fn new() {
+  { router: router.new(), middlewares: [] }
+}
+
+fn use(app, middleware) {
+  { ...app, middlewares: list.append(app.middlewares, middleware) }
+}
+
+fn get(app, pattern, handler)    { { ...app, router: router.get(app.router, pattern, handler) } }
+fn post(app, pattern, handler)   { { ...app, router: router.post(app.router, pattern, handler) } }
+fn put(app, pattern, handler)    { { ...app, router: router.put(app.router, pattern, handler) } }
+fn delete_route(app, pattern, handler) { { ...app, router: router.delete_route(app.router, pattern, handler) } }
+fn patch(app, pattern, handler)  { { ...app, router: router.patch(app.router, pattern, handler) } }
+
+fn handle(app, req) {
+  let composed = mw.compose(app.middlewares, fn(r) {
+    let res = router.dispatch(app.router, r) in
+    if res == null then res_mod.not_found() else res
+  }) in
+  composed(req)
+}
+
+fn run(app, port) {
+  let handler = fn(req) { handle(app, req) } in
+  { ok: true, port: port, handler: handler }
+}
+
+export { new, use, get, post, put, delete_route, patch, handle, run }

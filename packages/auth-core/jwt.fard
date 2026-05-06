@@ -1,0 +1,49 @@
+/// auth-core/jwt — minimal JWT (HS256) sign and verify
+
+import("std/crypto") as crypto
+import("std/json")   as json
+import("std/str")    as str
+import("std/codec")  as codec
+import("std/bytes")  as bytes
+
+fn b64url(s) {
+  let b64 = bytes.to_base64(bytes.of_str(s)) in
+  let s1 = str.replace(b64, "+", "-") in
+  let s2 = str.replace(s1, "/", "_") in
+  str.replace(s2, "=", "")
+}
+
+fn sign(payload, secret) {
+  let header = b64url(json.encode({ alg: "HS256", typ: "JWT" })) in
+  let body   = b64url(json.encode(payload)) in
+  let msg    = str.concat([header, ".", body]) in
+  let sig    = codec.base64url_encode_hex(crypto.hmac_sha256(bytes.to_hex(bytes.of_str(secret)), msg)) in
+  str.concat([msg, ".", sig])
+}
+
+fn verify(token, secret) {
+  let parts = str.split(token, ".") in
+  if list.len(parts) != 3 then { ok: false, err: "malformed token" }
+  else
+    let header  = list.get(parts, 0) in
+    let body    = list.get(parts, 1) in
+    let sig     = list.get(parts, 2) in
+    let msg     = str.concat([header, ".", body]) in
+    let expected = codec.base64url_encode_hex(crypto.hmac_sha256(bytes.to_hex(bytes.of_str(secret)), msg)) in
+    if sig != expected then { ok: false, err: "invalid signature" }
+    else
+      let decoded = json.decode(bytes.to_str(codec.base64url_decode(body))) in
+      { ok: true, payload: decoded }
+}
+
+fn bearer(req_headers) {
+  let auth = rec.getOr(req_headers, "authorization", null) in
+  if auth == null then null
+  else if !str.starts_with(auth, "Bearer ") then null
+  else str.slice(auth, 7, str.len(auth))
+}
+
+import("std/list") as list
+import("std/rec")  as rec
+
+export { sign, verify, bearer }

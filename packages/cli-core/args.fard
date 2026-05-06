@@ -1,0 +1,48 @@
+/// cli-core/args — argument parsing
+
+import("std/list") as list
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn parse(argv, spec) {
+  // spec: { flags: [{name, alias, default, desc}], positional: [{name, desc}] }
+  let flags = rec.getOr(spec, "flags", []) in
+  let positional = rec.getOr(spec, "positional", []) in
+  list.fold(argv, { flags: {}, args: [], errors: [] }, fn(acc, arg) {
+    if str.starts_with(arg, "--") then
+      let key = str.slice(arg, 2, str.len(arg)) in
+      let parts = str.split(key, "=") in
+      let flag_name = list.get(parts, 0) in
+      let flag_val  = if list.len(parts) > 1 then list.get(parts, 1) else true in
+      { ...acc, flags: rec.set(acc.flags, flag_name, flag_val) }
+    else if str.starts_with(arg, "-") && str.len(arg) == 2 then
+      let alias = str.slice(arg, 1, 2) in
+      let matched = list.find(flags, fn(f) { rec.getOr(f, "alias", "") == alias }) in
+      if matched.none != null then { ...acc, errors: list.append(acc.errors, str.concat(["unknown flag: ", arg])) }
+      else { ...acc, flags: rec.set(acc.flags, matched.some.name, true) }
+    else
+      { ...acc, args: list.append(acc.args, arg) }
+  })
+}
+
+fn flag(parsed, name, default_val) {
+  rec.getOr(parsed.flags, name, default_val)
+}
+
+fn arg(parsed, index) {
+  if index < list.len(parsed.args) then list.get(parsed.args, index) else null
+}
+
+fn help(spec, program_name) {
+  let flags = rec.getOr(spec, "flags", []) in
+  let pos   = rec.getOr(spec, "positional", []) in
+  let usage = str.concat(["Usage: ", program_name]) in
+  let pos_str = list.fold(pos, "", fn(acc, p) { str.concat([acc, " <", p.name, ">"]) }) in
+  let flag_lines = list.fold(flags, [], fn(acc, f) {
+    let alias = if rec.has(f, "alias") then str.concat(["-", f.alias, ", "]) else "    " in
+    list.append(acc, str.concat(["  ", alias, "--", f.name, "\t", rec.getOr(f, "desc", "")]))
+  }) in
+  str.join(list.concat([[str.concat([usage, pos_str, " [options]"]), ""], flag_lines]), "\n")
+}
+
+export { parse, flag, arg, help }

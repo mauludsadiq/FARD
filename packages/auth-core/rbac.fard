@@ -1,0 +1,32 @@
+/// auth-core/rbac — role-based access control
+
+import("std/list") as list
+import("std/rec")  as rec
+
+fn new_policy() { { roles: {} } }
+
+fn grant(policy, role, permissions) {
+  { roles: rec.set(policy.roles, role, permissions) }
+}
+
+fn can(policy, role, permission) {
+  let perms = rec.getOr(policy.roles, role, []) in
+  list.any(perms, fn(p) { p == permission || p == "*" })
+}
+
+fn require(policy, role, permission) {
+  if can(policy, role, permission) then { ok: true }
+  else { ok: false, err: str.concat(["role '", role, "' cannot '", permission, "'"]) }
+}
+
+fn middleware(policy, get_role, permission) {
+  fn(req, next) {
+    let role = get_role(req) in
+    if can(policy, role, permission) then next(req)
+    else { status: 403, headers: {}, body: "Forbidden" }
+  }
+}
+
+import("std/str") as str
+
+export { new_policy, grant, can, require, middleware }

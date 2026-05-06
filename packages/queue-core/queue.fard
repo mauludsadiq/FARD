@@ -1,0 +1,64 @@
+/// queue-core — durable job queue (in-memory, deterministic)
+
+import("std/list") as list
+import("std/uuid") as uuid
+import("std/rec")  as rec
+import("std/str")  as str
+
+fn new() { { jobs: [], dead_letter: [] } }
+
+fn enqueue(q, job_type, payload, opts) {
+  let job = { id: uuid.v4(), type: job_type, payload: payload,
+              attempts: 0, max_attempts: rec.getOr(opts, "max_attempts", 3),
+              status: "pending" } in
+  { ...q, jobs: list.append(q.jobs, job) }
+}
+
+fn dequeue(q) {
+  let pending = list.filter(q.jobs, fn(j) { j.status == "pending" }) in
+  if list.len(pending) == 0 then { q: q, job: null }
+  else
+    let job = list.get(pending, 0) in
+    let job2 = { ...job, status: "running", attempts: job.attempts + 1 } in
+    let jobs2 = list.map(q.jobs, fn(j) { if j.id == job.id then job2 else j }) in
+    { q: { ...q, jobs: jobs2 }, job: job2 }
+}
+
+fn ack(q, job_id) {
+  { ...q, jobs: list.filter(q.jobs, fn(j) { j.id != job_id }) }
+}
+
+fn nack(q, job_id) {
+  let jobs2 = list.map(q.jobs, fn(j) {
+    if j.id != job_id then j
+    else if j.attempts >= j.max_attempts
+      then { ...j, status: "dead" }
+      else { ...j, status: "pending" }
+  }) in
+  let dead = list.filter(jobs2, fn(j) { j.status == "dead" }) in
+  let alive = list.filter(jobs2, fn(j) { j.status != "dead" }) in
+  { jobs: alive, dead_letter: list.concat([q.dead_letter, dead]) }
+}
+
+fn process(q, handlers) {
+  let result = dequeue(q) in
+  if result.job == null then { q: q, result: null }
+  else
+    let job = result.job in
+    let handler = list.find(handlers, fn(h) { h.type == job.type }) in
+    if rec.has(handler, "none") then
+      { q: nack(result.q, job.id), result: { ok: false, err: "no handler" } }
+    else
+      let r = handler.some.fn(job.payload) in
+      if rec.has(r, "ok") && r.ok
+        then { q: ack(result.q, job.id), result: r }
+        else { q: nack(result.q, job.id), result: r }
+}
+
+fn stats(q) {
+  { pending: list.len(list.filter(q.jobs, fn(j) { j.status == "pending" })),
+    running: list.len(list.filter(q.jobs, fn(j) { j.status == "running" })),
+    dead:    list.len(q.dead_letter) }
+}
+
+export { new, enqueue, dequeue, ack, nack, process, stats }

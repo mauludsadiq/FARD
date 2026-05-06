@@ -1,14 +1,47 @@
-import("../packages/web-core/main") as web
+import("../packages/web-core/router")   as router
+import("../packages/web-core/request")  as req_mod
+import("../packages/web-core/response") as res_mod
+import("../packages/web-core/app")      as app_mod
 
-let req = { method: "GET", url: "/hello", headers: {}, body: null }
-let ctx = web.context(req, { user: "alice" })
+test "router match exact" {
+  let r = router.new() in
+  let r2 = router.get(r, "/hello", fn(req) { res_mod.ok("hi") }) in
+  let req = req_mod.make("GET", "/hello", {}, null) in
+  let res = router.dispatch(r2, req) in
+  res.status == 200
+}
 
-test "method"       { web.method(ctx) == "GET" }
-test "path"         { web.path(ctx) == "/hello" }
-test "get_state"    { web.get_state(ctx, "user") == "alice" }
-test "set_state"    { web.get_state(web.set_state(ctx, "count", 1), "count") == 1 }
-test "ok status"    { web.ok(ctx, {}).response.status == 200 }
-test "created"      { web.created(ctx, {}).response.status == 201 }
-test "not_found"    { web.not_found(ctx, "nope").response.status == 404 }
-test "bad_request"  { web.bad_request(ctx, "bad").response.status == 400 }
-test "server_error" { web.server_error(ctx, "err").response.status == 500 }
+test "router match param" {
+  let r = router.get(router.new(), "/users/:id", fn(req) { res_mod.json_ok({ id: req.params.id }) }) in
+  let req = req_mod.make("GET", "/users/42", {}, null) in
+  let res = router.dispatch(r, req) in
+  res.status == 200
+}
+
+test "router no match" {
+  let r = router.get(router.new(), "/hello", fn(req) { res_mod.ok("hi") }) in
+  let req = req_mod.make("GET", "/other", {}, null) in
+  router.dispatch(r, req) == null
+}
+
+test "response json_ok" {
+  let res = res_mod.json_ok({ x: 1 }) in
+  res.status == 200
+}
+
+test "response not_found" {
+  res_mod.not_found().status == 404
+}
+
+test "app handle" {
+  let a = app_mod.get(app_mod.new(), "/ping", fn(req) { res_mod.ok("pong") }) in
+  let req = req_mod.make("GET", "/ping", {}, null) in
+  let res = app_mod.handle(a, req) in
+  res.status == 200
+}
+
+test "app 404" {
+  let a = app_mod.new() in
+  let req = req_mod.make("GET", "/missing", {}, null) in
+  app_mod.handle(a, req).status == 404
+}

@@ -1,0 +1,62 @@
+/// error-core — rich error construction and handling
+
+import("std/str")  as str
+import("std/rec")  as rec
+import("std/json") as json
+import("std/list") as list
+
+fn make(code, msg, data) {
+  { ok: false, code: code, msg: msg, data: data }
+}
+
+fn not_found(resource, id) {
+  make("NOT_FOUND", str.concat([resource, " not found: ", str.from(id)]), { resource: resource, id: id })
+}
+
+fn invalid(field, reason) {
+  make("INVALID", str.concat(["Invalid ", field, ": ", reason]), { field: field, reason: reason })
+}
+
+fn unauthorized(msg) { make("UNAUTHORIZED", msg, null) }
+fn forbidden(msg)    { make("FORBIDDEN", msg, null) }
+fn conflict(msg)     { make("CONFLICT", msg, null) }
+fn internal(msg)     { make("INTERNAL", msg, null) }
+fn timeout(msg)      { make("TIMEOUT", msg, null) }
+
+fn wrap(err, context) {
+  { ...err, msg: str.concat([context, ": ", err.msg]) }
+}
+
+fn is_err(v) { rec.has(v, "ok") && !v.ok }
+fn is_ok(v)  { !is_err(v) }
+
+fn unwrap_or(result, default_val) {
+  if is_ok(result) then result else default_val
+}
+
+fn map_err(result, f) {
+  if is_err(result) then f(result) else result
+}
+
+fn and_then(result, f) {
+  if is_err(result) then result else f(result)
+}
+
+fn collect(results) {
+  let errors = list.filter(results, is_err) in
+  if list.len(errors) == 0 then { ok: true, values: list.filter(results, is_ok) }
+  else { ok: false, errors: errors }
+}
+
+fn to_http_status(err) {
+  if err.code == "NOT_FOUND"     then 404
+  else if err.code == "INVALID"  then 400
+  else if err.code == "UNAUTHORIZED" then 401
+  else if err.code == "FORBIDDEN" then 403
+  else if err.code == "CONFLICT" then 409
+  else if err.code == "TIMEOUT"  then 408
+  else 500
+}
+
+export { make, not_found, invalid, unauthorized, forbidden, conflict, internal, timeout,
+         wrap, is_err, is_ok, unwrap_or, map_err, and_then, collect, to_http_status }

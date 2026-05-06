@@ -1,0 +1,48 @@
+/// test-core/runner — test suite runner
+
+import("std/list") as list
+import("std/str")  as str
+import("std/json") as json
+
+fn suite(name, tests) { { name: name, tests: tests } }
+
+fn make_test(label, run_fn) { { label: label, run_fn: run_fn } }
+
+fn run_suite(s) {
+  let results = list.map(s.tests, fn(t) {
+    let r = t.run_fn() in
+    { label: t.label, ok: r.ok, msg: if rec.has(r, "msg") then r.msg else null }
+  }) in
+  let passed = list.len(list.filter(results, fn(r) { r.ok })) in
+  let failed = list.len(list.filter(results, fn(r) { !r.ok })) in
+  { suite: s.name, passed: passed, failed: failed, results: results }
+}
+
+fn run_all(suites) {
+  let results = list.map(suites, run_suite) in
+  let total_passed = list.fold(results, 0, fn(acc, r) { acc + r.passed }) in
+  let total_failed = list.fold(results, 0, fn(acc, r) { acc + r.failed }) in
+  { total_passed: total_passed, total_failed: total_failed, suites: results,
+    ok: total_failed == 0 }
+}
+
+fn format_result(r) {
+  let suite_lines = list.fold(r.suites, [], fn(acc, s) {
+    let test_lines = list.fold(s.results, [], fn(a, t) {
+      let icon = if t.ok then "  ✓ " else "  ✗ " in
+      let line = str.concat([icon, t.label]) in
+      let line2 = if t.msg != null then str.concat([line, " — ", t.msg]) else line in
+      list.append(a, line2)
+    }) in
+    let header = str.concat([s.suite, " (", str.from(s.passed), "/",
+                             str.from(s.passed + s.failed), ")"]) in
+    list.concat([list.append(acc, header), test_lines])
+  }) in
+  let summary = str.concat([str.from(r.total_passed), " passed, ",
+                            str.from(r.total_failed), " failed"]) in
+  str.join(list.append(suite_lines, summary), "\n")
+}
+
+import("std/rec") as rec
+
+export { suite, make_test, run_suite, run_all, format_result }

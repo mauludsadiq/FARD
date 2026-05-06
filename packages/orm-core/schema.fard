@@ -1,0 +1,40 @@
+/// orm-core/schema — table and column definitions
+
+import("std/list") as list
+import("std/str")  as str
+
+fn table(name, columns) { { name: name, columns: columns } }
+
+fn col(name, type, opts) {
+  { name: name, type: type,
+    primary_key: rec.getOr(opts, "primary_key", false),
+    nullable:    rec.getOr(opts, "nullable", true),
+    default:     rec.getOr(opts, "default", null),
+    unique:      rec.getOr(opts, "unique", false) }
+}
+
+fn pk(name)       { col(name, "integer", { primary_key: true, nullable: false }) }
+fn text(name)     { col(name, "text",    {}) }
+fn integer(name)  { col(name, "integer", {}) }
+fn real(name)     { col(name, "real",    {}) }
+fn boolean(name)  { col(name, "integer", {}) }  // SQLite: 0/1
+fn required(c)    { { ...c, nullable: false } }
+fn unique_col(c)  { { ...c, unique: true } }
+fn default_val(c, v) { { ...c, default: v } }
+
+fn create_sql(t) {
+  let col_defs = list.fold(t.columns, [], fn(acc, c) {
+    let base = str.concat([c.name, " ", str.upper(c.type)]) in
+    let base2 = if c.primary_key then str.concat([base, " PRIMARY KEY AUTOINCREMENT"]) else base in
+    let base3 = if !c.nullable && !c.primary_key then str.concat([base2, " NOT NULL"]) else base2 in
+    let base4 = if c.unique && !c.primary_key then str.concat([base3, " UNIQUE"]) else base3 in
+    let base5 = if c.default != null then str.concat([base4, " DEFAULT ", str.from(c.default)]) else base4 in
+    list.append(acc, base5)
+  }) in
+  str.concat(["CREATE TABLE IF NOT EXISTS ", t.name, " (\n  ",
+              str.join(col_defs, ",\n  "), "\n)"])
+}
+
+import("std/rec") as rec
+
+export { table, col, pk, text, integer, real, boolean, required, unique_col, default_val, create_sql }

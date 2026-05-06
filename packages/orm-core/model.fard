@@ -1,0 +1,51 @@
+/// orm-core/model — model layer over sqlite
+
+import("../orm-core/query")  as qb
+import("../orm-core/schema") as schema_mod
+import("std/sqlite") as sqlite
+import("std/list")   as list
+import("std/rec")    as rec
+import("std/str")    as str
+
+fn open(path) { sqlite.open(path) }
+
+fn migrate(db, tables) {
+  list.fold(tables, db, fn(d, t) {
+    sqlite.exec(d, schema_mod.create_sql(t))
+  })
+}
+
+fn find_all(db, table_name) {
+  let sql = qb.to_sql(qb.from(table_name)) in
+  sqlite.query(db, sql)
+}
+
+fn find_by(db, table_name, field, value) {
+  let cond = str.concat([field, " = '", str.from(value), "'"]) in
+  let sql  = qb.to_sql(qb.where(qb.from(table_name), cond)) in
+  sqlite.query(db, sql)
+}
+
+fn find_one(db, table_name, field, value) {
+  let rows = find_by(db, table_name, field, value) in
+  if list.len(rows) == 0 then null else list.get(rows, 0)
+}
+
+fn insert(db, table_name, data) {
+  let sql = qb.insert_sql(table_name, data) in
+  sqlite.exec(db, sql)
+}
+
+fn update(db, table_name, data, condition) {
+  let sql = qb.update_sql(table_name, data, condition) in
+  sqlite.exec(db, sql)
+}
+
+fn delete(db, table_name, condition) {
+  let sql = qb.delete_sql(table_name, condition) in
+  sqlite.exec(db, sql)
+}
+
+fn query(db, q) { sqlite.query(db, qb.to_sql(q)) }
+
+export { open, migrate, find_all, find_by, find_one, insert, update, delete, query }

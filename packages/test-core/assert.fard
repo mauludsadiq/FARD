@@ -1,0 +1,53 @@
+/// test-core/assert — assertion helpers
+
+import("std/json") as json
+import("std/str")  as str
+import("std/rec")  as rec
+
+fn pass(label) { { ok: true, label: label } }
+fn fail(label, msg) { { ok: false, label: label, msg: msg } }
+
+fn eq(label, actual, expected) {
+  if actual == expected then pass(label)
+  else fail(label, str.concat([
+    "expected ", json.encode(expected),
+    " got ", json.encode(actual)
+  ]))
+}
+
+fn not_eq(label, actual, expected) {
+  if actual != expected then pass(label)
+  else fail(label, str.concat(["expected values to differ, both: ", json.encode(actual)]))
+}
+
+fn is_true(label, v)  { if v == true  then pass(label) else fail(label, "expected true") }
+fn is_false(label, v) { if v == false then pass(label) else fail(label, "expected false") }
+fn is_null(label, v)  { if v == null  then pass(label) else fail(label, str.concat(["expected null, got ", json.encode(v)])) }
+fn not_null(label, v) { if v != null  then pass(label) else fail(label, "expected non-null") }
+
+fn ok_result(label, r) {
+  if rec.has(r, "ok") && r.ok then pass(label)
+  else fail(label, str.concat(["expected ok result, got: ", json.encode(r)]))
+}
+
+fn err_result(label, r) {
+  if rec.has(r, "ok") && !r.ok then pass(label)
+  else fail(label, str.concat(["expected error result, got: ", json.encode(r)]))
+}
+
+fn contains(label, haystack, needle) {
+  if str.contains(haystack, needle) then pass(label)
+  else fail(label, str.concat(["expected '", haystack, "' to contain '", needle, "'"]))
+}
+
+fn approx(label, actual, expected, tolerance) {
+  let diff = if actual > expected then actual - expected else expected - actual in
+  if diff <= tolerance then pass(label)
+  else fail(label, str.concat([
+    "expected ", str.from(actual), " ≈ ", str.from(expected),
+    " (tolerance ", str.from(tolerance), ")"
+  ]))
+}
+
+export { pass, fail, eq, not_eq, is_true, is_false, is_null, not_null,
+         ok_result, err_result, contains, approx }

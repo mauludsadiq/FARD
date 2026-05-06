@@ -1,0 +1,33 @@
+/// web-core/response — HTTP response builders
+
+import("std/json") as json
+import("std/rec")  as rec
+
+fn make(status, headers, body) {
+  { status: status, headers: headers, body: body }
+}
+
+fn ok(body)      { make(200, { "content-type": "text/plain" }, body) }
+fn json_ok(data) { make(200, { "content-type": "application/json" }, json.encode(data)) }
+fn html(body)    { make(200, { "content-type": "text/html" }, body) }
+fn not_found()   { make(404, { "content-type": "text/plain" }, "Not Found") }
+fn bad_request(msg) { make(400, { "content-type": "application/json" }, json.encode({ error: msg })) }
+fn unauthorized()   { make(401, { "content-type": "application/json" }, json.encode({ error: "Unauthorized" })) }
+fn forbidden()      { make(403, { "content-type": "application/json" }, json.encode({ error: "Forbidden" })) }
+fn server_error(msg) { make(500, { "content-type": "application/json" }, json.encode({ error: msg })) }
+fn redirect(url) { make(302, { "location": url }, "") }
+
+fn with_header(res, key, val) {
+  { ...res, headers: rec.set(res.headers, key, val) }
+}
+
+fn with_cookie(res, name, value, opts) {
+  let cookie = str.concat([name, "=", value]) in
+  let cookie2 = if rec.has(opts, "path") then str.concat([cookie, "; Path=", opts.path]) else cookie in
+  let cookie3 = if rec.has(opts, "http_only") && opts.http_only then str.concat([cookie2, "; HttpOnly"]) else cookie2 in
+  with_header(res, "set-cookie", cookie3)
+}
+
+import("std/str") as str
+
+export { make, ok, json_ok, html, not_found, bad_request, unauthorized, forbidden, server_error, redirect, with_header, with_cookie }
