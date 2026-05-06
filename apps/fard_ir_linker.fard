@@ -1,0 +1,74 @@
+/// fard_ir_linker — Stage 7 IR flattener
+/// Takes an entry point IR + module search path, recursively lowers
+/// all imported user modules, and merges into one flat IR.
+
+import("fardlex")    as lex
+import("fardparse")  as par
+import("fard_lower") as lower
+import("std/fs")     as fs
+import("std/list")   as list
+import("std/str")    as str
+import("std/array")  as array
+
+fn stdlib_module(name) {
+  name == "list" || name == "array" || name == "str" || name == "bytes" ||
+  name == "fs" || name == "cast" || name == "int" || name == "type" ||
+  name == "env" || name == "rec" || name == "json" || name == "math"
+}
+
+fn find_imports(items, acc) {
+  if list.len(items) == 0 then acc
+  else
+    let item = list.get(items, 0) in
+    let rest = list.tail(items) in
+    if item.t == "import" && !stdlib_module(item.alias) then
+      find_imports(rest, list.append(acc, { path: item.path, alias: item.alias }))
+    else
+      find_imports(rest, acc)
+}
+
+fn already_visited(visited, path) {
+  list.fold(visited, false, fn(acc, v) { if acc then true else v == path })
+}
+
+fn lower_module_file(path, base_dir) {
+  let full = str.concat([base_dir, "/", path, ".fard"]) in
+  let src  = fs.read_text(full) in
+  let toks = lex.tokenize(src) in
+  let ast  = par.parse_module(toks, 0) in
+  if !ast.ok then { fns: [], imports: [] }
+  else
+    let ir = lower.lower_program(ast.node) in
+    let imports = find_imports(ast.node.items, []) in
+    { fns: ir.fns, imports: imports, ast: ast.node }
+}
+
+fn merge_modules(imports, visited, base_dir, acc_fns) {
+  if list.len(imports) == 0 then { fns: acc_fns, visited: visited }
+  else
+    let imp  = list.get(imports, 0) in
+    let rest = list.tail(imports) in
+    if already_visited(visited, imp.path) then
+      merge_modules(rest, visited, base_dir, acc_fns)
+    else
+      let mod_result = lower_module_file(imp.path, base_dir) in
+      let visited2   = list.append(visited, imp.path) in
+      // Recurse into this module's imports first
+      let sub = merge_modules(mod_result.imports, visited2, base_dir, acc_fns) in
+      // Then add this module's functions (excluding __main__)
+      let mod_fns = list.fold(mod_result.fns, [], fn(acc, f) {
+        if f.name == "__main__" then acc else list.append(acc, f)
+      }) in
+      merge_modules(rest, sub.visited, base_dir, list.concat([sub.fns, mod_fns]))
+}
+
+fn link_ir(entry_ir, entry_ast, base_dir) {
+  let imports    = find_imports(entry_ast.items, []) in
+  let dep_result = merge_modules(imports, [], base_dir, []) in
+  let all_fns    = list.concat([dep_result.fns, entry_ir.fns]) in
+  // entry is last fn (__main__ of the entry file)
+  let entry_id   = list.len(all_fns) - 1 in
+  { fns: all_fns, entry: entry_id }
+}
+
+{ link_ir: link_ir, find_imports: find_imports }

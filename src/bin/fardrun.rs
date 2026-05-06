@@ -727,7 +727,7 @@ fn main() -> Result<()> {
     // Spawn on a large stack to support deep recursive FARD programs
     // (parser self-hosting, deeply nested expressions, etc.)
     let result = std::thread::Builder::new()
-        .stack_size(512 * 1024 * 1024) // 512MB
+        .stack_size(1024 * 1024 * 1024) // 1GB
         .spawn(main_inner)?
         .join()
         .map_err(|_| anyhow::anyhow!("thread panicked"))?;
@@ -4663,10 +4663,23 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             }
         }
         Expr::Let(name, e1, e2) => {
+            // Iterative let-chain to avoid stack overflow on deep let..in nesting
             let v1 = eval(e1, env, tracer, loader)?;
-            let mut child = env.child();
-            child.set(name.clone(), v1);
-            eval(e2, &mut child, tracer, loader)
+            let mut cur_env = env.child();
+            cur_env.set(name.clone(), v1);
+            let mut cur_expr: &Expr = e2;
+            loop {
+                match cur_expr {
+                    Expr::Let(n2, e_rhs, e_body) => {
+                        let v = eval(e_rhs, &mut cur_env, tracer, loader)?;
+                        let mut next_env = cur_env.child();
+                        next_env.set(n2.clone(), v);
+                        cur_env = next_env;
+                        cur_expr = e_body;
+                    }
+                    other => return eval(other, &mut cur_env, tracer, loader),
+                }
+            }
         }
         Expr::LetPat(pat, e1, e2) => {
             let v1 = eval(e1, env, tracer, loader)?;

@@ -438,4 +438,61 @@ fn build_elf(codegen_result) {
   bytes.of_list(array.to_list(buf))
 }
 
-{ build_elf: build_elf }
+
+// ── emit_elf_from_text — emit a closed ELF from a pre-built text buffer ──────
+// Used by the linker after it has assembled and patched all code.
+fn emit_elf_from_text(text_buf, text_size, code_start) {
+  let load_base = load_addr() in
+  let buf = buf_new() in
+
+  // ELF header
+  let _ = list.fold(elf_magic(), null, fn(_, b) { emit8(buf, b) }) in
+  let _ = emit8(buf, elf_class64()) in
+  let _ = emit8(buf, elf_le()) in
+  let _ = emit8(buf, 1) in  // EV_CURRENT
+  let _ = emit8(buf, 0) in  // ELFOSABI_NONE
+  let _ = emit_zeros(buf, 8) in  // padding
+  let _ = emit16(buf, elf_exec()) in
+  let _ = emit16(buf, elf_x86_64()) in
+  let _ = emit32(buf, 1) in  // EV_CURRENT
+  let _ = emit64(buf, load_base + code_start) in  // e_entry = _start
+  let _ = emit64(buf, 64) in  // e_phoff
+  let _ = emit64(buf, 0) in   // e_shoff
+  let _ = emit32(buf, 0) in   // e_flags
+  let _ = emit16(buf, 64) in  // e_ehsize
+  let _ = emit16(buf, 56) in  // e_phentsize
+  let _ = emit16(buf, 2) in   // e_phnum
+  let _ = emit16(buf, 64) in  // e_shentsize
+  let _ = emit16(buf, 0) in   // e_shnum
+  let _ = emit16(buf, 0) in   // e_shstrndx
+
+  // Program header: LOAD rx (text)
+  let _ = emit32(buf, pt_load()) in
+  let _ = emit32(buf, pf_rx()) in
+  let _ = emit64(buf, 0) in                   // offset
+  let _ = emit64(buf, load_base) in           // vaddr
+  let _ = emit64(buf, load_base) in           // paddr
+  let _ = emit64(buf, code_start + text_size) in  // filesz
+  let _ = emit64(buf, code_start + text_size) in  // memsz
+  let _ = emit64(buf, page_size()) in         // align
+
+  // Program header: LOAD rw (heap/bss)
+  let heap_vaddr = load_base + code_start + text_size in
+  let heap_size  = 67108864 in  // 64MB heap
+  let _ = emit32(buf, pt_load()) in
+  let _ = emit32(buf, pf_rw()) in
+  let _ = emit64(buf, 0) in
+  let _ = emit64(buf, heap_vaddr) in
+  let _ = emit64(buf, heap_vaddr) in
+  let _ = emit64(buf, 0) in
+  let _ = emit64(buf, heap_size) in
+  let _ = emit64(buf, page_size()) in
+
+  // Copy text buffer into ELF
+  let code_list = array.to_list(text_buf) in
+  let _ = list.fold(code_list, null, fn(_, b) { emit8(buf, b) }) in
+
+  bytes.of_list(array.to_list(buf))
+}
+
+{ build_elf: build_elf, emit_runtime: emit_runtime, emit_print_i64_fn: emit_print_i64_fn, find_stdlib_addr: find_stdlib_addr, emit_elf_from_text: emit_elf_from_text }

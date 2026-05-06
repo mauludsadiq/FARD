@@ -1,0 +1,348 @@
+/// fard_link — FARD native linker
+///
+/// Links N relocatable objects into one closed ELF.
+/// Implements: link(M_lex, M_parse, M_lower, M_codegen, M_elf, M_driver) = M*
+/// where R(M*) = empty (all references resolved).
+
+import("fard_x86")    as x86
+import("fard_stdlib") as fstdlib
+import("fard_elf")    as elf_writer
+import("std/array")   as array
+import("std/list")    as list
+import("std/str")     as str
+import("std/fs")      as fs
+
+fn elf_magic()    { [127, 69, 76, 70] }
+fn load_addr()    { 4194304 }
+fn page_size()    { 4096 }
+
+// Build global symbol table from all objects
+fn build_global_syms(objects, base_off) {
+  list.fold(objects, { syms: [], off: base_off }, fn(acc, obj) {
+    let obj_base = acc.off in
+    let new_syms = list.fold(obj.syms, acc.syms, fn(syms, s) {
+      list.append(syms, { name: s.name, abs_off: obj_base + s.off })
+    }) in
+    { syms: new_syms, off: obj_base + obj.size }
+  })
+}
+
+// Find symbol absolute offset in global table
+fn find_sym(syms, name, i) {
+  if i >= list.len(syms) then -1
+  else
+    let s = list.get(syms, i) in
+    if s.name == name then s.abs_off
+    else find_sym(syms, name, i + 1)
+}
+
+fn link(objects, entry_sym, out_path) {
+  // 1. Layout: concatenate all code with base offsets
+  let ehdr_size  = 64 in
+  let phdr_size  = 56 in
+  let n_phdrs    = 2 in
+  let code_start = ehdr_size + n_phdrs * phdr_size in  // 176
+
+  // Build text buffer: runtime + all object code
+  let text_buf = x86.buf_new() in
+
+  // Emit runtime (_start, print_i64, stdlib)
+  let _ = elf_writer.emit_runtime(text_buf) in
+  let rt_size = x86.buf_len(text_buf) in
+
+  // call to entry (patched later)
+  let call_entry_pos = x86.buf_len(text_buf) in
+  let _ = x86.emit8(text_buf, 232) in
+  let _ = x86.emit32_le(text_buf, 0) in
+
+  // after main: print result and exit
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 137) in let _ = x86.emit8(text_buf, 207) in
+  let print_call_pos = x86.buf_len(text_buf) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 49) in let _ = x86.emit8(text_buf, 255) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 184) in
+  let _ = x86.emit8(text_buf, 60) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 15) in let _ = x86.emit8(text_buf, 5) in
+
+  // stdlib
+  let stdlib_base = x86.buf_len(text_buf) in
+  let stdlib_result = fstdlib.emit_all_stdlib(text_buf) in
+  let stdlib_addrs  = stdlib_result.addrs in
+
+  // print_i64
+  let print_fn_pos = x86.buf_len(text_buf) in
+  let _ = elf_writer.emit_print_i64_fn(text_buf) in
+
+  // 2. Emit all object code, tracking base offsets
+  let fard_code_start = x86.buf_len(text_buf) in
+  let obj_bases = list.fold(objects, { bases: [], off: 0 }, fn(acc, obj) {
+    let base = acc.off in
+    let _ = list.fold(obj.code, null, fn(_, b) { x86.emit8(text_buf, b) }) in
+    { bases: list.append(acc.bases, base), off: base + obj.size }
+  }) in
+  let bases = obj_bases.bases in
+
+  // 3. Build global symbol table with absolute text offsets
+  let global_syms = list.fold(
+    list.zip(objects, bases),
+    [],
+    fn(acc, pair) {
+      let obj  = list.get(pair, 0) in
+      let base = list.get(pair, 1) in
+      list.fold(obj.syms, acc, fn(syms, s) {
+        list.append(syms, { name: s.name, abs_off: fard_code_start + base + s.off })
+      })
+    }
+  ) in
+
+  // 4. Verify closure: all relocs have a target
+  let missing = list.fold(
+    list.zip(objects, bases),
+    [],
+    fn(acc, pair) {
+      let obj = list.get(pair, 0) in
+      list.fold(obj.relocs, acc, fn(m, r) {
+        let found = find_sym(global_syms, r.target, 0) in
+        if found < 0 then list.append(m, r.target) else m
+      })
+    }
+  ) in
+
+  if list.len(missing) > 0 then
+    { ok: false, err: str.concat(["unresolved symbols: ", str.join(missing, ", ")]) }
+  else
+
+  // 5. Patch all inter-object relocations
+  let _ = list.fold(
+    list.zip(objects, bases),
+    null,
+    fn(_, pair) {
+      let obj  = list.get(pair, 0) in
+      let base = list.get(pair, 1) in
+      list.fold(obj.relocs, null, fn(_, r) {
+        let target_abs = find_sym(global_syms, r.target, 0) in
+        let call_site  = fard_code_start + base + r.pos in
+        let call_after = code_start + call_site + 5 in
+        let target_virt = load_addr() + code_start + target_abs in
+        let rel = target_virt - (load_addr() + call_after) in
+        x86.patch32(text_buf, call_site + 1, rel)
+      })
+    }
+  ) in
+
+  // 6. Patch stdlib calls
+  let _ = list.fold(
+    list.zip(objects, bases),
+    null,
+    fn(_, pair) {
+      let obj  = list.get(pair, 0) in
+      let base = list.get(pair, 1) in
+      list.fold(obj.stdlib_relocs, null, fn(_, p) {
+        let dispatch_id = p.dispatch_id in
+        let fn_off = elf_writer.find_stdlib_addr(stdlib_addrs, dispatch_id, 0, list.len(stdlib_addrs)) in
+        if fn_off < 0 then null
+        else
+          let call_site = fard_code_start + base + p.pos in
+          let callee_abs = code_start + stdlib_base + fn_off in
+          let call_after = code_start + call_site + 5 in
+          let rel = (load_addr() + callee_abs) - (load_addr() + call_after) in
+          x86.patch32(text_buf, call_site + 1, rel)
+      })
+    }
+  ) in
+
+  // 7. Patch entry call and print call
+  let entry_abs = find_sym(global_syms, entry_sym, 0) in
+  let entry_virt = load_addr() + code_start + entry_abs in
+  let call_entry_after = load_addr() + code_start + call_entry_pos + 5 in
+  let _ = x86.patch32(text_buf, call_entry_pos + 1, entry_virt - call_entry_after) in
+
+  let print_abs  = code_start + print_fn_pos in
+  let print_virt = load_addr() + print_abs in
+  let print_after = load_addr() + code_start + print_call_pos + 5 in
+  let _ = x86.patch32(text_buf, print_call_pos + 1, print_virt - print_after) in
+
+  // 8. Emit final ELF
+  let text_size = x86.buf_len(text_buf) in
+  let binary = elf_writer.emit_elf_from_text(text_buf, text_size, code_start) in
+  let _ = fs.write_bytes(out_path, binary) in
+  { ok: true, size: list.len(binary), n_syms: list.len(global_syms) }
+}
+
+
+fn link_step1(objects) {
+  // Step 1: just emit runtime and return buf len
+  let text_buf = x86.buf_new() in
+  let _ = elf_writer.emit_runtime(text_buf) in
+  { rt_size: x86.buf_len(text_buf) }
+}
+
+fn link_step2(objects) {
+  // Step 2: emit code sections
+  let text_buf = x86.buf_new() in
+  let _ = elf_writer.emit_runtime(text_buf) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 137) in let _ = x86.emit8(text_buf, 207) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 49) in let _ = x86.emit8(text_buf, 255) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 184) in
+  let _ = x86.emit8(text_buf, 60) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 15) in let _ = x86.emit8(text_buf, 5) in
+  let stdlib_base = x86.buf_len(text_buf) in
+  let stdlib_result = fstdlib.emit_all_stdlib(text_buf) in
+  let _ = elf_writer.emit_print_i64_fn(text_buf) in
+  let fard_code_start = x86.buf_len(text_buf) in
+  let obj_bases = list.fold(objects, { bases: [], off: 0 }, fn(acc, obj) {
+    let base = acc.off in
+    let _ = list.fold(obj.code, null, fn(_, b) { x86.emit8(text_buf, b) }) in
+    { bases: list.append(acc.bases, base), off: base + obj.size }
+  }) in
+  { fard_code_start: fard_code_start, total: x86.buf_len(text_buf), bases: obj_bases.bases }
+}
+
+
+fn link_step3(objects) {
+  let text_buf = x86.buf_new() in
+  let _ = elf_writer.emit_runtime(text_buf) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 137) in let _ = x86.emit8(text_buf, 207) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 49) in let _ = x86.emit8(text_buf, 255) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 184) in
+  let _ = x86.emit8(text_buf, 60) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 15) in let _ = x86.emit8(text_buf, 5) in
+  let _ = fstdlib.emit_all_stdlib(text_buf) in
+  let _ = elf_writer.emit_print_i64_fn(text_buf) in
+  let fard_code_start = x86.buf_len(text_buf) in
+  let obj_bases = list.fold(objects, { bases: [], off: 0 }, fn(acc, obj) {
+    let base = acc.off in
+    let _ = list.fold(obj.code, null, fn(_, b) { x86.emit8(text_buf, b) }) in
+    { bases: list.append(acc.bases, base), off: base + obj.size }
+  }) in
+  let bases = obj_bases.bases in
+  // Build global symbol table
+  let global_syms = list.fold(
+    list.zip(objects, bases),
+    [],
+    fn(acc, pair) {
+      let obj  = list.get(pair, 0) in
+      let base = list.get(pair, 1) in
+      list.fold(obj.syms, acc, fn(syms, s) {
+        list.append(syms, { name: s.name, abs_off: fard_code_start + base + s.off })
+      })
+    }
+  ) in
+  { n_syms: list.len(global_syms), syms: global_syms }
+}
+
+
+fn link_step4(objects) {
+  let ehdr_size = 64 in let phdr_size = 56 in let n_phdrs = 2 in
+  let code_start = ehdr_size + n_phdrs * phdr_size in
+  let text_buf = x86.buf_new() in
+  let _ = elf_writer.emit_runtime(text_buf) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 137) in let _ = x86.emit8(text_buf, 207) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 49) in let _ = x86.emit8(text_buf, 255) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 184) in
+  let _ = x86.emit8(text_buf, 60) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 15) in let _ = x86.emit8(text_buf, 5) in
+  let stdlib_base = x86.buf_len(text_buf) in
+  let stdlib_result = fstdlib.emit_all_stdlib(text_buf) in
+  let stdlib_addrs = stdlib_result.addrs in
+  let _ = elf_writer.emit_print_i64_fn(text_buf) in
+  let fard_code_start = x86.buf_len(text_buf) in
+  let obj_bases = list.fold(objects, { bases: [], off: 0 }, fn(acc, obj) {
+    let base = acc.off in
+    let _ = list.fold(obj.code, null, fn(_, b) { x86.emit8(text_buf, b) }) in
+    { bases: list.append(acc.bases, base), off: base + obj.size }
+  }) in
+  let bases = obj_bases.bases in
+  let global_syms = list.fold(list.zip(objects, bases), [], fn(acc, pair) {
+    let obj  = list.get(pair, 0) in
+    let base = list.get(pair, 1) in
+    list.fold(obj.syms, acc, fn(syms, s) {
+      list.append(syms, { name: s.name, abs_off: fard_code_start + base + s.off })
+    })
+  }) in
+  // Check closure
+  let missing = list.fold(list.zip(objects, bases), [], fn(acc, pair) {
+    let obj = list.get(pair, 0) in
+    list.fold(obj.relocs, acc, fn(m, r) {
+      let found = find_sym(global_syms, r.target, 0) in
+      if found < 0 then list.append(m, r.target) else m
+    })
+  }) in
+  // Patch inter-object relocs
+  let _ = list.fold(list.zip(objects, bases), null, fn(_, pair) {
+    let obj  = list.get(pair, 0) in
+    let base = list.get(pair, 1) in
+    list.fold(obj.relocs, null, fn(_, r) {
+      let target_abs = find_sym(global_syms, r.target, 0) in
+      let call_site  = fard_code_start + base + r.pos in
+      let call_after = code_start + call_site + 5 in
+      let target_virt = load_addr() + code_start + target_abs in
+      let rel = target_virt - (load_addr() + call_after) in
+      x86.patch32(text_buf, call_site + 1, rel)
+    })
+  }) in
+  { missing: missing, n_syms: list.len(global_syms), ok: list.len(missing) == 0 }
+}
+
+
+fn link_step5(objects) {
+  let ehdr_size = 64 in let phdr_size = 56 in let n_phdrs = 2 in
+  let code_start = ehdr_size + n_phdrs * phdr_size in
+  let text_buf = x86.buf_new() in
+  let _ = elf_writer.emit_runtime(text_buf) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 137) in let _ = x86.emit8(text_buf, 207) in
+  let _ = x86.emit8(text_buf, 232) in let _ = x86.emit32_le(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 49) in let _ = x86.emit8(text_buf, 255) in
+  let _ = x86.emit8(text_buf, 72) in let _ = x86.emit8(text_buf, 184) in
+  let _ = x86.emit8(text_buf, 60) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 0) in let _ = x86.emit8(text_buf, 0) in
+  let _ = x86.emit8(text_buf, 15) in let _ = x86.emit8(text_buf, 5) in
+  let stdlib_base = x86.buf_len(text_buf) in
+  let stdlib_result = fstdlib.emit_all_stdlib(text_buf) in
+  let stdlib_addrs = stdlib_result.addrs in
+  let print_fn_pos = x86.buf_len(text_buf) in
+  let _ = elf_writer.emit_print_i64_fn(text_buf) in
+  let fard_code_start = x86.buf_len(text_buf) in
+  let obj_bases = list.fold(objects, { bases: [], off: 0 }, fn(acc, obj) {
+    let base = acc.off in
+    let _ = list.fold(obj.code, null, fn(_, b) { x86.emit8(text_buf, b) }) in
+    { bases: list.append(acc.bases, base), off: base + obj.size }
+  }) in
+  let bases = obj_bases.bases in
+  let global_syms = list.fold(list.zip(objects, bases), [], fn(acc, pair) {
+    let obj  = list.get(pair, 0) in
+    let base = list.get(pair, 1) in
+    list.fold(obj.syms, acc, fn(syms, s) {
+      list.append(syms, { name: s.name, abs_off: fard_code_start + base + s.off })
+    })
+  }) in
+  // Patch stdlib relocs
+  let stdlib_patch_results = list.fold(list.zip(objects, bases), [], fn(acc, pair) {
+    let obj  = list.get(pair, 0) in
+    let base = list.get(pair, 1) in
+    list.fold(obj.stdlib_relocs, acc, fn(a, p) {
+      let dispatch_id = p.dispatch_id in
+      let fn_off = elf_writer.find_stdlib_addr(stdlib_addrs, dispatch_id, 0, list.len(stdlib_addrs)) in
+      list.append(a, { dispatch_id: dispatch_id, fn_off: fn_off, found: fn_off >= 0 })
+    })
+  }) in
+  { n_stdlib_patches: list.len(stdlib_patch_results), patches: stdlib_patch_results }
+}
+
+{ link: link, build_global_syms: build_global_syms, link_step1: link_step1, link_step2: link_step2, link_step3: link_step3, link_step4: link_step4, link_step5: link_step5 }

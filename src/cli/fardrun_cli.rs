@@ -92,6 +92,14 @@ pub struct RunArgs {
     #[arg(long, default_value_t = false)]
     pub strict_arith: bool,
 
+    /// Compile with all imports linked into a single native ELF (Stage 7)
+    #[arg(long, default_value_t = false)]
+    pub compile_linked: bool,
+
+    /// Output path for compiled native ELF (used with --compile-linked)
+    #[arg(long)]
+    pub elf_out: Option<PathBuf>,
+
     /// Program arguments passed after --
     #[arg(last = true)]
     pub program_args: Vec<String>,
@@ -193,6 +201,8 @@ impl Cli {
                     strict_types: false,
                     hm_types: false, strict_arith: false,
                     program_args: vec![],
+                    compile_linked: false,
+                    elf_out: None,
                 };
                 return (dummy, false, false, Some(t), None, None, None, None, None);
             }
@@ -207,6 +217,8 @@ impl Cli {
                     strict_types: false,
                     hm_types: false, strict_arith: false,
                     program_args: vec![],
+                    compile_linked: false,
+                    elf_out: None,
                 };
                 return (dummy, false, false, None, Some(p), None, None, None, None);
             }
@@ -221,6 +233,8 @@ impl Cli {
                     strict_types: false,
                     hm_types: false, strict_arith: false,
                     program_args: vec![],
+                    compile_linked: false,
+                    elf_out: None,
                 };
                 return (dummy, false, false, None, None, Some(i), None, None, None);
             }
@@ -240,6 +254,8 @@ impl Cli {
                     strict_types: false,
                     hm_types: false, strict_arith: false,
                     program_args: vec![],
+                    compile_linked: false,
+                    elf_out: None,
                 };
                 return (dummy, false, false, None, None, None, None, None, None);
             }

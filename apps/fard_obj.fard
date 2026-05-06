@@ -1,0 +1,58 @@
+/// fard_obj — FARD relocatable object format
+/// 
+/// Instead of resolving all calls and emitting a closed ELF,
+/// emit an open object: code + symbol table + relocation table.
+///
+/// Object record:
+///   { code:    list of bytes (raw machine code)
+///     syms:    list of { name, off }  — exported symbols
+///     relocs:  list of { pos, name }  — unresolved inter-fn calls
+///     stdlib_relocs: list of { pos, dispatch_id } — stdlib calls
+///     size:    total code bytes
+///   }
+
+import("fard_x86")    as x86
+import("std/str")     as str
+import("fard_stdlib") as fstdlib
+import("std/array")   as array
+import("std/list")    as list
+
+fn build_obj(codegen_result, module_name) {
+  let code_buf    = codegen_result.buf in
+  let fn_addrs    = codegen_result.fn_addrs in
+  let fn_names    = codegen_result.fn_names in
+  let entry_idx   = codegen_result.entry in
+  let patches     = array.to_list(codegen_result.patches) in
+  let std_patches = array.to_list(codegen_result.stdlib_patches) in
+  let ext_patches = array.to_list(codegen_result.ext_patches) in
+  let n_fns       = array.len(fn_addrs) in
+
+  // Build symbol table: { name, off } for each function
+  let syms = list.build(n_fns, fn(i) {
+    { name: str.concat([module_name, ".", array.get(fn_names, i)]),
+      off:  array.get(fn_addrs, i) }
+  }) in
+
+  // Relocs: inter-function call patches (within module)
+  let intra_relocs = list.fold(patches, [], fn(acc, p) {
+    let callee_name = if p.fn_id >= 0 && p.fn_id < n_fns
+      then str.concat([module_name, ".", array.get(fn_names, p.fn_id)])
+      else "__unknown__" in
+    list.append(acc, { pos: p.pos, target: callee_name })
+  }) in
+  // External relocs: cross-module calls
+  let ext_relocs = list.fold(ext_patches, [], fn(acc, p) {
+    list.append(acc, { pos: p.pos, target: p.sym })
+  }) in
+  let relocs = list.concat([intra_relocs, ext_relocs]) in
+
+  { module:        module_name,
+    code:          array.to_list(code_buf),
+    syms:          syms,
+    relocs:        relocs,
+    stdlib_relocs: std_patches,
+    entry_name:    str.concat([module_name, ".", array.get(fn_names, entry_idx)]),
+    size:          array.len(code_buf) }
+}
+
+{ build_obj: build_obj }

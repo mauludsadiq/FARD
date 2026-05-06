@@ -1,0 +1,23 @@
+/// fard_ir_merge — merges pre-lowered IR lists into one flat IR
+/// All modules are already lowered; we just concatenate their fn lists
+/// and fix up the entry point.
+
+import("std/list") as list
+
+fn merge_irs(module_irs, entry_ir) {
+  // module_irs: list of {fns, entry} from each dependency
+  // entry_ir: the main program's IR
+  // Returns flat IR with all fns merged, entry pointing to __main__
+  let dep_fns = list.fold(module_irs, [], fn(acc, ir) {
+    // Skip __main__ from each dependency module
+    let mod_fns = list.fold(ir.fns, [], fn(a, f) {
+      if f.name == "__main__" then a else list.append(a, f)
+    }) in
+    list.concat([acc, mod_fns])
+  }) in
+  let all_fns  = list.concat([dep_fns, entry_ir.fns]) in
+  let entry_id = list.len(all_fns) - 1 in
+  { fns: all_fns, entry: entry_id }
+}
+
+{ merge_irs: merge_irs }

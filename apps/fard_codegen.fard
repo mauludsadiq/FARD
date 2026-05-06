@@ -35,7 +35,8 @@ fn make_ctx() {
     slot_mod:       array.new(),
     slot_meth:      array.new(),
       n_scratch:      array.new(),
-      list_scratch:   array.new() }
+      list_scratch:   array.new(),
+      ext_patches:    array.new() }
 }
 
 
@@ -286,7 +287,19 @@ fn emit_stdlib_call(buf, ctx, dst, module_name, method, args) {
     emit_list_build_inline(buf, ctx, dst, args)
   else
     let did = get_dispatch_id(module_name, method) in
-    if did < 0 then emit_const(buf, ctx, dst, null)
+    if did < 0 && !is_stdlib_module(module_name) then
+      // Cross-module call — emit placeholder and record relocation
+      let n = list.len(args) in
+      let _ = x86.push_reg(buf, x86.reg_rax()) in
+      let _ = emit_push_args(buf, args, n - 1) in
+      let ext_site = x86.buf_len(buf) in
+      let _ = x86.call_rel32(buf, 0) in
+      let stack_args = n * 16 + 8 in
+      let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), stack_args) in
+      let sym = str.concat([module_name, ".", method]) in
+      let _ = array.push(ctx.ext_patches, { pos: ext_site, sym: sym, dst: dst }) in
+      store_slot(buf, dst)
+    else if did < 0 then emit_const(buf, ctx, dst, null)
     else
       let n = list.len(args) in
       let _ = x86.push_reg(buf, x86.reg_rax()) in
@@ -650,7 +663,19 @@ fn emit_instr(buf, ctx, instr, offsets) {
       else
         let fn_id = if instr.fn_id >= 0 then instr.fn_id
                       else find_fn_id(ctx.slot_fn, instr.fn_r) in
-          if fn_id < 0 then emit_const(buf, ctx, instr.dst, null)
+          if fn_id < 0 then
+            let ext_m = find_slot_meth(ctx, instr.fn_r) in
+            if ext_m != null && !is_stdlib_module(ext_m.module_name) then
+              let ext_call_pos = x86.buf_len(buf) in
+              let _ = emit_push_args(buf, instr.args, list.len(instr.args) - 1) in
+              let _ = x86.push_reg(buf, x86.reg_rax()) in
+              let ext_site = x86.buf_len(buf) in
+              let _ = x86.call_rel32(buf, 0) in
+              let _ = x86.add_reg_imm32(buf, x86.reg_rsp(), list.len(instr.args) * 16 + 8) in
+              let sym = str.concat([ext_m.module_name, ".", ext_m.method]) in
+              let _ = array.push(ctx.ext_patches, { pos: ext_site, sym: sym, dst: instr.dst }) in
+              store_slot(buf, instr.dst)
+            else emit_const(buf, ctx, instr.dst, null)
           else emit_call(buf, ctx, instr.dst, fn_id, instr.args)
 
   else if op == "return" then
@@ -684,8 +709,7 @@ fn emit_instr(buf, ctx, instr, offsets) {
       let _ = emit_global_load(buf, ctx, instr.dst, instr.name) in
       let gfn = find_fn_by_name(ctx, instr.name) in
       if gfn >= 0 then array.push(ctx.slot_fn, { slot: instr.dst, fn_id: gfn })
-      else if is_stdlib_module(instr.name) then array.push(ctx.slot_mod, { slot: instr.dst, module_name: instr.name })
-      else null
+      else array.push(ctx.slot_mod, { slot: instr.dst, module_name: instr.name })
 
   else if op == "global_store" then
     emit_global_store(buf, ctx, instr.src, instr.name)
@@ -996,8 +1020,10 @@ fn codegen(ir) {
 
   { buf:            ctx.buf,
     fn_addrs:       ctx.fn_addrs,
+    fn_names:       ctx.fn_names,
     patches:        ctx.patches,
     stdlib_patches: ctx.stdlib_patches,
+    ext_patches:    ctx.ext_patches,
     entry:          ir.entry }
 }
 
