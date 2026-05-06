@@ -12481,10 +12481,27 @@ impl ModuleLoader {
         let callee_id = self.graph_note_import(name, kind, None, digest0);
         let exports = self.with_current(callee_id, |slf| {
             let exports = if name.starts_with("std/") {
+                // Check if a pure-FARD override exists in std/ directory
+                let fard_override = slf.root_dir.join(format!("{}.fard", name));
+                if fard_override.exists() {
+                    let src = fs::read_to_string(&fard_override)
+                        .map_err(|e| anyhow!("failed to read {}: {}", fard_override.display(), e))?;
+                    let file = fard_override.to_string_lossy().to_string();
+                    let mut p = Parser::from_src(&src, &file)?;
+                    let items = p.parse_module()?;
+                    let mut env = base_env();
+                    let here = fard_override.parent().unwrap_or(Path::new("."));
+                    let v = slf.eval_items(items, &mut env, tracer, here)?;
+                    match v {
+                        Val::Record(m) => m,
+                        _ => bail!("std override module {} must export a record", name),
+                    }
+                } else {
                 let ex = slf.builtin_std(name)?;
                 slf.check_lock(name, &slf.builtin_digest(name))?;
                 tracer.module_resolve(name, "std", &slf.builtin_digest(name))?;
                 ex
+                }
             } else if name.starts_with("pkg:") || name.starts_with("pkg/") {
                 let spec = if let Some(s) = name.strip_prefix("pkg:") {
                     s
