@@ -120,7 +120,7 @@ displaced by the native backend.
 | 4 | Self-hosting compiler driver | done |
 | 5 | Native x86_64 ELF backend | **complete** — fardc_native.fard compiles to 11KB native ELF |
 | 6 | FARD-native production compiler | **complete** — all pipeline components compile to native ELF |
-| 7 | No-Rust self-hosting | in progress — single monolithic ELF, no Rust interpreter |
+| 7 | No-Rust self-hosting | in progress — fard_obj/fard_link linker, ext_patches cross-module relocs |
 
 ## Quick Start
 
