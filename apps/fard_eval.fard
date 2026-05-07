@@ -94,6 +94,11 @@ fn eval(node, env) {
   else if t == "var" then
     let v = env_get(env, node.v) in
     if v == null then { t: "error", msg: str.concat(["unbound: ", node.v]) }
+    else if v.t == "rec_ref" then
+      // Recursive reference - look up the actual fn in env
+      let actual = env_get(env, v.name) in
+      if actual == null || actual.t == "rec_ref" then { t: "error", msg: str.concat(["unresolved rec: ", v.name]) }
+      else actual
     else v
 
   else if t == "bin" then
@@ -139,7 +144,7 @@ fn eval(node, env) {
     val_fn(node.params, node.body, env)
 
   else if t == "call" then
-    let f = eval(node.fn_expr, env) in
+    let f = eval(node.fn_n, env) in
     let args = list.map(node.args, fn(a) { eval(a, env) }) in
     apply(f, args)
 
@@ -158,6 +163,15 @@ fn apply(f, args) {
         val: if i < list.len(args) then list.get(args, i) else val_null() }
     }) in
     eval(f.body, env_set_many(f.closure_env, pairs))
+  else if f.t == "rec_fn" then
+    let n = list.len(f.params) in
+    let pairs = list.build(n, fn(i) {
+      { name: list.get(f.params, i),
+        val: if i < list.len(args) then list.get(args, i) else val_null() }
+    }) in
+    // Update env so self-reference resolves to this fn
+    let self_env = env_set(f.env, f.name, f) in
+    eval(f.body, env_set_many(self_env, pairs))
   else
     { t: "error", msg: str.concat(["call on non-fn: ", f.t]) }
 }
@@ -166,10 +180,24 @@ fn apply(f, args) {
 
 fn eval_module(module_node) {
   let items = module_node.items in
+  // First pass: collect all fn names to build a forward-reference env
+  let fn_names = list.fold(items, [], fn(acc, item) {
+    if item.t == "fn_item" then list.append(acc, item.name) else acc
+  }) in
+  // Second pass: evaluate items, using a shared mutable-style env
+  // For recursive fns: we use a special { t: "rec_fn" } value that
+  // defers lookup to the module env at call time
   let result = list.fold(items, { env: env_empty(), val: val_null() }, fn(acc, item) {
     if item.t == "let_item" then
       let v = eval(item.val, acc.env) in
       { env: env_set(acc.env, item.name, v), val: v }
+    else if item.t == "fn_item" then
+      // Build fn with current env — recursive calls will find name in env
+      // because we pre-register a placeholder then overwrite
+      let env1 = env_set(acc.env, item.name, { t: "rec_ref", name: item.name }) in
+      let f = { t: "rec_fn", name: item.name, params: item.params, body: item.body, env: env1 } in
+      let env2 = env_set(acc.env, item.name, f) in
+      { env: env2, val: f }
     else if item.t == "expr_item" then
       let v = eval(item.expr, acc.env) in
       { env: acc.env, val: v }
