@@ -1655,7 +1655,8 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
             &format!("let src = {}\n", prog_src_json),
             "let tokens = lex.tokenize(src)\n",
             "let parsed = par.parse_module(tokens, 0)\n",
-            "ev.eval_module(parsed.node)\n",
+            "let __raw = ev.eval_module(parsed.node)\n",
+            "ev.val_to_native(__raw)\n",
         ].concat();
 
         let wrapper_path = out_dir.join("__fard_eval_wrapper__.fard");

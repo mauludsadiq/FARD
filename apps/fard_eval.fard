@@ -212,7 +212,25 @@ fn values_eq(a, b) {
   else false
 }
 
-export { eval, apply, eval_module, eval_bin, eval_unary,
+
+// ── Value unwrapping ──────────────────────────────────────────────────────────
+
+fn val_to_native(val) {
+  if val.t == "int"    then val.v
+  else if val.t == "float"  then val.v
+  else if val.t == "bool"   then val.v
+  else if val.t == "null"   then null
+  else if val.t == "text"   then val.v
+  else if val.t == "list"   then list.map(val.v, fn(x) { val_to_native(x) })
+  else if val.t == "record" then
+    let keys = rec.keys(val.v) in
+    list.fold(keys, {}, fn(acc, k) {
+      rec.set(acc, k, val_to_native(rec.get(val.v, k)))
+    })
+  else val
+}
+
+export { eval, apply, eval_module, val_to_native, eval_bin, eval_unary,
          val_int, val_float, val_bool, val_null, val_text, val_list, val_record, val_fn,
          env_empty, env_set, env_get, env_set_many,
          is_truthy, values_eq, parse_int }
