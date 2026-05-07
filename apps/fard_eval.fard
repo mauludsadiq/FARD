@@ -123,9 +123,11 @@ fn eval(node, env) {
   else if t == "list" then
     val_list(list.map(node.items, fn(item) { eval(item, env) }))
 
-  else if t == "record" then
+  else if t == "record" || t == "rec" then
     val_record(list.fold(node.fields, {}, fn(acc, f) {
-      rec.set(acc, f.key, eval(f.val, env))
+      let key = if rec.has(f, "key") then f.key else f.k in
+      let val_node = if rec.has(f, "val") then f.val else f.v in
+      rec.set(acc, key, eval(val_node, env))
     }))
 
   else if t == "get" then
@@ -151,6 +153,31 @@ fn eval(node, env) {
   else if t == "let_fn" then
     let f = val_fn(node.params, node.body, env) in
     eval(node.body_expr, env_set(env, node.name, f))
+
+  else if t == "match" then
+    let subject = eval(node.subj, env) in
+    eval_match(subject, node.arms, env)
+
+  else if t == "spread" then
+    // Record spread: { ...base, key: val }
+    let base = eval(node.obj, env) in
+    if base.t == "record" then base
+    else val_null()
+
+  else if t == "lambda" then
+    // fn(x) => expr shorthand
+    val_fn(node.params, node.body, env)
+
+  else if t == "named_call" then
+    // f(key: val, ...) — reorder args by param names
+    let f = eval(node.fn_n, env) in
+    let arg_map = list.fold(node.named_args, {}, fn(acc, a) {
+      rec.set(acc, a.name, eval(a.val, env))
+    }) in
+    let ordered_args = if f.t == "fn" || f.t == "rec_fn" then
+      list.map(f.params, fn(p) { rec.getOr(arg_map, p, val_null()) })
+    else list.map(node.named_args, fn(a) { eval(a.val, env) }) in
+    apply(f, ordered_args)
 
   else { t: "error", msg: str.concat(["unknown node type: ", t]) }
 }
@@ -198,12 +225,31 @@ fn eval_module(module_node) {
       let f = { t: "rec_fn", name: item.name, params: item.params, body: item.body, env: env1 } in
       let env2 = env_set(acc.env, item.name, f) in
       { env: env2, val: f }
+    else if item.t == "import" then
+      // Import is handled at load time by the Rust host
+      // In fard_eval context, we note it but can't resolve modules
+      // For now: set alias to a placeholder record
+      { env: env_set(acc.env, item.alias, { t: "module", path: item.path }), val: acc.val }
     else if item.t == "expr_item" then
       let v = eval(item.expr, acc.env) in
       { env: acc.env, val: v }
     else acc
   }) in
   result.val
+}
+
+fn eval_match(subject, arms, env) {
+  if list.len(arms) == 0 then val_null()
+  else
+    let arm = list.get(arms, 0) in
+    let rest = list.drop(arms, 1) in
+    let pat = arm.pat in
+    // Wildcard: var named "_" or actual wildcard
+    if pat.t == "var" && pat.v == "_" then eval(arm.body, env)
+    else
+      let pat_val = eval(pat, env) in
+      if values_eq(subject, pat_val) then eval(arm.body, env)
+      else eval_match(subject, rest, env)
 }
 
 fn values_eq(a, b) {
