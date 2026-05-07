@@ -1643,21 +1643,97 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         let lex_abs = std::fs::canonicalize(&fardlex_path).unwrap_or(fardlex_path.clone());
         let par_abs = std::fs::canonicalize(&fardparse_path).unwrap_or(fardparse_path.clone());
         let ev_abs  = std::fs::canonicalize(&fard_eval_path).unwrap_or(fard_eval_path.clone());
-        // Strip .fard extension — loader adds it automatically
         let strip_fard = |p: &std::path::Path| {
             let s = p.to_string_lossy().to_string();
             if s.ends_with(".fard") { s[..s.len()-5].to_string() } else { s }
         };
-        let wrapper_src = [
-            &format!("import({:?}) as lex\n", strip_fard(&lex_abs)),
-            &format!("import({:?}) as par\n", strip_fard(&par_abs)),
-            &format!("import({:?}) as ev\n", strip_fard(&ev_abs)),
-            &format!("let src = {}\n", prog_src_json),
-            "let tokens = lex.tokenize(src)\n",
-            "let parsed = par.parse_module(tokens, 0)\n",
-            "let __raw = ev.eval_module(parsed.node)\n",
-            "ev.val_to_native(__raw)\n",
-        ].concat();
+        // Find std/ directory for pure FARD stdlib overrides
+        let std_dir = std::env::current_dir().unwrap_or_else(|_| loader.root_dir.clone()).join("std");
+        // Extract imports from program to re-route std/* to FARD implementations
+        let mut env_lines: Vec<String> = Vec::new();
+        let mut fard_imports: Vec<String> = Vec::new();
+        for line in prog_src.lines() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("import(") {
+                let as_parts: Vec<&str> = trimmed.splitn(2, " as ").collect();
+                if as_parts.len() == 2 {
+                    let alias = as_parts[1].trim();
+                    let inner = as_parts[0];
+                    let quotes: Vec<usize> = inner.char_indices()
+                        .filter(|(_, ch)| *ch == '"')
+                        .map(|(i, _)| i)
+                        .collect();
+                    if quotes.len() >= 2 {
+                        let path = &inner[quotes[0]+1..quotes[1]];
+                        // Use _eval variant for fard_eval mode if it exists
+                        let eval_override = std_dir.join(format!("{}_eval.fard",
+                            path.strip_prefix("std/").unwrap_or(path)));
+                        let fard_override = if eval_override.exists() { eval_override }
+                            else { std_dir.join(format!("{}.fard",
+                                path.strip_prefix("std/").unwrap_or(path))) };
+                        if path == "std/list" {
+                            // Inject list builtins directly as builtin_fn values
+                            let builtins = ["len","get","append","tail","fold","build","concat",
+                                "map","filter","any","all","find","head","last","take","drop",
+                                "reverse","zip","flat_map","flatten","range","repeat","join",
+                                "sort_by","group_by","sum"];
+                            let mut list_fields: Vec<String> = builtins.iter()
+                                .map(|b| format!("{}: {{t: \"builtin_fn\", name: \"list.{}\"}}", b, b))
+                                .collect();
+                            env_lines.push(format!(
+                                "let __list_mod = {{{}}}\n",
+                                list_fields.join(", ")
+                            ));
+                            env_lines.push(format!(
+                                "let __env = ev.env_set(__env, {:?}, ev.val_record(__list_mod))\n",
+                                alias
+                            ));
+                        } else if fard_override.exists() {
+                            let abs = std::fs::canonicalize(&fard_override)
+                                .unwrap_or(fard_override.clone());
+                            let imp_path = strip_fard(&abs);
+                            fard_imports.push(format!("import({:?}) as __mod_{}\n", imp_path, alias));
+                            env_lines.push(format!(
+                                "let __mod_src_{alias} = fs.read_text({path:?})\n",
+                                alias=alias, path=fard_override.to_string_lossy()
+                            ));
+                            env_lines.push(format!(
+                                "let __mod_parsed_{alias} = par.parse_module(lex.tokenize(__mod_src_{alias}), 0)\n",
+                                alias=alias
+                            ));
+                            env_lines.push(format!(
+                                "let __mod_val_{alias} = ev.eval_module(__mod_parsed_{alias}.node)\n",
+                                alias=alias
+                            ));
+                            env_lines.push(format!(
+                                "let __env = ev.env_set(__env, {:?}, __mod_val_{alias})\n",
+                                alias, alias=alias
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        let mut wrapper_parts: Vec<String> = Vec::new();
+        wrapper_parts.push(format!("import({:?}) as lex", strip_fard(&lex_abs)));
+        wrapper_parts.push(format!("import({:?}) as par", strip_fard(&par_abs)));
+        wrapper_parts.push(format!("import({:?}) as ev", strip_fard(&ev_abs)));
+        wrapper_parts.push(r#"import("std/fs") as fs"#.to_string());
+        for imp in &fard_imports {
+            wrapper_parts.push(imp.trim_end_matches('\n').to_string());
+        }
+        wrapper_parts.push("let __env = ev.env_empty()".to_string());
+        for el in &env_lines {
+            for line in el.split('\n') {
+                if !line.is_empty() { wrapper_parts.push(line.to_string()); }
+            }
+        }
+        wrapper_parts.push(format!("let __src = {}", prog_src_json));
+        wrapper_parts.push("let __tokens = lex.tokenize(__src)".to_string());
+        wrapper_parts.push("let __parsed = par.parse_module(__tokens, 0)".to_string());
+        wrapper_parts.push("let __raw = ev.eval_module_with_env(__parsed.node, __env)".to_string());
+        wrapper_parts.push("ev.val_to_native(__raw)".to_string());
+        let wrapper_src = wrapper_parts.join("\n") + "\n";
 
         let wrapper_path = out_dir.join("__fard_eval_wrapper__.fard");
         fs::write(&wrapper_path, &wrapper_src)?;

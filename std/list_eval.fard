@@ -1,0 +1,82 @@
+/// std/list_eval — list stdlib for fard_eval (no native imports)
+/// All primitives implemented via builtin_fn dispatch
+
+import("std/rec") as rec
+import("std/str") as str
+
+// The 7 primitives come from apply_builtin_fn in fard_eval
+// We call them by creating builtin_fn values
+fn _bl(name) { { t: "builtin_fn", name: name } }
+fn _len(xs)        { _bl("list.len")(xs) }
+fn _get(xs, i)     { _bl("list.get")(xs, i) }
+fn _append(xs, x)  { _bl("list.append")(xs, x) }
+fn _tail(xs)       { _bl("list.tail")(xs) }
+fn _build(n, f)    { _bl("list.build")(n, f) }
+fn _concat(xss)    { _bl("list.concat")(xss) }
+fn _fold(xs, i, f) { _bl("list.fold")(xs, i, f) }
+
+fn map(xs, f)    { _fold(xs, [], fn(acc, x) { _append(acc, f(x)) }) }
+fn filter(xs, p) { _fold(xs, [], fn(acc, x) { if p(x) then _append(acc, x) else acc }) }
+fn any(xs, p)    { _fold(xs, false, fn(acc, x) { if acc then true else p(x) }) }
+fn all(xs, p)    { _fold(xs, true, fn(acc, x) { if !acc then false else p(x) }) }
+fn find(xs, p) {
+  _fold(xs, { none: null }, fn(acc, x) {
+    if rec.has(acc, "some") then acc
+    else if p(x) then { some: x } else acc
+  })
+}
+fn head(xs) { _get(xs, 0) }
+fn last(xs) { _get(xs, _len(xs) - 1) }
+fn take(xs, n) { _build(n, fn(i) { _get(xs, i) }) }
+fn drop(xs, n) {
+  let len = _len(xs) in
+  let count = if n > len then 0 else len - n in
+  _build(count, fn(i) { _get(xs, i + n) })
+}
+fn reverse(xs) {
+  let n = _len(xs) in
+  _build(n, fn(i) { _get(xs, n - 1 - i) })
+}
+fn zip(xs, ys) {
+  let n = if _len(xs) < _len(ys) then _len(xs) else _len(ys) in
+  _build(n, fn(i) { [_get(xs, i), _get(ys, i)] })
+}
+fn flat_map(xs, f) { _fold(xs, [], fn(acc, x) { _concat([acc, f(x)]) }) }
+fn flatten(xss) { _fold(xss, [], fn(acc, xs) { _concat([acc, xs]) }) }
+fn range(s, e) { let n = if e > s then e - s else 0 in _build(n, fn(i) { s + i }) }
+fn repeat(v, n) { _build(n, fn(_) { v }) }
+fn join(xs, sep) {
+  if _len(xs) == 0 then "" else
+    _fold(drop(xs, 1), _get(xs, 0), fn(acc, x) { str.concat([acc, sep, x]) })
+}
+fn sort_by(xs, cmp) {
+  let n = _len(xs) in
+  if n <= 1 then xs else
+    let pivot = _get(xs, n / 2) in
+    let left   = filter(xs, fn(x) { cmp(x, pivot) < 0 }) in
+    let middle = filter(xs, fn(x) { cmp(x, pivot) == 0 }) in
+    let right  = filter(xs, fn(x) { cmp(x, pivot) > 0 }) in
+    _concat([sort_by(left, cmp), middle, sort_by(right, cmp)])
+}
+fn group_by(xs, key_fn) {
+  _fold(xs, {}, fn(acc, x) {
+    let k = key_fn(x) in
+    let existing = rec.getOr(acc, k, []) in
+    rec.set(acc, k, _append(existing, x))
+  })
+}
+fn sum(xs) { _fold(xs, 0, fn(acc, x) { acc + x }) }
+fn len(xs)       { _len(xs) }
+fn get(xs, i)    { _get(xs, i) }
+fn append(xs, x) { _append(xs, x) }
+fn tail(xs)      { _tail(xs) }
+fn fold(xs, i, f){ _fold(xs, i, f) }
+fn build(n, f)   { _build(n, f) }
+fn concat(xss)   { _concat(xss) }
+
+{ map: map, filter: filter, any: any, all: all, find: find,
+  head: head, last: last, take: take, drop: drop, reverse: reverse,
+  zip: zip, flat_map: flat_map, flatten: flatten, range: range,
+  repeat: repeat, join: join, sort_by: sort_by, group_by: group_by,
+  sum: sum, len: len, get: get, append: append, tail: tail,
+  fold: fold, build: build, concat: concat }
