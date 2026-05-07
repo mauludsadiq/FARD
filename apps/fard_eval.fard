@@ -1,0 +1,247 @@
+/// fard_eval — FARD evaluator written in FARD
+/// Evaluates FARD AST nodes produced by fardparse.
+/// Values: { t: "int"|"float"|"bool"|"null"|"text"|"list"|"record"|"fn"|"builtin", v: ... }
+/// Env: list of { name: str, val: val } frames
+
+import("std/list")  as list
+import("std/rec")   as rec
+import("std/str")   as str
+import("std/json")  as json
+import("std/type")  as typ
+
+// ── Value constructors ────────────────────────────────────────────────────────
+
+fn val_int(n)    { { t: "int",    v: n } }
+fn val_float(f)  { { t: "float",  v: f } }
+fn val_bool(b)   { { t: "bool",   v: b } }
+fn val_null()    { { t: "null",   v: null } }
+fn val_text(s)   { { t: "text",   v: s } }
+fn val_list(xs)  { { t: "list",   v: xs } }
+fn val_record(r) { { t: "record", v: r } }
+fn val_fn(params, body, env) { { t: "fn", params: params, body: body, env: env } }
+fn val_builtin(name) { { t: "builtin", name: name } }
+
+fn is_truthy(val) {
+  if val.t == "null" then false
+  else if val.t == "bool" then val.v
+  else if val.t == "int" then val.v != 0
+  else true
+}
+
+// ── Environment ───────────────────────────────────────────────────────────────
+
+fn env_empty() { [] }
+
+fn env_set(env, name, val) {
+  list.append(env, { name: name, val: val })
+}
+
+fn env_get(env, name) {
+  let n = list.len(env) in
+  env_get_from(env, name, n - 1)
+}
+
+fn env_get_from(env, name, i) {
+  if i < 0 then null
+  else
+    let entry = list.get(env, i) in
+    if entry.name == name then entry.val
+    else env_get_from(env, name, i - 1)
+}
+
+fn env_set_many(env, pairs) {
+  list.fold(pairs, env, fn(acc, p) { env_set(acc, p.name, p.val) })
+}
+
+// ── Binary operators ──────────────────────────────────────────────────────────
+
+fn eval_bin(op, l, r) {
+  if op == "+"  then val_int(l.v + r.v)
+  else if op == "-"  then val_int(l.v - r.v)
+  else if op == "*"  then val_int(l.v * r.v)
+  else if op == "/"  then val_int(l.v / r.v)
+  else if op == "%"  then val_int(l.v % r.v)
+  else if op == "==" then val_bool(l.v == r.v)
+  else if op == "!=" then val_bool(l.v != r.v)
+  else if op == "<"  then val_bool(l.v < r.v)
+  else if op == "<=" then val_bool(l.v <= r.v)
+  else if op == ">"  then val_bool(l.v > r.v)
+  else if op == ">=" then val_bool(l.v >= r.v)
+  else if op == "&&" then val_bool(is_truthy(l) && is_truthy(r))
+  else if op == "||" then val_bool(is_truthy(l) || is_truthy(r))
+  else if op == "++" then val_text(str.concat([l.v, r.v]))
+  else { t: "error", msg: str.concat(["unknown op: ", op]) }
+}
+
+fn eval_unary(op, v) {
+  if op == "-" then val_int(-v.v)
+  else if op == "!" then val_bool(!is_truthy(v))
+  else v
+}
+
+// ── Core evaluator ────────────────────────────────────────────────────────────
+
+fn eval(node, env) {
+  let op = node.op in
+
+  if op == "int"   then val_int(node.v)
+  else if op == "float" then val_float(node.v)
+  else if op == "bool"  then val_bool(node.v)
+  else if op == "null"  then val_null()
+  else if op == "str"   then val_text(node.v)
+
+  else if op == "var" then
+    let v = env_get(env, node.name) in
+    if v == null then { t: "error", msg: str.concat(["unbound: ", node.name]) }
+    else v
+
+  else if op == "bin" then
+    let l = eval(node.left, env) in
+    let r = eval(node.right, env) in
+    eval_bin(node.op2, l, r)
+
+  else if op == "unary" then
+    let v = eval(node.expr, env) in
+    eval_unary(node.op2, v)
+
+  else if op == "if" then
+    let cond = eval(node.cond, env) in
+    if is_truthy(cond)
+      then eval(node.then_br, env)
+      else eval(node.else_br, env)
+
+  else if op == "let" then
+    let v = eval(node.val, env) in
+    eval(node.body, env_set(env, node.name, v))
+
+  else if op == "list" then
+    val_list(list.map(node.items, fn(item) { eval(item, env) }))
+
+  else if op == "record" then
+    val_record(list.fold(node.fields, {}, fn(acc, f) {
+      rec.set(acc, f.key, eval(f.val, env))
+    }))
+
+  else if op == "get" then
+    let obj = eval(node.obj, env) in
+    if obj.t == "record" then
+      let v = rec.getOr(obj.v, node.field, null) in
+      if v == null then val_null() else v
+    else { t: "error", msg: str.concat(["get on non-record: ", obj.t]) }
+
+  else if op == "index" then
+    let obj = eval(node.obj, env) in
+    let idx = eval(node.idx, env) in
+    if obj.t == "list" then list.get(obj.v, idx.v)
+    else { t: "error", msg: "index on non-list" }
+
+  else if op == "fn" then
+    val_fn(node.params, node.body, env)
+
+  else if op == "call" then
+    let f = eval(node.fn_, env) in
+    let args = list.map(node.args, fn(a) { eval(a, env) }) in
+    apply(f, args)
+
+  else if op == "match" then
+    let subject = eval(node.subject, env) in
+    eval_match(subject, node.arms, env)
+
+  else if op == "while" then
+    eval_while(node.init, node.cond, node.body, env)
+
+  else if op == "str_interp" then
+    val_text(str.join(list.map(node.parts, fn(p) {
+      if p.kind == "text" then p.v
+      else
+        let v = eval(p.expr, env) in
+        str.from(v.v)
+    }), ""))
+
+  else if op == "try" then
+    let v = eval(node.expr, env) in
+    if v.t == "record" && rec.has(v.v, "ok") && !v.v.ok
+      then { t: "error", msg: v.v.err, propagate: true }
+      else if v.t == "record" && rec.has(v.v, "t") && v.v.t == "ok"
+      then if rec.has(v.v, "v") then v.v.v else val_null()
+      else v
+
+  else { t: "error", msg: str.concat(["unknown expr op: ", op]) }
+}
+
+fn apply(f, args) {
+  if f.t == "fn" then
+    let pairs = list.build(list.len(f.params), fn(i) {
+      { name: list.get(f.params, i),
+        val: if i < list.len(args) then list.get(args, i) else val_null() }
+    }) in
+    let env2 = env_set_many(f.env, pairs) in
+    eval(f.body, env2)
+  else if f.t == "builtin" then
+    apply_builtin(f.name, args)
+  else
+    { t: "error", msg: str.concat(["call on non-fn: ", f.t]) }
+}
+
+fn eval_match(subject, arms, env) {
+  if list.len(arms) == 0 then val_null()
+  else
+    let arm = list.get(arms, 0) in
+    let rest = list.drop(arms, 1) in
+    if arm.pattern.op == "wildcard" then eval(arm.body, env)
+    else
+      let pat_val = eval(arm.pattern, env) in
+      if values_eq(subject, pat_val) then eval(arm.body, env)
+      else eval_match(subject, rest, env)
+}
+
+fn eval_while(init_node, cond_node, body_node, env) {
+  let init_val = eval(init_node, env) in
+  while_loop(init_val, cond_node, body_node, env, 0)
+}
+
+fn while_loop(state, cond_node, body_node, env, steps) {
+  let env2 = env_set(env, "__state__", state) in
+  let cond = apply(eval(cond_node, env), [state]) in
+  if !is_truthy(cond) then
+    { t: "record", v: { value: state, steps: steps, chain_hex: "0" } }
+  else
+    let next = apply(eval(body_node, env), [state]) in
+    while_loop(next, cond_node, body_node, env, steps + 1)
+}
+
+fn values_eq(a, b) {
+  if a.t != b.t then false
+  else if a.t == "int" || a.t == "float" || a.t == "bool" || a.t == "text" then a.v == b.v
+  else false
+}
+
+// ── Builtin dispatch ──────────────────────────────────────────────────────────
+
+fn apply_builtin(name, args) {
+  // Delegate to native stdlib via module dispatch
+  // This is the thin layer that still needs Rust for I/O etc.
+  { t: "error", msg: str.concat(["builtin not implemented in eval: ", name]) }
+}
+
+// ── Module evaluator ──────────────────────────────────────────────────────────
+
+fn eval_module(items, env) {
+  list.fold(items, { env: env, result: val_null() }, fn(acc, item) {
+    if item.op == "let" then
+      let v = eval(item.val, acc.env) in
+      { env: env_set(acc.env, item.name, v), result: v }
+    else if item.op == "expr" then
+      let v = eval(item.expr, acc.env) in
+      { env: acc.env, result: v }
+    else if item.op == "fn_def" then
+      let f = val_fn(item.params, item.body, acc.env) in
+      { env: env_set(acc.env, item.name, f), result: f }
+    else acc
+  })
+}
+
+export { eval, apply, eval_module, eval_bin, eval_unary,
+         val_int, val_float, val_bool, val_null, val_text, val_list, val_record, val_fn,
+         env_empty, env_set, env_get, env_set_many,
+         is_truthy, values_eq }
