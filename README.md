@@ -283,7 +283,7 @@ Pure-FARD PDF-1.4 generation and annotation. `write_pdf` builds complete documen
 
 ## Self-Hosting
 
-Stage 8 is underway: 15 stdlib modules in pure FARD, plus a complete FARD evaluator (`fard_eval.fard`) that evaluates parsed FARD programs. Use `--fard-eval` to run programs through the pure FARD pipeline.
+Stage 8 is underway: 15 stdlib modules replaced with pure FARD, plus `fard_eval.fard` — a complete FARD evaluator written in FARD. Run any program through the pure FARD pipeline with `--fard-eval`.
 
 ### Pipeline
 
@@ -304,7 +304,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator | **in progress** — 15 std modules, fard_eval.fard, --fard-eval flag; fib(10)=55 via pure FARD |
+| 8 | FARD stdlib + FARD evaluator | **in progress** — 15 std modules in pure FARD; fard_eval.fard evaluates all core expr types; fib(10)=55 via pure FARD pipeline |
 
 ### Compiler Components
 
@@ -332,6 +332,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | `std/uuid.fard` | UUID helpers — nil, is_nil, short |
 | `std/env.fard` | Env helpers — get_or, require, get_int, get_bool |
 | `std/path.fard` | Path helpers — stem, with_ext, parts |
+| `apps/fard_eval.fard` | Pure FARD evaluator — int, bool, str, if, let, fn, call, match, records, lists, closures, recursion |
 
 ### Verified Native Results
 
@@ -383,6 +384,7 @@ Oracle boundaries — `http`, `datetime.now`, `io.read_stdin`, `uuid.v4`, `ffi.c
 fardrun run --program main.fard --out ./out   # produces result.json, trace.ndjson, digests.json
 fardverify trace --out ./out
 fardverify prove --out ./out --spec spec.json
+fardrun run --program main.fard --out ./out --fard-eval  # pure FARD eval pipeline
 ```
 
 VS Code: `code --install-extension editors/vscode/fard-language-0.1.0.vsix`
