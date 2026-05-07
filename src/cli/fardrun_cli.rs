@@ -100,6 +100,10 @@ pub struct RunArgs {
     #[arg(long)]
     pub elf_out: Option<PathBuf>,
 
+    /// Use pure FARD evaluator (Stage 8 -- fard_eval.fard)
+    #[arg(long, default_value_t = false)]
+    pub fard_eval: bool,
+
     /// Program arguments passed after --
     #[arg(last = true)]
     pub program_args: Vec<String>,
@@ -200,6 +204,7 @@ impl Cli {
                     no_trace: false,
                     strict_types: false,
                     hm_types: false, strict_arith: false,
+                    fard_eval: false,
                     program_args: vec![],
                     compile_linked: false,
                     elf_out: None,
@@ -216,6 +221,7 @@ impl Cli {
                     no_trace: false,
                     strict_types: false,
                     hm_types: false, strict_arith: false,
+                    fard_eval: false,
                     program_args: vec![],
                     compile_linked: false,
                     elf_out: None,
@@ -232,6 +238,7 @@ impl Cli {
                     no_trace: false,
                     strict_types: false,
                     hm_types: false, strict_arith: false,
+                    fard_eval: false,
                     program_args: vec![],
                     compile_linked: false,
                     elf_out: None,
@@ -253,6 +260,7 @@ impl Cli {
                     no_trace: false,
                     strict_types: false,
                     hm_types: false, strict_arith: false,
+                    fard_eval: false,
                     program_args: vec![],
                     compile_linked: false,
                     elf_out: None,

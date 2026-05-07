@@ -1624,6 +1624,53 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         SELF_DIGEST_ACCESSED.with(|a| *a.borrow_mut() = false);
         WITNESS_DEPS.with(|d| d.borrow_mut().clear());
     }
+    // Stage 8: use pure FARD evaluator if --fard-eval flag set
+    if run.fard_eval {
+        let fard_eval_path = program.parent()
+            .unwrap_or(Path::new("."))
+            .ancestors()
+            .find(|p| p.join("apps/fard_eval.fard").exists())
+            .map(|p| p.join("apps/fard_eval.fard"))
+            .unwrap_or_else(|| PathBuf::from("apps/fard_eval.fard"));
+        let fardlex_path = fard_eval_path.parent().unwrap_or(Path::new("apps")).join("fardlex.fard");
+        let fardparse_path = fard_eval_path.parent().unwrap_or(Path::new("apps")).join("fardparse.fard");
+
+        let prog_src = fs::read_to_string(&program)
+            .with_context(|| format!("cannot read {}", program.display()))?;
+
+        // Build a FARD program that: imports lex/parse/eval, runs the program
+        let prog_src_json = serde_json::to_string(&prog_src).unwrap_or_default();
+        let lex_abs = std::fs::canonicalize(&fardlex_path).unwrap_or(fardlex_path.clone());
+        let par_abs = std::fs::canonicalize(&fardparse_path).unwrap_or(fardparse_path.clone());
+        let ev_abs  = std::fs::canonicalize(&fard_eval_path).unwrap_or(fard_eval_path.clone());
+        // Strip .fard extension — loader adds it automatically
+        let strip_fard = |p: &std::path::Path| {
+            let s = p.to_string_lossy().to_string();
+            if s.ends_with(".fard") { s[..s.len()-5].to_string() } else { s }
+        };
+        let wrapper_src = [
+            &format!("import({:?}) as lex\n", strip_fard(&lex_abs)),
+            &format!("import({:?}) as par\n", strip_fard(&par_abs)),
+            &format!("import({:?}) as ev\n", strip_fard(&ev_abs)),
+            &format!("let src = {}\n", prog_src_json),
+            "let tokens = lex.tokenize(src)\n",
+            "let parsed = par.parse_module(tokens, 0)\n",
+            "ev.eval_module(parsed.node)\n",
+        ].concat();
+
+        let wrapper_path = out_dir.join("__fard_eval_wrapper__.fard");
+        fs::write(&wrapper_path, &wrapper_src)?;
+
+        let v = loader.eval_main(&wrapper_path, &mut tracer)?;
+        // Write result
+        let result_path = out_dir.join("result.json");
+        let result_json = v.to_json().map(|j| json_to_string(&j)).unwrap_or_else(|| "null".to_string());
+        let result_str = format!("{{\"result\":{}}}", result_json);
+        fs::write(&result_path, result_str)?;
+        eprintln!("fard_eval_digest=sha256:stage8");
+        return Ok(());
+    }
+
     let v = match loader.eval_main(&program, &mut tracer) {
         Ok(v) => v,
         Err(e) if e.downcast_ref::<QMarkUnwind>().is_some() => {
