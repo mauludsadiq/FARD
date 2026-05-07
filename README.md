@@ -283,7 +283,7 @@ Pure-FARD PDF-1.4 generation and annotation. `write_pdf` builds complete documen
 
 ## Self-Hosting
 
-Stage 8 is underway: 15 stdlib modules (list, str, rec, math, type, json, hash, uuid, env, path, option, result, datetime, crypto, bytes) now run as pure FARD — replacing ~180 Rust builtins.
+Stage 8 is underway: 15 stdlib modules in pure FARD, plus a complete FARD evaluator (`fard_eval.fard`) that evaluates parsed FARD programs. Use `--fard-eval` to run programs through the pure FARD pipeline.
 
 ### Pipeline
 
@@ -304,7 +304,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib replaces Rust builtins | **in progress** — std/list, std/str, std/rec in pure FARD; module loader prefers .fard over Rust |
+| 8 | FARD stdlib + FARD evaluator | **in progress** — 15 std modules, fard_eval.fard, --fard-eval flag; fib(10)=55 via pure FARD |
 
 ### Compiler Components
 
