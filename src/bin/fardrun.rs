@@ -1671,22 +1671,36 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                         let fard_override = if eval_override.exists() { eval_override }
                             else { std_dir.join(format!("{}.fard",
                                 path.strip_prefix("std/").unwrap_or(path))) };
-                        if path == "std/list" {
-                            // Inject list builtins directly as builtin_fn values
-                            let builtins = ["len","get","append","tail","fold","build","concat",
+                        let builtin_modules: &[(&str, &[&str])] = &[
+                            ("std/list", &["len","get","append","tail","fold","build","concat",
                                 "map","filter","any","all","find","head","last","take","drop",
                                 "reverse","zip","flat_map","flatten","range","repeat","join",
-                                "sort_by","group_by","sum"];
-                            let mut list_fields: Vec<String> = builtins.iter()
-                                .map(|b| format!("{}: {{t: \"builtin_fn\", name: \"list.{}\"}}", b, b))
+                                "sort_by","group_by","sum"]),
+                            ("std/str", &["len","concat","slice","split","trim","contains","from",
+                                "join","replace","starts_with","ends_with","index_of","upper",
+                                "lower","repeat","pad_left","pad_right","char_at","from_chars"]),
+                            ("std/rec", &["has","get","set","keys","getOr","remove","merge",
+                                "empty","values","entries","from_entries","map_values",
+                                "filter_keys","pick","omit","size","is_empty","fold"]),
+                            ("std/type", &["of"]),
+                            ("std/math", &["abs","min","max","pow","sqrt","floor","ceil","round",
+                                "sin","cos","tan","log","exp","pi","gcd","lcm"]),
+                        ];
+                        let is_builtin = builtin_modules.iter().any(|(mod_path, _)| *mod_path == path);
+                        if is_builtin {
+                            let fns: &[&str] = builtin_modules.iter()
+                                .find(|(mp, _)| *mp == path)
+                                .map(|(_, fns)| *fns)
+                                .unwrap_or(&[]);
+                            let mod_name = path.strip_prefix("std/").unwrap_or(path);
+                            let fields: Vec<String> = fns.iter()
+                                .map(|f| format!("{}: {{t: \"builtin_fn\", name: \"{}.{}\"}}", f, mod_name, f))
                                 .collect();
+                            let var_name = format!("__builtin_mod_{}", alias);
+                            env_lines.push(format!("let {} = {{{}}}\n", var_name, fields.join(", ")));
                             env_lines.push(format!(
-                                "let __list_mod = {{{}}}\n",
-                                list_fields.join(", ")
-                            ));
-                            env_lines.push(format!(
-                                "let __env = ev.env_set(__env, {:?}, ev.val_record(__list_mod))\n",
-                                alias
+                                "let __env = ev.env_set(__env, {:?}, ev.val_record({}))\n",
+                                alias, var_name
                             ));
                         } else if fard_override.exists() {
                             let abs = std::fs::canonicalize(&fard_override)
