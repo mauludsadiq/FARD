@@ -304,7 +304,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator | **in progress** — 15 std modules, 436-line fard_eval.fard, list.map+factorial via pure FARD pipeline |
+| 8 | FARD stdlib + FARD evaluator | **in progress** — FizzBuzz, list.map+factorial, str/rec/list all working via pure FARD pipeline |
 
 ### Compiler Components
 
