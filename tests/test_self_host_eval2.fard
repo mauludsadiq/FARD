@@ -4,15 +4,21 @@ import("std/list") as list
 import("std/io") as io
 import("std/record") as rec
 import("std/type") as type
+import("std/menv") as menv
 
 let src = io.read_file("packages/fard_eval/eval.fard").ok
 let defs = parse.parse_program(src)
 
-let env0 = ev.env_empty()
-let env0b = ev.env_set(ev.env_set(ev.env_set(env0, "list", list), "rec", rec), "type", type)
+let env0b = menv.new()
+let _list = menv.set(env0b, "list", list)
+let _rec = menv.set(env0b, "rec", rec)
+let _type = menv.set(env0b, "type", type)
 
 let env1 = list.fold(defs, env0b, fn(acc, d) {
-  if d.t == "def_fn" then ev.env_set(acc, d.name, ev.eval(d, acc))
+  if d.t == "def_fn" then
+    let v = ev.eval(d, acc) in
+      let _ = menv.set(acc, d.name, v) in
+      acc
   else acc
 })
 
