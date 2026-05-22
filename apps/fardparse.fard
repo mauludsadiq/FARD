@@ -345,6 +345,8 @@ fn parse_postfix_loop(tokens, pos, node) {
     let cb = expect_sym(tokens, ir.pos, "]") in
     if !cb.ok then err(cb.err, ir.pos)
     else parse_postfix_loop(tokens, cb.pos, { t: "index", obj: node, idx: ir.node })
+  else if is_sym(tokens, pos, "?") then
+    parse_postfix_loop(tokens, pos + 1, { t: "try", expr: node })
   else ok(node, pos)
 }
 

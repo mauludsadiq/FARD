@@ -1678,14 +1678,14 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                                 "sort_by","group_by","sum"]),
                             ("std/str", &["len","concat","slice","split","trim","contains","from",
                                 "join","replace","starts_with","ends_with","index_of","upper",
-                                "lower","repeat","pad_left","pad_right","char_at","from_chars"]),
+                                "lower","repeat","pad_left","pad_right","char_at","from_chars","split_lines"]),
                             ("std/rec", &["has","get","set","keys","getOr","remove","merge",
                                 "empty","values","entries","from_entries","map_values",
                                 "filter_keys","pick","omit","size","is_empty","fold"]),
                             ("std/type", &["of"]),
                             ("std/math", &["abs","min","max","pow","sqrt","floor","ceil","round",
                                 "sin","cos","tan","log","exp","pi","gcd","lcm"]),
-                        ];
+                            ("std/result", &["ok","err","is_ok","is_err","andThen","and_then","unwrap_ok","unwrap_err","unwrap_or"]),                            ("std/int", &["parse","pow"]),                        ];
                         let is_builtin = builtin_modules.iter().any(|(mod_path, _)| *mod_path == path);
                         if is_builtin {
                             let fns: &[&str] = builtin_modules.iter()
@@ -1716,7 +1716,7 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
                                 alias=alias
                             ));
                             env_lines.push(format!(
-                                "let __mod_val_{alias} = ev.eval_module(__mod_parsed_{alias}.node)\n",
+                                r#"let __mod_val_{alias} = __mod_{alias}"#,
                                 alias=alias
                             ));
                             env_lines.push(format!(
@@ -1748,7 +1748,6 @@ fn pretty_print_val(v: &Val, indent: usize) -> String {
         wrapper_parts.push("let __raw = ev.eval_module_with_env(__parsed.node, __env)".to_string());
         wrapper_parts.push("ev.val_to_native(__raw)".to_string());
         let wrapper_src = wrapper_parts.join("\n") + "\n";
-
         let wrapper_path = out_dir.join("__fard_eval_wrapper__.fard");
         fs::write(&wrapper_path, &wrapper_src)?;
 

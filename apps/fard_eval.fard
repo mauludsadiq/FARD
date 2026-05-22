@@ -68,11 +68,11 @@ fn env_get(env, name) {
 fn env_get_from(env, name, i) {
   if i < 0 then null
   else
-    let entry = list.get(env, i) in
+    let entry0 = list.get(env, i) in
+    let entry = if typ.of(entry0) == "record" && rec.has(entry0, "name") then entry0 else { name: "", val: null } in
     if entry.name == name then entry.val
     else env_get_from(env, name, i - 1)
 }
-
 fn env_set_many(env, pairs) {
   list.fold(pairs, env, fn(acc, p) { env_set(acc, p.name, p.val) })
 }
@@ -190,7 +190,7 @@ fn eval(node, env) {
     let name = node_var_name(node) in
       let v = env_get(env, name) in
     if v == null then { t: "error", msg: str.concat(["unbound: ", name]) }
-    else if v.t == "rec_ref" then
+    else if typ.of(v) == "record" && rec.has(v, "t") && v.t == "rec_ref" then
       // Recursive reference - look up the actual fn in env
       let actual = env_get(env, v.name) in
       if actual == null || actual.t == "rec_ref" then { t: "error", msg: str.concat(["unresolved rec: ", v.name]) }
@@ -211,8 +211,8 @@ fn eval(node, env) {
 
   else if t == "try" then
     let r = eval(node.expr, env) in
-    if r.t == "record" && rec.has(r.v, "ok") && rec.get(r.v, "ok").t == "bool" && rec.get(r.v, "ok").v == false then
-      { t: "error", msg: rec.get(r.v, "err"), propagate: true }
+    if r.t == "record" && rec.has(r.v, "t") && rec.get(r.v, "t").t == "text" && rec.get(r.v, "t").v == "err" then
+      { t: "return_val", v: r }
     else if r.t == "record" && rec.has(r.v, "t") && rec.get(r.v, "t").t == "text" && rec.get(r.v, "t").v == "ok" && rec.has(r.v, "v") then
       rec.get(r.v, "v")
     else
@@ -226,12 +226,11 @@ fn eval(node, env) {
 
   else if t == "let" then
     let v = eval(node.val, env) in
-    eval(node.body, env_set(env, node.name, v))
-
+    if typ.of(v) == "record" && rec.has(v, "t") && v.t == "return_val" then v else eval(node.body, env_set(env, node.name, v))
   else if t == "let_pat" then
     let v = eval(node.val, env) in
     let env2 = bind_pattern(env, node.pat, v) in
-    if typ.of(env2) == "record" && rec.has(env2, "t") && env2.t == "error" then env2 else eval(node.body, env2)
+    if typ.of(env2) == "record" && rec.has(env2, "t") && env2.t == "return_val" then env2 else if typ.of(env2) == "record" && rec.has(env2, "t") && env2.t == "error" then env2 else eval(node.body, env2)
 
   else if t == "list" then
     val_list(list.map(node.items, fn(item) { eval(item, env) }))
@@ -244,7 +243,8 @@ fn eval(node, env) {
     }))
 
   else if t == "get" then
-    let obj = eval(node.obj, env) in
+    let obj0 = eval(node.obj, env) in
+    let obj = if typ.of(obj0) == "record" && rec.has(obj0, "t") then obj0 else val_record(obj0) in
     if obj.t == "record" then
       rec.getOr(obj.v, node.field, val_null())
     else if obj.t == "module" then
@@ -264,7 +264,8 @@ fn eval(node, env) {
     val_fn(node.params, node.body, env)
 
   else if t == "call" then
-    let f = eval(node_fn_expr(node), env) in
+    let f0 = eval(node_fn_expr(node), env) in
+    let f = if typ.of(f0) == "record" && rec.has(f0, "t") then f0 else val_record(f0) in
     let args = list.map(node.args, fn(a) { eval(a, env) }) in
     apply(f, args)
 
@@ -325,8 +326,7 @@ fn apply(f, args) {
   else if f.t == "builtin_fn" then
     apply_builtin_fn(f.name, args)
   else if f.t == "module_method" then
-    { t: "native_call", path: f.path, method: f.method, args: args }
-  else
+    apply_builtin_fn(str.concat([f.path, ".", f.method]), args)  else
     { t: "error", msg: str.concat(["call on non-fn: ", f.t]) }
 }
 
@@ -364,6 +364,23 @@ fn apply_builtin_fn(name, args) {
   else if name == "str.starts_with" then
     val_bool(str.starts_with(list.get(args, 0).v, list.get(args, 1).v))
   else if name == "str.trim"    then val_text(str.trim(list.get(args, 0).v))
+  else if name == "int.parse" then val_int(int_mod.parse(list.get(args, 0).v).v)
+  else if name == "int.pow" then val_int(int_mod.pow(list.get(args, 0).v, list.get(args, 1).v))
+  else if name == "str.lower"   then val_text(str.lower(list.get(args, 0).v))
+  else if name == "result.ok" then val_record({ t: val_text("ok"), v: list.get(args, 0) })
+  else if name == "result.err" then val_record({ t: val_text("err"), e: list.get(args, 0) })
+  else if name == "result.andThen" || name == "result.and_then" then
+    let r = list.get(args, 0) in
+    let f = list.get(args, 1) in
+    if r.t == "record" && rec.has(r.v, "t") && rec.get(r.v, "t").v == "ok" then apply(f, [rec.get(r.v, "v")]) else r
+  else if name == "str.lines"   then val_list(list.map(str.split(list.get(args, 0).v, "\n"), fn(s) { val_text(s) }))
+  else if name == "result.unwrap_ok" then
+    let r = list.get(args, 0) in
+    if r.t == "record" && rec.has(r.v, "v") then rec.get(r.v, "v") else val_null()
+  else if name == "result.unwrap_err" then
+    let r = list.get(args, 0) in
+    if r.t == "record" && rec.has(r.v, "e") then rec.get(r.v, "e") else val_null()
+  else if name == "str.split_lines" then val_list(list.map(str.split(list.get(args, 0).v, "\n"), fn(s) { val_text(s) }))
   else if name == "rec.has"     then val_bool(rec.has(list.get(args, 0).v, list.get(args, 1).v))
   else if name == "rec.get"     then rec.get(list.get(args, 0).v, list.get(args, 1).v)
   else if name == "rec.set"     then
@@ -525,14 +542,26 @@ fn eval_module(module_node) {
   result.val
 }
 
+fn match_record_pattern(subject, pat) {
+  if subject.t != "record" then false
+  else if pat.t != "rec" then false
+  else list.all(pat.fields, fn(f) {
+    let k = if rec.has(f, "key") then f.key else f.k in
+    if !rec.has(subject.v, k) then false
+    else
+      let pv = if rec.has(f, "val") then f.val else f.v in
+      if pv.t == "var" then true else values_eq(rec.get(subject.v, k), eval(pv, []))
+  })
+}
+
 fn eval_match(subject, arms, env) {
   if list.len(arms) == 0 then val_null()
   else
     let arm = list.get(arms, 0) in
     let rest = list.drop(arms, 1) in
     let pat = arm.pat in
-    // Wildcard: var named "_" or actual wildcard
     if pat.t == "var" && pat.v == "_" then eval(arm.body, env)
+    else if match_record_pattern(subject, pat) then eval(arm.body, env)
     else
       let pat_val = eval(pat, env) in
       if values_eq(subject, pat_val) then eval(arm.body, env)

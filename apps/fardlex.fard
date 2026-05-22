@@ -38,6 +38,27 @@ fn is_keyword(w) {
 fn peek(chars, i) {
   if i < list.len(chars) then list.get(chars, i) else ""
 }
+fn decode_escape(ch) {
+  if ch == "n" then "\n"
+  else if ch == "t" then "\t"
+  else if ch == "r" then "r"
+  else if ch == "\\" then "\\"
+  else if ch == "\"" then "\""
+  else ch
+}
+
+fn decode_string_raw(s) {
+  let chars = str.split(s, "") in
+  let n = list.len(chars) in
+  let r = list.fold(list.build(n, fn(i) { i }), { out: [], skip: false }, fn(a, i) {
+    if a.skip then { out: a.out, skip: false }
+    else
+      let ch = list.get(chars, i) in
+      if ch == "\\" && i + 1 < n then { out: list.append(a.out, decode_escape(list.get(chars, i + 1))), skip: true }
+      else { out: list.append(a.out, ch), skip: false }
+  }) in
+  str.concat(r.out)
+}
 
 fn scan_line_comment(chars, n, idx) {
   let r = list.fold(list.build(n - idx, fn(j) { j }), { end: idx, done: false }, fn(a, j) {
@@ -58,7 +79,8 @@ fn scan_string(chars, n, idx, src) {
     else if ch == "\"" then { done: true, end: ci + 1, esc: false }
     else { done: false, end: ci + 1, esc: false }
   }) in
-  let v = str.slice(src, idx + 1, r.end - 1) in
+  let raw = str.slice(src, idx + 1, r.end - 1) in
+  let v = decode_string_raw(raw) in
   { end: r.end, v: v }
 }
 
@@ -70,7 +92,8 @@ fn scan_backtick(chars, n, idx, src) {
     if ch == "`" then { done: true, end: ci + 1 }
     else { done: false, end: ci + 1 }
   }) in
-  let v = str.slice(src, idx + 1, r.end - 1) in
+  let raw = str.slice(src, idx + 1, r.end - 1) in
+  let v = decode_string_raw(raw) in
   { end: r.end, v: v }
 }
 
