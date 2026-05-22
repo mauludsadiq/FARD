@@ -19,6 +19,27 @@ cargo build --release --bin fardrun
 
 -----
 
+## Stage 8 — Pure FARD Evaluation
+
+FARD now includes a Stage 8 pure-FARD evaluation path. In `--fard-eval` mode, `fardrun` routes source through the FARD lexer, parser, and evaluator instead of relying only on the Rust evaluator path.
+
+```bash
+cargo build --release --bin fardrun
+PATH="$PWD/target/release:$PATH" tests/run_stage8_equivalence.sh
+```
+
+Expected output:
+
+```text
+stage8 equivalence passed
+```
+
+The equivalence harness runs the generated kitchen-sink programs through both execution paths and diffs `result.json` outputs. Current coverage includes records, strings, lists, `int.parse`, `int.pow`, result propagation with `?`, `result.ok`, `result.err`, `result.andThen`, `result.unwrap_ok`, and record-pattern matching in `match` expressions.
+
+This makes the self-hosting path concrete: lexer -> parser -> evaluator can execute the same language fixtures as the normal runtime for the Stage 8 covered surface.
+
+-----
+
 ## Built with FARD
 
 **Qasim** — cryptographically verifiable financial state engine. Ingests signed fills, instruments, corporate actions, and multi-source price feeds. Computes recency-weighted consensus prices, Greeks, Monte Carlo risk, and unified NAV across public, private, and derivatives books. Every output is traceable:
@@ -304,7 +325,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator | **eval suite passing** — `test_fard_eval*` and `test_self_host_eval*` pass; self-host evaluator env fixed with `std/menv`; `--fard-eval` smoke returns `fib10=55`, `greeting="hello world"` |
+| 8 | FARD stdlib + FARD evaluator | **equivalence passing** — Stage 8 pure-FARD eval runs lexer → parser → evaluator through `--fard-eval`; `tests/run_stage8_equivalence.sh` passes across kitchen-sink fixtures covering records, strings, lists, int ops, result propagation, result helpers, and record-pattern match |
 
 ### Compiler Components
 
