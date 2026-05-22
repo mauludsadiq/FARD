@@ -1,0 +1,31 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval return unwraps from function call" {
+  let f = {
+    t: "fn",
+    params: ["x"],
+    body: { t: "return", expr: { t: "var", v: "x" } }
+  } in
+  let call = { t: "call", fn_n: f, args: [{ t: "int", v: 42 }] } in
+  ev.eval(call, ev.env_empty()).v == 42
+}
+
+test "fard_eval return propagates through let body" {
+  let f = {
+    t: "fn",
+    params: [],
+    body: {
+      t: "let",
+      name: "x",
+      val: { t: "int", v: 42 },
+      body: { t: "return", expr: { t: "var", v: "x" } }
+    }
+  } in
+  let call = { t: "call", fn_n: f, args: [] } in
+  ev.eval(call, ev.env_empty()).v == 42
+}
+
+test "fard_eval top-level return remains return_val" {
+  let r = ev.eval({ t: "return", expr: { t: "int", v: 9 } }, ev.env_empty()) in
+  r.t == "return_val" && r.v.v == 9
+}

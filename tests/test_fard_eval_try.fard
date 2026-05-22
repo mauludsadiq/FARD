@@ -1,0 +1,39 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval try unwraps ok record" {
+  let node = {
+    t: "try",
+    expr: {
+      t: "record",
+      fields: [
+        { key: "t", val: { t: "str", v: "ok" } },
+        { key: "v", val: { t: "int", v: 42 } }
+      ]
+    }
+  } in
+  let r = ev.eval(node, ev.env_empty()) in
+  r.t == "int" && r.v == 42
+}
+
+test "fard_eval try propagates ok false record" {
+  let node = {
+    t: "try",
+    expr: {
+      t: "record",
+      fields: [
+        { key: "ok", val: { t: "bool", v: false } },
+        { key: "err", val: { t: "str", v: "bad" } }
+      ]
+    }
+  } in
+  let r = ev.eval(node, ev.env_empty()) in
+  r.t == "error" &&
+  r.msg == ev.val_text("bad") &&
+  r.propagate == true
+}
+
+test "fard_eval try returns ordinary value unchanged" {
+  let node = { t: "try", expr: { t: "int", v: 7 } } in
+  let r = ev.eval(node, ev.env_empty()) in
+  r.t == "int" && r.v == 7
+}

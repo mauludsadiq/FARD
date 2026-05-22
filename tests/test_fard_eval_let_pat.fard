@@ -1,0 +1,37 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval let_pat list destructures names" {
+  let node = {
+    t: "let_pat",
+    pat: { t: "list_pat", names: ["a", "b"], rest: null },
+    val: { t: "list", items: [{ t: "int", v: 40 }, { t: "int", v: 2 }] },
+    body: { t: "bin", op: "+", left: { t: "var", v: "a" }, right: { t: "var", v: "b" } }
+  } in
+  ev.eval(node, ev.env_empty()).v == 42
+}
+
+test "fard_eval let_pat list destructures rest" {
+  let node = {
+    t: "let_pat",
+    pat: { t: "list_pat", names: ["head"], rest: "tail" },
+    val: { t: "list", items: [{ t: "int", v: 1 }, { t: "int", v: 2 }, { t: "int", v: 3 }] },
+    body: { t: "var", v: "tail" }
+  } in
+  let r = ev.eval(node, ev.env_empty()) in
+  r.t == "list" &&
+  list.len(r.v) == 2 &&
+  list.get(r.v, 0).v == 2 &&
+  list.get(r.v, 1).v == 3
+}
+
+test "fard_eval let_pat record destructures fields" {
+  let node = {
+    t: "let_pat",
+    pat: { t: "rec_pat", fields: [{ name: "x", key: "a" }, { name: "y", key: "b" }] },
+    val: { t: "record", fields: [{ key: "a", val: { t: "int", v: 10 } }, { key: "b", val: { t: "int", v: 32 } }] },
+    body: { t: "bin", op: "+", left: { t: "var", v: "x" }, right: { t: "var", v: "y" } }
+  } in
+  ev.eval(node, ev.env_empty()).v == 42
+}
+
+import("std/list") as list

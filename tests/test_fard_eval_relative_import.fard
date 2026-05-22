@@ -1,0 +1,22 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval resolves relative import and calls imported function" {
+  let module = {
+    t: "module",
+    items: [
+      { t: "import", path: "./tests/import_fixture/math_mod", alias: "math" },
+      {
+        t: "expr_item",
+        expr: {
+          t: "call",
+          fn_n: { t: "get", obj: { t: "var", v: "math" }, field: "add" },
+          args: [
+            { t: "get", obj: { t: "var", v: "math" }, field: "forty" },
+            { t: "int", v: 2 }
+          ]
+        }
+      }
+    ]
+  } in
+  ev.eval_module_with_env(module, ev.env_empty()).v == 42
+}

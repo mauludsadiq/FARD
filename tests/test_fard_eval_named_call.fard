@@ -1,0 +1,50 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval named_call reorders args by function params" {
+  let fn_node = {
+    t: "fn",
+    params: ["x", "y"],
+    body: {
+      t: "bin",
+      op: "-",
+      left: { t: "var", v: "x" },
+      right: { t: "var", v: "y" }
+    }
+  } in
+  let call = {
+    t: "named_call",
+    fn_n: fn_node,
+    named_args: [
+      { name: "y", val: { t: "int", v: 2 } },
+      { name: "x", val: { t: "int", v: 10 } }
+    ]
+  } in
+  ev.eval(call, ev.env_empty()).v == 8
+}
+
+test "fard_eval named_call missing arg defaults to null" {
+  let fn_node = {
+    t: "fn",
+    params: ["x", "missing"],
+    body: { t: "var", v: "missing" }
+  } in
+  let call = {
+    t: "named_call",
+    fn_n: fn_node,
+    named_args: [
+      { name: "x", val: { t: "int", v: 1 } }
+    ]
+  } in
+  ev.eval(call, ev.env_empty()).t == "null"
+}
+
+test "fard_eval named_call on non-function returns error" {
+  let call = {
+    t: "named_call",
+    fn_n: { t: "int", v: 1 },
+    named_args: [
+      { name: "x", val: { t: "int", v: 2 } }
+    ]
+  } in
+  ev.eval(call, ev.env_empty()).t == "error"
+}

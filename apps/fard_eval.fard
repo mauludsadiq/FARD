@@ -7,6 +7,9 @@ import("std/rec")   as rec
 import("std/str")   as str
 import("std/int")   as int_mod
 import("std/type")  as typ
+import("../packages/fs-core/main") as fs
+import("fardlex") as lex
+import("fardparse") as parse
 
 // ── Value constructors ────────────────────────────────────────────────────────
 
@@ -24,6 +27,25 @@ fn is_truthy(val) {
   else if val.t == "bool" then val.v
   else if val.t == "int" then val.v != 0
   else true
+}
+
+fn while_step(init_state, cond_fn, body_fn) {
+  let loop = while { state: init_state, steps: 0 } fn(acc) {
+    is_truthy(apply(cond_fn, [acc.state]))
+  } fn(acc) {
+    {
+      state: apply(body_fn, [acc.state]),
+      steps: acc.steps + 1
+    }
+  } in
+  {
+    t: "record",
+    v: {
+      value: loop.value.state,
+      steps: val_int(loop.value.steps),
+      chain_hex: val_text("0")
+    }
+  }
 }
 
 fn parse_int(s) {
@@ -55,6 +77,49 @@ fn env_set_many(env, pairs) {
   list.fold(pairs, env, fn(acc, p) { env_set(acc, p.name, p.val) })
 }
 
+fn env_to_record_value(env) {
+  val_record(list.fold(env, {}, fn(acc, entry) {
+    rec.set(acc, entry.name, entry.val)
+  }))
+}
+
+fn is_relative_import_path(path) {
+  str.starts_with(path, "./") || str.starts_with(path, "../")
+}
+
+fn resolve_import_path(path) {
+  if str.ends_with(path, ".fard") then path else str.concat([path, ".fard"])
+}
+
+fn eval_relative_import(path, env) {
+  let read_result = fs.read(resolve_import_path(path)) in
+  let source = if rec.has(read_result, "ok") then read_result.ok else read_result in
+  let tokens = lex.tokenize(source) in
+  let parsed = parse.parse_module(tokens, 0) in
+  if !parsed.ok then { t: "error", msg: parsed.err } else
+    eval_module_with_env_result(parsed.node, env)
+}
+
+fn bind_pattern(env, pat, val) {
+  if pat.t == "list_pat" then
+    if val.t != "list" then { t: "error", msg: "let_pat list_pat expected list" } else
+      let names = pat.names in
+      let env1 = list.fold(list.range(0, list.len(names)), env, fn(acc, i) {
+        env_set(acc, list.get(names, i), list.get(val.v, i))
+      }) in
+      if rec.has(pat, "rest") && pat.rest != null then
+        env_set(env1, pat.rest, val_list(list.drop(val.v, list.len(names))))
+      else
+        env1
+  else if pat.t == "rec_pat" then
+    if val.t != "record" then { t: "error", msg: "let_pat rec_pat expected record" } else
+      list.fold(pat.fields, env, fn(acc, f) {
+        env_set(acc, f.name, rec.get(val.v, f.key))
+      })
+  else
+    { t: "error", msg: str.concat(["unsupported let_pat pattern: ", pat.t]) }
+}
+
 // ── Binary operators ──────────────────────────────────────────────────────────
 
 fn eval_bin(op, l, r) {
@@ -82,8 +147,32 @@ fn eval_unary(op, v) {
 
 // ── Core evaluator ────────────────────────────────────────────────────────────
 
+fn node_t(node) {
+  if rec.has(node, "t") then node.t else node.op
+}
+
+fn node_var_name(node) {
+  if rec.has(node, "v") then node.v else node.name
+}
+
+fn node_bin_op(node) {
+  if rec.has(node, "op2") then node.op2 else node.op
+}
+
+fn node_then(node) {
+  if rec.has(node, "then_n") then node.then_n else node.then_br
+}
+
+fn node_else(node) {
+  if rec.has(node, "else_n") then node.else_n else node.else_br
+}
+
+fn node_fn_expr(node) {
+  if rec.has(node, "fn_n") then node.fn_n else node.fn_
+}
+
 fn eval(node, env) {
-  let t = node.t in
+  let t = node_t(node) in
 
   if t == "int"   then val_int(parse_int(str.from(node.v)))
   else if t == "float" then val_float(node.v)
@@ -91,9 +180,16 @@ fn eval(node, env) {
   else if t == "null"  then val_null()
   else if t == "str"   then val_text(node.v)
 
+  else if t == "str_interp" then
+    val_text(str.concat(list.map(node.parts, fn(part) {
+      if part.kind == "text" then part.v
+      else str.from(val_to_native(eval(part.expr, env)))
+    })))
+
   else if t == "var" then
-    let v = env_get(env, node.v) in
-    if v == null then { t: "error", msg: str.concat(["unbound: ", node.v]) }
+    let name = node_var_name(node) in
+      let v = env_get(env, name) in
+    if v == null then { t: "error", msg: str.concat(["unbound: ", name]) }
     else if v.t == "rec_ref" then
       // Recursive reference - look up the actual fn in env
       let actual = env_get(env, v.name) in
@@ -104,21 +200,38 @@ fn eval(node, env) {
   else if t == "bin" then
     let l = eval(node.left, env) in
     let r = eval(node.right, env) in
-    eval_bin(node.op, l, r)
+    eval_bin(node_bin_op(node), l, r)
 
   else if t == "unary" then
     let v = eval(node.expr, env) in
     eval_unary(node.op, v)
 
+  else if t == "return" then
+    { t: "return_val", v: eval(node.expr, env) }
+
+  else if t == "try" then
+    let r = eval(node.expr, env) in
+    if r.t == "record" && rec.has(r.v, "ok") && rec.get(r.v, "ok").t == "bool" && rec.get(r.v, "ok").v == false then
+      { t: "error", msg: rec.get(r.v, "err"), propagate: true }
+    else if r.t == "record" && rec.has(r.v, "t") && rec.get(r.v, "t").t == "text" && rec.get(r.v, "t").v == "ok" && rec.has(r.v, "v") then
+      rec.get(r.v, "v")
+    else
+      r
+
   else if t == "if" then
     let cond = eval(node.cond, env) in
     if is_truthy(cond)
-      then eval(node.then_n, env)
-      else eval(node.else_n, env)
+      then eval(node_then(node), env)
+      else eval(node_else(node), env)
 
   else if t == "let" then
     let v = eval(node.val, env) in
     eval(node.body, env_set(env, node.name, v))
+
+  else if t == "let_pat" then
+    let v = eval(node.val, env) in
+    let env2 = bind_pattern(env, node.pat, v) in
+    if typ.of(env2) == "record" && rec.has(env2, "t") && env2.t == "error" then env2 else eval(node.body, env2)
 
   else if t == "list" then
     val_list(list.map(node.items, fn(item) { eval(item, env) }))
@@ -151,7 +264,7 @@ fn eval(node, env) {
     val_fn(node.params, node.body, env)
 
   else if t == "call" then
-    let f = eval(node.fn_n, env) in
+    let f = eval(node_fn_expr(node), env) in
     let args = list.map(node.args, fn(a) { eval(a, env) }) in
     apply(f, args)
 
@@ -164,10 +277,13 @@ fn eval(node, env) {
     eval_match(subject, node.arms, env)
 
   else if t == "spread" then
-    // Record spread: { ...base, key: val }
     let base = eval(node.obj, env) in
-    if base.t == "record" then base
-    else val_null()
+    if base.t != "record" then
+      { t: "error", msg: "spread expected record" }
+    else
+      val_record(list.fold(node.fields, base.v, fn(acc, f) {
+        rec.set(acc, f.key, eval(f.val, env))
+      }))
 
   else if t == "lambda" then
     // fn(x) => expr shorthand
@@ -175,7 +291,7 @@ fn eval(node, env) {
 
   else if t == "named_call" then
     // f(key: val, ...) — reorder args by param names
-    let f = eval(node.fn_n, env) in
+    let f = eval(node_fn_expr(node), env) in
     let arg_map = list.fold(node.named_args, {}, fn(acc, a) {
       rec.set(acc, a.name, eval(a.val, env))
     }) in
@@ -194,7 +310,8 @@ fn apply(f, args) {
       { name: list.get(f.params, i),
         val: if i < list.len(args) then list.get(args, i) else val_null() }
     }) in
-    eval(f.body, env_set_many(f.closure_env, pairs))
+    let r = eval(f.body, env_set_many(f.closure_env, pairs)) in
+      if r.t == "return_val" then r.v else r
   else if f.t == "rec_fn" then
     let n = list.len(f.params) in
     let pairs = list.build(n, fn(i) {
@@ -203,7 +320,8 @@ fn apply(f, args) {
     }) in
     // Update env so self-reference resolves to this fn
     let self_env = env_set(f.env, f.name, f) in
-    eval(f.body, env_set_many(self_env, pairs))
+    let r = eval(f.body, env_set_many(self_env, pairs)) in
+      if r.t == "return_val" then r.v else r
   else if f.t == "builtin_fn" then
     apply_builtin_fn(f.name, args)
   else if f.t == "module_method" then
@@ -331,9 +449,9 @@ fn apply_builtin_fn(name, args) {
 
 // ── Module evaluator ──────────────────────────────────────────────────────────
 
-fn eval_module_with_env(module_node, initial_env) {
+fn eval_module_with_env_result(module_node, initial_env) {
   let items = module_node.items in
-  let result = list.fold(items, { env: initial_env, val: val_null() }, fn(acc, item) {
+  list.fold(items, { env: initial_env, val: val_null() }, fn(acc, item) {
     if item.t == "let_item" then
       let v = eval(item.val, acc.env) in
       { env: env_set(acc.env, item.name, v), val: v }
@@ -344,15 +462,28 @@ fn eval_module_with_env(module_node, initial_env) {
       let f2 = { t: "rec_fn", name: item.name, params: item.params, body: item.body, env: env2 } in
       let env3 = env_set(acc.env, item.name, f2) in
       { env: env3, val: f2 }
+    else if item.t == "while_item" then
+      let init_v = eval(item.init, acc.env) in
+      let cond_f = eval(item.cond, acc.env) in
+      let body_f = eval(item.body, acc.env) in
+      let v = while_step(init_v, cond_f, body_f) in
+      { env: acc.env, val: v }
     else if item.t == "import" then
-      // Already injected via initial_env — skip
-      acc
+      if is_relative_import_path(item.path) then
+        let imported = eval_relative_import(item.path, acc.env) in
+        if typ.of(imported) == "record" && rec.has(imported, "t") && imported.t == "error" then { env: acc.env, val: imported }
+        else { env: env_set(acc.env, item.alias, env_to_record_value(imported.env)), val: imported.val }
+      else
+        acc
     else if item.t == "expr_item" then
       let v = eval(item.expr, acc.env) in
       { env: acc.env, val: v }
     else acc
-  }) in
-  result.val
+  })
+}
+
+fn eval_module_with_env(module_node, initial_env) {
+  eval_module_with_env_result(module_node, initial_env).val
 }
 
 fn eval_module(module_node) {
@@ -375,6 +506,12 @@ fn eval_module(module_node) {
       let f = { t: "rec_fn", name: item.name, params: item.params, body: item.body, env: env1 } in
       let env2 = env_set(acc.env, item.name, f) in
       { env: env2, val: f }
+    else if item.t == "while_item" then
+      let init_v = eval(item.init, acc.env) in
+      let cond_f = eval(item.cond, acc.env) in
+      let body_f = eval(item.body, acc.env) in
+      let v = while_step(init_v, cond_f, body_f) in
+      { env: acc.env, val: v }
     else if item.t == "import" then
       // Import is handled at load time by the Rust host
       // In fard_eval context, we note it but can't resolve modules
@@ -432,5 +569,7 @@ fn val_to_native(val) {
 
 export { eval, apply, apply_builtin_fn, eval_module, eval_module_with_env, val_to_native, eval_bin, eval_unary,
          val_int, val_float, val_bool, val_null, val_text, val_list, val_record, val_fn,
-         env_empty, env_set, env_get, env_set_many,
-         is_truthy, values_eq, parse_int }
+         env_empty, env_set, env_get, env_set_many, bind_pattern, env_to_record_value,
+         is_relative_import_path, resolve_import_path, eval_relative_import, eval_module_with_env_result,
+         is_truthy, while_step, values_eq, parse_int,
+         node_t, node_var_name, node_bin_op, node_then, node_else, node_fn_expr }

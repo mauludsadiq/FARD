@@ -1,0 +1,49 @@
+import("../apps/fard_eval") as ev
+
+test "fard_eval spread merges record fields" {
+  let node = {
+    t: "spread",
+    obj: {
+      t: "record",
+      fields: [
+        { key: "a", val: { t: "int", v: 1 } }
+      ]
+    },
+    fields: [
+      { key: "b", val: { t: "int", v: 2 } }
+    ]
+  } in
+  let r = ev.eval(node, ev.env_empty()) in
+  r.t == "record" &&
+  r.v.a.v == 1 &&
+  r.v.b.v == 2
+}
+
+test "fard_eval spread overrides existing fields" {
+  let node = {
+    t: "spread",
+    obj: {
+      t: "record",
+      fields: [
+        { key: "a", val: { t: "int", v: 1 } }
+      ]
+    },
+    fields: [
+      { key: "a", val: { t: "int", v: 42 } }
+    ]
+  } in
+  let r = ev.eval(node, ev.env_empty()) in
+  r.t == "record" &&
+  r.v.a.v == 42
+}
+
+test "fard_eval spread rejects non-record base" {
+  let node = {
+    t: "spread",
+    obj: { t: "int", v: 1 },
+    fields: [
+      { key: "a", val: { t: "int", v: 42 } }
+    ]
+  } in
+  ev.eval(node, ev.env_empty()).t == "error"
+}
