@@ -304,7 +304,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator | **passing smoke** — `--fard-eval` executed recursion and string/list path; `fib10=55`, `greeting="hello world"` |
+| 8 | FARD stdlib + FARD evaluator | **eval suite passing** — `test_fard_eval*` and `test_self_host_eval*` pass; self-host evaluator env fixed with `std/menv`; `--fard-eval` smoke returns `fib10=55`, `greeting="hello world"` |
 
 ### Compiler Components
 
