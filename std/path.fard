@@ -1,17 +1,16 @@
 /// std/path — filesystem path helpers
 
-import("std/path") as _path
 import("std/str")  as str
 import("std/list") as list
 
 // Native wrappers
-fn join(a, b)     { _path.join(a, b) }
-fn join_all(xs)   { _path.join_all(xs) }
-fn base(p)        { _path.base(p) }
-fn dir(p)         { _path.dir(p) }
-fn ext(p)         { _path.ext(p) }
-fn is_abs(p)      { _path.is_abs(p) }
-fn normalize(p)   { _path.normalize(p) }
+fn join(a, b)     { path.join(a, b) }
+fn join_all(xs)   { path.join_all(xs) }
+fn base(p)        { path.base(p) }
+fn dir(p)         { path.dir(p) }
+fn ext(p)         { path.ext(p) }
+fn is_abs(p)      { path.is_abs(p) }
+fn normalize(p)   { path.normalize(p) }
 
 // Pure helpers
 fn stem(p) {

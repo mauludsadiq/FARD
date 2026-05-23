@@ -12619,8 +12619,10 @@ impl ModuleLoader {
         let exports = self.with_current(callee_id, |slf| {
             let exports = if name.starts_with("std/") {
                 // Check if a pure-FARD override exists in std/ directory
+                // But skip override if we are already loading this module (cycle prevention)
                 let fard_override = slf.root_dir.join(format!("{}.fard", name));
-                if fard_override.exists() {
+                let already_loading = slf.stack.contains(&name.to_string());
+                if fard_override.exists() && !already_loading {
                     let src = fs::read_to_string(&fard_override)
                         .map_err(|e| anyhow!("failed to read {}: {}", fard_override.display(), e))?;
                     let file = fard_override.to_string_lossy().to_string();

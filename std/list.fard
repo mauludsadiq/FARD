@@ -1,18 +1,16 @@
 /// std/list — pure FARD list library built on native primitives
 /// Native primitives accessed via std/list: len, get, append, tail, fold, build, concat
 
-import("std/list") as _list
-import("std/rec")  as rec
 import("std/str")  as str
 
 // Aliases for native primitives
-fn _len(xs)        { _list.len(xs) }
-fn _get(xs, i)     { _list.get(xs, i) }
-fn _append(xs, x)  { _list.append(xs, x) }
-fn _tail(xs)       { _list.tail(xs) }
-fn _fold(xs, i, f) { _list.fold(xs, i, f) }
-fn _build(n, f)    { _list.build(n, f) }
-fn _concat(xss)    { _list.concat(xss) }
+fn _len(xs)        { list.len(xs) }
+fn _get(xs, i)     { list.get(xs, i) }
+fn _append(xs, x)  { list.append(xs, x) }
+fn _tail(xs)       { list.tail(xs) }
+fn _fold(xs, i, f) { list.fold(xs, i, f) }
+fn _build(n, f)    { list.build(n, f) }
+fn _concat(xss)    { list.concat(xss) }
 
 /// std/list — pure FARD list library
 /// Primitives (native): len, get, append, tail, fold, build, concat

@@ -1,16 +1,14 @@
 /// std/str — pure FARD string library built on native primitives
 
-import("std/str") as _str
-import("std/list") as _list
 
 // Native primitive aliases
-fn _len(s)          { _str.len(s) }
-fn _concat(xs)      { _str.concat(xs) }
-fn _char_at(s, i)   { _str.char_at(s, i) }
-fn _slice(s, a, b)  { _str.slice(s, a, b) }
-fn _split(s, sep)   { _str.split(s, sep) }
-fn _trim(s)         { _str.trim(s) }
-fn _contains(s, t)  { _str.contains(s, t) }
+fn _len(s)          { str.len(s) }
+fn _concat(xs)      { str.concat(xs) }
+fn _char_at(s, i)   { str.char_at(s, i) }
+fn _slice(s, a, b)  { str.slice(s, a, b) }
+fn _split(s, sep)   { str.split(s, sep) }
+fn _trim(s)         { str.trim(s) }
+fn _contains(s, t)  { str.contains(s, t) }
 
 // starts_with: does s start with prefix?
 fn starts_with(s, prefix) {
@@ -30,32 +28,32 @@ fn ends_with(s, suffix) {
 // replace: replace all occurrences of old with new
 fn replace(s, old, new_str) {
   let parts = _split(s, old) in
-  _str.join(parts, new_str)
+  str.join(parts, new_str)
 }
 
 // upper: uppercase (ASCII only)
 fn upper(s) {
   let n = _len(s) in
-  let chars = _list.build(n, fn(i) {
+  let chars = list.build(n, fn(i) {
     let c = _char_at(s, i) in
     if c >= 97 && c <= 122 then c - 32 else c
   }) in
-  _str.from_chars(chars)
+  str.from_chars(chars)
 }
 
 // lower: lowercase (ASCII only)
 fn lower(s) {
   let n = _len(s) in
-  let chars = _list.build(n, fn(i) {
+  let chars = list.build(n, fn(i) {
     let c = _char_at(s, i) in
     if c >= 65 && c <= 90 then c + 32 else c
   }) in
-  _str.from_chars(chars)
+  str.from_chars(chars)
 }
 
 // repeat: repeat string n times
 fn repeat(s, n) {
-  _concat(_list.build(n, fn(_) { s }))
+  _concat(list.build(n, fn(_) { s }))
 }
 
 // pad_left: pad string to length with char
@@ -77,7 +75,7 @@ fn index_of(s, needle) {
   let sl = _len(s) in
   let nl = _len(needle) in
   if nl > sl then -1 else
-    let result = _list.fold(_list.build(sl - nl + 1, fn(i) { i }), -1, fn(acc, i) {
+    let result = list.fold(list.build(sl - nl + 1, fn(i) { i }), -1, fn(acc, i) {
       if acc >= 0 then acc
       else if _slice(s, i, i + nl) == needle then i
       else -1
@@ -118,6 +116,18 @@ fn concat(xs) { _concat(xs) }
 // char_at: character code at index (alias)
 fn char_at(s, i) { _char_at(s, i) }
 
-export { starts_with, ends_with, replace, upper, lower, repeat,
+
+// chars: split string into list of single-character strings
+fn chars(s) {
+  let n = _len(s) in
+  list.build(n, fn(i) { _char_at(s, i) })
+}
+
+// from_chars: join list of chars into string
+fn from_chars(cs) {
+  _concat(cs)
+}
+
+export { starts_with, ends_with, replace, upper, lower, repeat, chars, from_chars,
          pad_left, pad_right, index_of, lines, words, join, from,
          len, slice, split, trim, contains, concat, char_at }

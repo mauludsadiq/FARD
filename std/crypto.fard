@@ -1,22 +1,20 @@
 /// std/crypto — cryptographic primitives
 
-import("std/crypto") as _crypto
-import("std/bytes")  as _bytes
 import("std/str")    as str
 
 // Native wrappers
-fn hmac_sha256(key_hex, msg)     { _crypto.hmac_sha256(key_hex, msg) }
-fn sha512(data)                  { _crypto.sha512(data) }
-fn aes_encrypt(key, iv, data)    { _crypto.aes_encrypt(key, iv, data) }
-fn aes_decrypt(key, iv, data)    { _crypto.aes_decrypt(key, iv, data) }
-fn ed25519_public_key(secret)    { _crypto.ed25519_public_key(secret) }
-fn ed25519_sign(secret, msg)     { _crypto.ed25519_sign(secret, msg) }
-fn ed25519_verify(pub, msg, sig) { _crypto.ed25519_verify(pub, msg, sig) }
-fn merkle_root(leaves)           { _crypto.merkle_root(leaves) }
+fn hmac_sha256(key_hex, msg)     { crypto.hmac_sha256(key_hex, msg) }
+fn sha512(data)                  { crypto.sha512(data) }
+fn aes_encrypt(key, iv, data)    { crypto.aes_encrypt(key, iv, data) }
+fn aes_decrypt(key, iv, data)    { crypto.aes_decrypt(key, iv, data) }
+fn ed25519_public_key(secret)    { crypto.ed25519_public_key(secret) }
+fn ed25519_sign(secret, msg)     { crypto.ed25519_sign(secret, msg) }
+fn ed25519_verify(pub, msg, sig) { crypto.ed25519_verify(pub, msg, sig) }
+fn merkle_root(leaves)           { crypto.merkle_root(leaves) }
 
 // Pure helpers
 fn hmac_hex(key, msg) {
-  hmac_sha256(_bytes.to_hex(_bytes.of_str(key)), msg)
+  hmac_sha256(bytes.to_hex(bytes.of_str(key)), msg)
 }
 
 fn constant_time_eq(a, b) {

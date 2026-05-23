@@ -1,13 +1,12 @@
 /// std/hash — cryptographic hashing
 
-import("std/hash") as _hash
 
 // Native wrappers
-fn sha256_text(s)   { _hash.sha256_text(s) }
-fn sha256_bytes(b)  { _hash.sha256_bytes(b) }
-fn sha512_bytes(b)  { _hash.sha512_bytes(b) }
-fn blake3_bytes(b)  { _hash.blake3_bytes(b) }
-fn structural(v)    { _hash.structural(v) }
+fn sha256_text(s)   { hash.sha256_text(s) }
+fn sha256_bytes(b)  { hash.sha256_bytes(b) }
+fn sha512_bytes(b)  { hash.sha512_bytes(b) }
+fn blake3_bytes(b)  { hash.blake3_bytes(b) }
+fn structural(v)    { hash.structural(v) }
 
 // Pure FARD helpers
 fn short(s) {

@@ -1,43 +1,42 @@
 /// std/result — result type helpers
 
-import("std/result") as _res
 
 // Constructors
-fn ok(v)   { _res.ok(v) }
-fn err(e)  { _res.err(e) }
+fn ok(v)   { result.ok(v) }
+fn err(e)  { result.err(e) }
 
 // Predicates (pure FARD)
-fn is_ok(r)  { _res.is_ok(r) }
-fn is_err(r) { _res.is_err(r) }
+fn is_ok(r)  { result.is_ok(r) }
+fn is_err(r) { result.is_err(r) }
 
 // Transforms (pure FARD)
 fn map(r, f) {
-  if is_ok(r) then ok(f(_res.unwrap_ok(r)))
+  if is_ok(r) then ok(f(result.unwrap_ok(r)))
   else r
 }
 
 fn map_err(r, f) {
-  if is_err(r) then err(f(_res.unwrap_err(r)))
+  if is_err(r) then err(f(result.unwrap_err(r)))
   else r
 }
 
 fn and_then(r, f) {
-  if is_ok(r) then f(_res.unwrap_ok(r))
+  if is_ok(r) then f(result.unwrap_ok(r))
   else r
 }
 
 fn or_else(r, f) {
-  if is_err(r) then f(_res.unwrap_err(r))
+  if is_err(r) then f(result.unwrap_err(r))
   else r
 }
 
 fn unwrap_or(r, default_val) {
-  if is_ok(r) then _res.unwrap_ok(r)
+  if is_ok(r) then result.unwrap_ok(r)
   else default_val
 }
 
-fn unwrap_ok(r)  { _res.unwrap_ok(r) }
-fn unwrap_err(r) { _res.unwrap_err(r) }
+fn unwrap_ok(r)  { result.unwrap_ok(r) }
+fn unwrap_err(r) { result.unwrap_err(r) }
 
 fn from_nullable(v, err_val) {
   if v == null then err(err_val) else ok(v)

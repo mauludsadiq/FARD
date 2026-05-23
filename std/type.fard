@@ -1,20 +1,19 @@
 /// std/type — type inspection in pure FARD
 
-import("std/type") as _type
 
 // of: return type name of value
-fn of(v) { _type.of(v) }
+fn of(v) { type.of(v) }
 
 // Predicates — pure FARD
-fn is_int(v)    { _type.of(v) == "int" }
-fn is_float(v)  { _type.of(v) == "float" }
-fn is_text(v)   { _type.of(v) == "text" }
-fn is_bool(v)   { _type.of(v) == "bool" }
-fn is_null(v)   { _type.of(v) == "unit" }
-fn is_list(v)   { _type.of(v) == "list" }
-fn is_record(v) { _type.of(v) == "record" }
-fn is_fn(v)     { _type.of(v) == "fn" }
-fn is_bytes(v)  { _type.of(v) == "bytes" }
+fn is_int(v)    { type.of(v) == "int" }
+fn is_float(v)  { type.of(v) == "float" }
+fn is_text(v)   { type.of(v) == "text" }
+fn is_bool(v)   { type.of(v) == "bool" }
+fn is_null(v)   { type.of(v) == "unit" }
+fn is_list(v)   { type.of(v) == "list" }
+fn is_record(v) { type.of(v) == "record" }
+fn is_fn(v)     { type.of(v) == "fn" }
+fn is_bytes(v)  { type.of(v) == "bytes" }
 fn is_number(v) { is_int(v) || is_float(v) }
 fn is_truthy(v) { v != null && v != false && v != 0 }
 fn is_falsy(v)  { !is_truthy(v) }

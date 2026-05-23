@@ -1,17 +1,16 @@
 /// std/datetime — date/time helpers
 
-import("std/datetime") as _dt
 import("std/str")      as str
 import("std/int")      as int
 
 // Native wrappers
-fn now()            { _dt.now() }
-fn parse(s, fmt)    { _dt.parse(s, fmt) }
-fn format(ts, fmt)  { _dt.format(ts, fmt) }
-fn add(ts, ms)      { _dt.add(ts, ms) }
-fn sub(ts, ms)      { _dt.sub(ts, ms) }
-fn diff(t0, t1)     { _dt.diff(t0, t1) }
-fn field(ts, f)     { _dt.field(ts, f) }
+fn now()            { datetime.now() }
+fn parse(s, fmt)    { datetime.parse(s, fmt) }
+fn format(ts, fmt)  { datetime.format(ts, fmt) }
+fn add(ts, ms)      { datetime.add(ts, ms) }
+fn sub(ts, ms)      { datetime.sub(ts, ms) }
+fn diff(t0, t1)     { datetime.diff(t0, t1) }
+fn field(ts, f)     { datetime.field(ts, f) }
 
 // Pure helpers
 fn now_ms()         { now() }
