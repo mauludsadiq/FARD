@@ -327,7 +327,7 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator | **equivalence passing** — Stage 8 pure-FARD eval runs lexer → parser → evaluator through `--fard-eval`; `tests/run_stage8_equivalence.sh` passes across kitchen-sink fixtures covering records, strings, lists, int ops, result propagation, result helpers, and record-pattern match |
+| 8 | FARD stdlib + FARD evaluator + native pipeline | **in progress** — fard_eval complete (231 test suites); connected to FARD Prim native backend; verified native MH_EXECUTE: add(10,32)=42, max(10,42)=42, fact(5)=120 via source→lex→parse→lower→OCIR→OMIR→x86-64 |
 
 ### Compiler Components
 
