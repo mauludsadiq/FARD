@@ -1,6 +1,6 @@
 # FARD — ISO EBNF Grammar
 
-**19 May 2026 · v1.7.1 · Stage 8 in progress — 15 stdlib modules in pure FARD, fard_eval.fard**
+**23 May 2026 · v1.7.1 · Stage 8 — fard_eval complete, FARD Prim connected, add(10,32)=42 native**
 
 This document covers the **fardrun** production dialect. All grammar rules and stdlib
 entries verified directly by running test programs against fardrun v1.7.0.
@@ -947,4 +947,4 @@ Import by relative path — not in the package registry.
 
 -----
 
-*Fully verified against fardrun v1.7.1 — 19 May 2026*
+*Fully verified against fardrun v1.7.1 — 23 May 2026*

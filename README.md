@@ -340,11 +340,11 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | `apps/fard_elf.fard` | Linux ELF writer (40 fns, 52KB native ELF) |
 | `apps/fard_obj.fard` | Relocatable object format |
 | `apps/fard_link.fard` | Native linker — resolves cross-module calls |
-| `std/list.fard` | 30 list fns replacing Rust builtins |
-| `std/str.fard` | 14 string fns replacing Rust builtins |
-| `std/rec.fard` | 16 record fns replacing Rust builtins |
-| `std/math.fard` | 17 math fns — gcd, lcm, factorial, trig wrappers |
-| `std/type.fard` | 13 type predicates — is_int, is_list, is_truthy etc. |
+| `std/list_impl.fard` | 30 list fns (pure FARD, used via relative import) |
+| `std/str_impl.fard` | 14 string fns (pure FARD) |
+| `std/rec_impl.fard` | 16 record fns (pure FARD) |
+| `std/math_impl.fard` | 17 math fns — gcd, lcm, factorial, trig wrappers |
+| `std/type_impl.fard` | 13 type predicates — is_int, is_list, is_truthy etc. |
 | `std/json.fard` | JSON encode/decode + get_path, from_pairs |
 | `std/option.fard` | Option monad — map, and_then, filter, to_result |
 | `std/result.fard` | Result monad — map, and_then, collect, map_err |
@@ -425,7 +425,7 @@ All 21 packages are imported by relative path — no registry required:
 
 ## Testing
 
-**199 test suites passing** across core language, stdlib, and application packages.
+**231 test suites passing** across core language, stdlib, and application packages.
 
 ```bash
 for f in tests/test_*.fard; do fardrun test --program "$f"; done
