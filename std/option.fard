@@ -1,40 +1,41 @@
 /// std/option — option type helpers
 
+import("std/option") as _opt
 
 // Constructors
-fn some(v)  { option.some(v) }
-fn none()   { option.none() }
+fn some(v)  { _opt.some(v) }
+fn none()   { _opt.none() }
 
 // Predicates (pure FARD)
-fn is_some(o) { option.is_some(o) }
-fn is_none(o) { option.is_none(o) }
+fn is_some(o) { _opt.is_some(o) }
+fn is_none(o) { _opt.is_none(o) }
 
 // Transforms (pure FARD)
 fn map(o, f) {
-  if is_some(o) then some(f(option.to_nullable(o)))
+  if is_some(o) then some(f(_opt.to_nullable(o)))
   else none()
 }
 
 fn and_then(o, f) {
-  if is_some(o) then f(option.to_nullable(o))
+  if is_some(o) then f(_opt.to_nullable(o))
   else none()
 }
 
 fn unwrap_or(o, default_val) {
-  if is_some(o) then option.to_nullable(o)
+  if is_some(o) then _opt.to_nullable(o)
   else default_val
 }
 
 fn unwrap_or_else(o, f) {
-  if is_some(o) then option.to_nullable(o)
+  if is_some(o) then _opt.to_nullable(o)
   else f()
 }
 
-fn to_nullable(o) { option.to_nullable(o) }
-fn from_nullable(v) { option.from_nullable(v) }
+fn to_nullable(o) { _opt.to_nullable(o) }
+fn from_nullable(v) { _opt.from_nullable(v) }
 
 fn to_result(o, err) {
-  if is_some(o) then { ok: true, v: option.to_nullable(o) }
+  if is_some(o) then { ok: true, v: _opt.to_nullable(o) }
   else { ok: false, err: err }
 }
 
@@ -43,7 +44,7 @@ fn or_else(o, f) {
 }
 
 fn filter(o, pred) {
-  if is_some(o) && pred(option.to_nullable(o)) then o else none()
+  if is_some(o) && pred(_opt.to_nullable(o)) then o else none()
 }
 
 export { some, none, is_some, is_none, map, and_then, unwrap_or,

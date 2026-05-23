@@ -1,14 +1,16 @@
 /// std/rec — pure FARD record library built on native primitives
 
+import("std/rec")  as _rec
+import("std/list") as _list
 
 // Native primitive aliases
-fn _has(r, k)      { rec.has(r, k) }
-fn _get(r, k)      { rec.get(r, k) }
-fn _set(r, k, v)   { rec.set(r, k, v) }
-fn _remove(r, k)   { rec.remove(r, k) }
-fn _keys(r)        { rec.keys(r) }
-fn _merge(a, b)    { rec.merge(a, b) }
-fn _empty()        { rec.empty() }
+fn _has(r, k)      { _rec.has(r, k) }
+fn _get(r, k)      { _rec.get(r, k) }
+fn _set(r, k, v)   { _rec.set(r, k, v) }
+fn _remove(r, k)   { _rec.remove(r, k) }
+fn _keys(r)        { _rec.keys(r) }
+fn _merge(a, b)    { _rec.merge(a, b) }
+fn _empty()        { _rec.empty() }
 
 // getOr: get with default
 fn getOr(r, k, default_val) {
@@ -23,36 +25,36 @@ fn getOrErr(r, k) {
 
 // values: list of all values
 fn values(r) {
-  list.map(_keys(r), fn(k) { _get(r, k) })
+  _list.map(_keys(r), fn(k) { _get(r, k) })
 }
 
 // entries: list of {key, value} pairs
 fn entries(r) {
-  list.map(_keys(r), fn(k) { { key: k, value: _get(r, k) } })
+  _list.map(_keys(r), fn(k) { { key: k, value: _get(r, k) } })
 }
 
 // from_entries: build record from list of {key, value} pairs
 fn from_entries(pairs) {
-  list.fold(pairs, _empty(), fn(acc, p) { _set(acc, p.key, p.value) })
+  _list.fold(pairs, _empty(), fn(acc, p) { _set(acc, p.key, p.value) })
 }
 
 // map_values: apply f to each value
 fn map_values(r, f) {
-  list.fold(_keys(r), _empty(), fn(acc, k) {
+  _list.fold(_keys(r), _empty(), fn(acc, k) {
     _set(acc, k, f(_get(r, k)))
   })
 }
 
 // filter_keys: keep only keys where pred(key) is true
 fn filter_keys(r, pred) {
-  list.fold(_keys(r), _empty(), fn(acc, k) {
+  _list.fold(_keys(r), _empty(), fn(acc, k) {
     if pred(k) then _set(acc, k, _get(r, k)) else acc
   })
 }
 
 // filter_values: keep only entries where pred(value) is true
 fn filter_values(r, pred) {
-  list.fold(_keys(r), _empty(), fn(acc, k) {
+  _list.fold(_keys(r), _empty(), fn(acc, k) {
     let v = _get(r, k) in
     if pred(v) then _set(acc, k, v) else acc
   })
@@ -60,23 +62,23 @@ fn filter_values(r, pred) {
 
 // fold: fold over key-value pairs
 fn fold(r, init, f) {
-  list.fold(_keys(r), init, fn(acc, k) { f(acc, k, _get(r, k)) })
+  _list.fold(_keys(r), init, fn(acc, k) { f(acc, k, _get(r, k)) })
 }
 
 // pick: keep only specified keys
 fn pick(r, ks) {
-  list.fold(ks, _empty(), fn(acc, k) {
+  _list.fold(ks, _empty(), fn(acc, k) {
     if _has(r, k) then _set(acc, k, _get(r, k)) else acc
   })
 }
 
 // omit: remove specified keys
 fn omit(r, ks) {
-  list.fold(ks, r, fn(acc, k) { _remove(acc, k) })
+  _list.fold(ks, r, fn(acc, k) { _remove(acc, k) })
 }
 
 // size: number of keys
-fn size(r) { list.len(_keys(r)) }
+fn size(r) { _list.len(_keys(r)) }
 
 // is_empty: true if no keys
 fn is_empty(r) { size(r) == 0 }
@@ -97,7 +99,7 @@ fn update(r, k, f) {
 
 // deep_merge: merge recursively
 fn deep_merge(a, b) {
-  list.fold(_keys(b), a, fn(acc, k) {
+  _list.fold(_keys(b), a, fn(acc, k) {
     let bv = _get(b, k) in
     if _has(acc, k) && typ.of(_get(acc, k)) == "record" && typ.of(bv) == "record"
       then _set(acc, k, deep_merge(_get(acc, k), bv))

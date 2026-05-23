@@ -1,15 +1,17 @@
 /// std/bytes — byte buffer operations
 
+import("std/bytes") as _bytes
+import("std/list")  as _list
 import("std/str")   as str
 
 // Native wrappers
-fn of_str(s)      { bytes.of_str(s) }
-fn of_list(xs)    { bytes.of_list(xs) }
-fn to_hex(b)      { bytes.to_hex(b) }
-fn to_str(b)      { bytes.to_str(b) }
-fn to_base64(b)   { bytes.to_base64(b) }
-fn get(b, i)      { bytes.get(b, i) }
-fn len(b)         { bytes.len(b) }
+fn of_str(s)      { _bytes.of_str(s) }
+fn of_list(xs)    { _bytes.of_list(xs) }
+fn to_hex(b)      { _bytes.to_hex(b) }
+fn to_str(b)      { _bytes.to_str(b) }
+fn to_base64(b)   { _bytes.to_base64(b) }
+fn get(b, i)      { _bytes.get(b, i) }
+fn len(b)         { _bytes.len(b) }
 
 // Pure helpers
 fn empty()        { of_list([]) }
@@ -33,7 +35,7 @@ fn from_hex(hex_str) {
     else if ch == "f" || ch == "F" then 15
     else 0
   } in
-  let bytes = list.build(n, fn(i) {
+  let bytes = _list.build(n, fn(i) {
     let hi = nibble(str.slice(hex_str, i*2, i*2+1)) in
     let lo = nibble(str.slice(hex_str, i*2+1, i*2+2)) in
     hi * 16 + lo
@@ -41,6 +43,7 @@ fn from_hex(hex_str) {
   of_list(bytes)
 }
 
+import("std/str") as str
 
 export { of_str, of_list, to_hex, to_str, to_base64, get, len,
          empty, is_empty, to_hex_upper, from_hex }

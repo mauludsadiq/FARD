@@ -1,9 +1,10 @@
 /// std/uuid — UUID generation and validation
 
+import("std/uuid") as _uuid
 import("std/str")  as str
 
-fn v4()          { uuid.v4() }
-fn validate(s)   { uuid.validate(s) }
+fn v4()          { _uuid.v4() }
+fn validate(s)   { _uuid.validate(s) }
 
 // Pure helpers
 fn short(u)      { str.slice(u, 0, 8) }
