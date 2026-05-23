@@ -4292,6 +4292,7 @@ enum Builtin {
     ReMatch, ReFind, ReFindAll, ReSplit, ReReplace, FardEval,
     StrFoldChars,
     StrCharAt,
+    StrCharCode,
     StrLexTokens,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
@@ -10686,6 +10687,23 @@ fn call_builtin(
             _ => bail!("str.char_at expects (str, int)"),
         }
 
+        Builtin::StrCharCode => match args.as_slice() {
+            [Val::Text(s)] => {
+                match s.chars().next() {
+                    Some(c) => Ok(Val::Int(c as i64)),
+                    None => Ok(Val::Int(0)),
+                }
+            }
+            [Val::Text(s), Val::Int(i)] => {
+                let idx = *i as usize;
+                match s.chars().nth(idx) {
+                    Some(c) => Ok(Val::Int(c as i64)),
+                    None => Ok(Val::Int(0)),
+                }
+            }
+            _ => bail!("str.char_code expects (str) or (str, int)"),
+        }
+
 
         Builtin::StrLexTokens => match args.as_slice() {
             [Val::Text(src)] => {
@@ -12908,6 +12926,7 @@ impl ModuleLoader {
                 m.insert("chars".to_string(), Val::Builtin(Builtin::StrChars));
                 m.insert("fold_chars".to_string(), Val::Builtin(Builtin::StrFoldChars));
                 m.insert("char_at".to_string(), Val::Builtin(Builtin::StrCharAt));
+                m.insert("char_code".to_string(), Val::Builtin(Builtin::StrCharCode));
                 m.insert("lex_tokens".to_string(), Val::Builtin(Builtin::StrLexTokens));
                 m.insert("url_decode".to_string(), Val::Builtin(Builtin::StrUrlDecode));
                 Ok(m)
