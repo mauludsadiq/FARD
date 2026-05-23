@@ -304,7 +304,9 @@ Pure-FARD PDF-1.4 generation and annotation. `write_pdf` builds complete documen
 
 ## Self-Hosting
 
-Stage 8 is underway: 15 stdlib modules in pure FARD, plus `fard_eval.fard` — a 436-line pure FARD evaluator. Run any program through the pure FARD pipeline with `--fard-eval`. Verified: `list.map(nums, factorial) = [1,2,6,24,120]` matches Rust eval exactly.
+Stage 8 is underway: FARD v0.5 is now connected to FARD Prim. A FARD source program compiles end-to-end to a native MH_EXECUTE binary via fardlex -> fardparse -> fard_lower -> fard_ir_to_ocir -> OCIR -> OMIR -> x86-64 -> binary. Verified: add(10,32)=42.
+
+ 15 stdlib modules in pure FARD, plus `fard_eval.fard` — a 436-line pure FARD evaluator. Run any program through the pure FARD pipeline with `--fard-eval`. Verified: `list.map(nums, factorial) = [1,2,6,24,120]` matches Rust eval exactly.
 
 ### Pipeline
 
@@ -353,7 +355,8 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | `std/uuid.fard` | UUID helpers — nil, is_nil, short |
 | `std/env.fard` | Env helpers — get_or, require, get_int, get_bool |
 | `std/path.fard` | Path helpers — stem, with_ext, parts |
-| `apps/fard_eval.fard` | Pure FARD evaluator — int, bool, str, if, let, fn, call, match, records, lists, closures, recursion |
+| `apps/fard_eval.fard` | Pure FARD evaluator — full language coverage: while, try, imports, spread, return, let_pat, named_call, str_interp |
+| `FARD Prim/fard_ir_to_ocir.fard` | Bridge: v0.5 IR -> OCIR for FARD Prim native backend |
 
 ### Verified Native Results
 
