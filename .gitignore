@@ -1,49 +1,9 @@
-# Rust build output
-target/
-Cargo.lock
-
-# Runtime outputs
-out/
-_out*/
-_run*/
+# Run receipts
 receipts/
-receipt.json
-*.lock.json
 
-# Backup files
-*.bak
-*.bak_*
-*.bak.*
-*.tmp
-*.swp
-*.rs.bk
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Editor
-.vscode/settings.json
-*.code-workspace
-
-# Spec scratch (keep canonical fixtures)
-spec/tmp/*
-!spec/tmp/m5_digest_verify_ok.fard
-!spec/tmp/m5_digest_verify_err.fard
-!spec/tmp/m5_ok_bundle.fard
-
-# Legacy junk patterns (never again)
-=
-editors/vscode/node_modules/
-editors/vscode/package-lock.json
-test_*.png
-test_*.fard
-
-# Build artifacts
-bootstrap/vm.o
-bootstrap/fardvm
-fardc_out*/
-fardc_self_out/
-output.bin
-*.fardc
+# Debug/probe programs (temporary)
+apps/probe_*.fard
+apps/debug_*.fard
+probe_*.fard
+check_*.fard
+dump_*.fard
