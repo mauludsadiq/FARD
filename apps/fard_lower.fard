@@ -38,6 +38,40 @@ fn lenv_set(env, name, local) {
   { key: name, local: local, next: env }
 }
 
+
+// ── Free variable analysis ────────────────────────────────────────────────────
+
+fn fv_union(a, b) {
+  list.fold(b, a, fn(acc, name) {
+    if list.any(acc, fn(n) { n == name }) then acc
+    else list.append(acc, name)
+  })
+}
+
+fn fv_diff(fvs, bound) {
+  list.filter(fvs, fn(name) { !list.any(bound, fn(b) { b == name }) })
+}
+
+fn free_vars_expr(node) {
+  if node.t == "var" then [node.v]
+  else if node.t == "int" || node.t == "float" || node.t == "bool" || node.t == "str" || node.t == "null_lit" then []
+  else if node.t == "binop" || node.t == "bin" then fv_union(free_vars_expr(node.left), free_vars_expr(node.right))
+  else if node.t == "unop" then free_vars_expr(node.operand)
+  else if node.t == "call" then
+    fv_union(free_vars_expr(node.fn_n), list.flatten(list.map(node.args, fn(a) { free_vars_expr(a) })))
+  else if node.t == "if" then
+    fv_union(free_vars_expr(node.cond), fv_union(free_vars_expr(node.then_), free_vars_expr(node.else_)))
+  else if node.t == "let" then
+    fv_diff(fv_union(free_vars_expr(node.val), free_vars_expr(node.body)), [node.name])
+  else if node.t == "fn" then
+    fv_diff(free_vars_expr(node.body), node.params)
+  else if node.t == "list" then list.flatten(list.map(node.items, fn(i) { free_vars_expr(i) }))
+  else if node.t == "rec" then list.flatten(list.map(node.fields, fn(f) { free_vars_expr(f.v) }))
+  else if node.t == "get_field" then free_vars_expr(node.obj)
+  else if node.t == "get_index" then fv_union(free_vars_expr(node.obj), free_vars_expr(node.idx))
+  else []
+}
+
 fn lenv_get(env, name) {
   if env == null then null
   else if env.key == name then env.local
@@ -285,10 +319,65 @@ fn lower_rec_fields(fields, env, code, ctx, acc) {
 }
 
 fn lower_fn_expr(node, env, code, ctx) {
-  let fn_id = lower_function(str.concat("anon_", cast_text(array.len(ctx.fns))), node.params, node.body, env, ctx) in
-  let dst   = alloc_local(ctx) in
-  let _ = emit(code, instr_make_closure(dst, fn_id, [])) in
+  // Compute free variables: used in body but not bound by params
+  let fvs = fv_diff(free_vars_expr(node.body), node.params) in
+  let captures = list.filter(fvs, fn(name) { lenv_get(env, name) != null }) in
+  let cap_regs = list.map(captures, fn(name) { lenv_get(env, name) }) in
+  let n_caps = list.len(captures) in
+
+  // Build the anon function with __env__ as first param if there are captures
+  // Inside the function, load captures from __env__[i]
+  let aug_params = if n_caps == 0
+    then node.params
+    else list.concat([["__env__"], node.params]) in
+
+  // Build inner env that maps captured names to get_index on __env__
+  // This is done by lower_fn_with_caps
+  let fn_id = lower_fn_with_caps(
+    str.concat("anon_", cast_text(array.len(ctx.fns))),
+    node.params, node.body, captures, env, ctx) in
+  let dst = alloc_local(ctx) in
+  let _ = emit(code, instr_make_closure(dst, fn_id, cap_regs)) in
   dst
+}
+
+fn lower_fn_with_caps(name, params, body, captures, outer_env, ctx) {
+  let _ = reset_locals(ctx) in
+  let code = array.new() in
+  let n_caps = list.len(captures) in
+  // If captures exist, __env__ is param 0
+  let env_after_params = if n_caps == 0
+    then build_param_env(params, outer_env, ctx, 0)
+    else
+      let env_reg = alloc_local(ctx) in
+      let base_env = lenv_set(outer_env, "__env__", env_reg) in
+      build_param_env(params, base_env, ctx, 0)
+  in
+  // Emit loads for captured vars from __env__[i]
+  let cap_env = if n_caps == 0
+    then env_after_params
+    else
+      let env_reg = lenv_get(env_after_params, "__env__") in
+      list.fold(list.build(n_caps, fn(i) { i }), env_after_params, fn(acc_env, i) {
+        let cap_name = list.get(captures, i) in
+        let dst = alloc_local(ctx) in
+        let idx_reg = alloc_local(ctx) in
+        let _ = emit(code, instr_const(idx_reg, i)) in
+        let _ = emit(code, { op: "get_index", dst: dst, obj: env_reg, idx: idx_reg }) in
+        lenv_set(acc_env, cap_name, dst)
+      })
+  in
+  let ret_r = lower_expr(body, cap_env, code, ctx) in
+  let _ = emit(code, instr_return(ret_r)) in
+  let fn_def = {
+    name:   name,
+    arity:  if n_caps > 0 then 1 + list.len(params) else list.len(params),
+    locals: local_count(ctx),
+    code:   array.to_list(code)
+  } in
+  let fn_id = array.len(ctx.fns) in
+  let _ = array.push(ctx.fns, fn_def) in
+  fn_id
 }
 
 fn lower_call(node, env, code, ctx) {
