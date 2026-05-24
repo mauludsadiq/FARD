@@ -24,6 +24,13 @@ fn alloc_local(ctx) {
 
 fn local_count(ctx) { array.len(ctx.next_local) }
 
+fn restore_locals(ctx, saved) {
+  // Pop extras until count equals saved
+  let _ = list.fold(list.build(local_count(ctx) - saved, fn(i) { i }), null, fn(_, i) {
+    array.pop(ctx.next_local)
+  }) in null
+}
+
 fn reset_locals(ctx) {
   let n = array.len(ctx.next_local) in
   let _ = list.fold(list.build(n, fn(i) { i }), null, fn(_, i) { array.pop(ctx.next_local) }) in
@@ -342,6 +349,7 @@ fn lower_fn_expr(node, env, code, ctx) {
 }
 
 fn lower_fn_with_caps(name, params, body, captures, outer_env, ctx) {
+  let saved_locals = local_count(ctx) in
   let _ = reset_locals(ctx) in
   let code = array.new() in
   let n_caps = list.len(captures) in
@@ -377,6 +385,7 @@ fn lower_fn_with_caps(name, params, body, captures, outer_env, ctx) {
   } in
   let fn_id = array.len(ctx.fns) in
   let _ = array.push(ctx.fns, fn_def) in
+  let _ = restore_locals(ctx, saved_locals) in
   fn_id
 }
 
