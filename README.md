@@ -327,7 +327,23 @@ fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
 | 5 | Native x86_64 ELF backend | complete |
 | 6 | All pipeline components compile to native ELF | complete |
 | 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator + native pipeline | **in progress** — fard_eval complete (231 test suites); connected to FARD Prim native backend; verified native MH_EXECUTE: add=42, max=42, fact(5)=120, fib(10)=55, xs[0]=10, r.a=42, s[0]=104 (lists, records, strings on heap) via source→lex→parse→lower→OCIR→OMIR→x86-64 |
+| 8 | FARD stdlib + FARD evaluator + native pipeline | **in progress** — fard_eval complete (231 test suites); connected to FARD Prim native backend; verified native MH_EXECUTE (Stage 8 complete):
+ add(10,32)=42    arithmetic
+ max(10,42)=42    if/else, CmpI64
+ fact(5)=120      recursion
+ fib(10)=55       double recursion
+ xs[0]=10         list indexing (make_list + get_index)
+ xs[2]=30         list indexing offset
+ r.a=42           record field access (make_rec + get_field)
+ r.b=7            record second field
+ s[0]=104         string char 'h' from "hello"
+ s[4]=111         string char 'o' from "hello"
+ adder(10)(32)=42 closure with captured variable x
+
+heap: __DATA bump allocator, fard_alloc stub
+closures: MakeClosure + StoreFnPtr (AbsReloc) + CallIndirect
+captures: fard_lower free-variable analysis, __env__ param ABI
+next: fard_eval native, delete Rust eval loop, FPGA phase via source→lex→parse→lower→OCIR→OMIR→x86-64 |
 
 ### Compiler Components
 
