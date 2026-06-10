@@ -4187,6 +4187,7 @@ enum Builtin {
     StrChars,
     StrUrlDecode,
     FsReadText,
+    FsReadBytes,
     FsWriteText,
     FsWriteBytes,
     FsExists,
@@ -9427,6 +9428,18 @@ fn call_builtin(
             }
         }
 
+        Builtin::FsReadBytes => {
+            if args.len() != 1 { bail!("ERROR_ARITY fs.read_bytes"); }
+            match &args[0] {
+                Val::Text(path) => {
+                    let bytes = std::fs::read(path.as_str())
+                        .map_err(|e| anyhow!("ERROR_IO fs.read_bytes {}: {}", path, e))?;
+                    Ok(Val::Bytes(bytes))
+                }
+                _ => bail!("ERROR_BADARG fs.read_bytes expects string path"),
+            }
+        }
+
         Builtin::FsWriteBytes => {
             if args.len() != 2 { bail!("ERROR_ARITY fs.write_bytes expects 2 args"); }
             let path = match &args[0] { Val::Text(s) => s.clone(), _ => bail!("ERROR_BADARG fs.write_bytes path must be text") };
@@ -13088,6 +13101,7 @@ Ok(m)
             "std/fs" => {
                 let mut m = BTreeMap::new();
                 m.insert("read_text".to_string(), Val::Builtin(Builtin::FsReadText));
+                m.insert("read_bytes".to_string(), Val::Builtin(Builtin::FsReadBytes));
                 m.insert("write_text".to_string(), Val::Builtin(Builtin::FsWriteText));
                 m.insert("write_bytes".to_string(), Val::Builtin(Builtin::FsWriteBytes));
                 m.insert("exists".to_string(), Val::Builtin(Builtin::FsExists));
