@@ -255,7 +255,7 @@ fn ir_instr_byte_size(instr) {
   else if op == "and" || op == "or" then 4
   else if op == "not"     then 4
   else if op == "make_closure" then 7  // MAKE_CLOSURE(1) + u32(4) + STORE(1) + u8(1)
-  else if op == "call"    then 6 + 2 * list.len(instr.args)
+  else if op == "call"    then (if instr.fn_r == -1 then 9 else 6) + 2 * list.len(instr.args)
   // LOAD fn(2) + LOAD*nargs(2*n) + CALL(1)+nargs(1) + STORE(1)+dst(1)
   else if op == "get_field" then 8     // LOAD(2) + GET_FIELD(1)+u32(4) + STORE(2) -- wrong
   else if op == "get_index" then 6
@@ -373,7 +373,13 @@ fn emit_ir_instr(buf, instr, consts, names) {
     let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
 
   else if op == "call" then
-    let _ = buf_u8(buf, op_load()) in let _ = buf_u8(buf, instr.fn_r) in
+    // fn_r == -1 means direct call — fn_name holds the global name
+    let _ = if instr.fn_r == -1 then
+      let idx = name_pool_add(names, instr.fn_name) in
+      let _ = buf_u8(buf, op_global_load()) in buf_u32_le(buf, idx)
+    else
+      let _ = buf_u8(buf, op_load()) in buf_u8(buf, instr.fn_r)
+    in
     let _ = emit_call_args(buf, instr.args) in
     let _ = buf_u8(buf, op_call()) in
     let _ = buf_u8(buf, list.len(instr.args)) in
@@ -399,7 +405,7 @@ fn emit_ir_instr(buf, instr, consts, names) {
     let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
 
   else if op == "make_rec" then
-    let _ = emit_rec_fields(buf, instr.fields, names) in
+    let _ = emit_rec_fields(buf, instr.fields, names, consts) in
     let _ = buf_u8(buf, op_make_rec()) in
     let _ = buf_u8(buf, list.len(instr.fields)) in
     let _ = buf_u8(buf, op_store()) in buf_u8(buf, instr.dst)
@@ -462,16 +468,16 @@ fn emit_load_list(buf, regs) {
     emit_load_list(buf, list.tail(regs))
 }
 
-fn emit_rec_fields(buf, fields, names) {
+fn emit_rec_fields(buf, fields, names, consts) {
   if list.len(fields) == 0 then null
   else
     let f   = list.get(fields, 0) in
-    let idx = name_pool_add(names, f.key) in
+    let idx = const_pool_add(consts, f.key) in
     let _ = buf_u8(buf, op_const()) in
     let _ = buf_u32_le(buf, idx) in
     let _ = buf_u8(buf, op_load()) in
     let _ = buf_u8(buf, f.src) in
-    emit_rec_fields(buf, list.tail(fields), names)
+    emit_rec_fields(buf, list.tail(fields), names, consts)
 }
 
 // ── Top-level emitter ─────────────────────────────────────────────────────────

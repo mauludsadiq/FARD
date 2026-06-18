@@ -1,0 +1,47 @@
+/// fardrun_bc — run a FARD program via bytecode pipeline
+///
+/// Usage: fardrun run --program apps/fardrun_bc.fard --out out -- --in src.fard
+///
+/// Pipeline: source -> lex -> parse -> IR lower -> bytecode emit -> bc_interp
+
+import("fardparse")      as par
+import("fard_lower")     as lower
+import("fard_emit")      as emit
+import("fard_bc_interp") as vm
+import("std/str")        as str
+import("std/list")       as list
+import("std/bytes")      as bytes
+import("std/env")        as env
+import("std/fs")         as fs
+
+fn find_arg(args, flag) {
+  let n = list.len(args) in
+  find_arg_acc(args, flag, 0, n)
+}
+
+fn find_arg_acc(args, flag, i, n) {
+  if i >= n then null
+  else if list.get(args, i) == flag then
+    if i + 1 < n then list.get(args, i + 1) else null
+  else find_arg_acc(args, flag, i + 1, n)
+}
+
+fn compile_and_run(src) {
+  let tokens = str.lex_tokens(src) in
+  let parsed = par.parse_module(tokens, 0) in
+  if !parsed.ok then { ok: false, err: parsed.err }
+  else
+    let ir = lower.lower_program(parsed.node) in
+    let bc = emit.emit(ir) in
+    let result = vm.run(bc) in
+    { ok: true, result: result }
+}
+
+let args    = env.args()
+let in_path = find_arg(args, "--in")
+
+if in_path == null then
+  { ok: false, err: "missing --in argument" }
+else
+  let src = fs.read_text(in_path) in
+  compile_and_run(src)

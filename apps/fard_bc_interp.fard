@@ -9,6 +9,8 @@ import("std/array") as array
 import("std/bytes") as bytes
 import("std/cast")  as cast
 import("std/int")   as int
+import("std/rec")   as rec
+import("std/str")   as str
 
 // ── Byte reader ───────────────────────────────────────────────────────────────
 
@@ -354,10 +356,67 @@ fn dispatch(prog, globals, stack, fi, frame, bc, pc, op) {
     let _ = push_call(stack, prog, f, args, dst_slot) in
     { done: false, val: null }
 
+  else if op == 80 then  // MAKE_LIST u8(n)
+    let n    = bytes.get(bc, pc + 1) in
+    let dst  = bytes.get(bc, pc + 3) in  // after STORE
+    let items = pop_args(frame, n, []) in
+    let _ = array.set(frame.regs, dst, items) in
+    let _ = next_pc(stack, fi, frame, 4) in
+    { done: false, val: null }
+
+  else if op == 81 then  // MAKE_REC u8(n_fields)
+    // Stack has: [key0, val0, key1, val1, ...] pushed by emit_rec_fields
+    // Each field was emitted as: CONST(key_idx) LOAD(src)
+    // So stack top = last val, then last key, ...
+    let n_fields = bytes.get(bc, pc + 1) in
+    let dst      = bytes.get(bc, pc + 3) in
+    let pairs    = pop_args(frame, n_fields * 2, []) in
+    let rec_val  = build_rec(pairs, {}) in
+    let _ = array.set(frame.regs, dst, rec_val) in
+    let _ = next_pc(stack, fi, frame, 4) in
+    { done: false, val: null }
+
+  else if op == 82 then  // GET_FIELD
+    // Encoded as: LOAD(obj) GET_FIELD u32(name_idx) STORE(dst)
+    let name_idx = read_u32(bc, pc + 1) in
+    let name     = list.get(prog.names, name_idx.val) in
+    let dst      = bytes.get(bc, pc + 7) in
+    let obj      = vpop(frame) in
+    let val      = if rec.has(obj, name) then rec.get(obj, name) else null in
+    let _ = array.set(frame.regs, dst, val) in
+    let _ = next_pc(stack, fi, frame, 8) in
+    { done: false, val: null }
+
+  else if op == 83 then  // GET_INDEX
+    // Encoded as: LOAD(obj) LOAD(idx) GET_INDEX STORE(dst)
+    let dst = bytes.get(bc, pc + 3) in
+    let idx = vpop(frame) in
+    let obj = vpop(frame) in
+    let val = list.get(obj, idx) in
+    let _ = array.set(frame.regs, dst, val) in
+    let _ = next_pc(stack, fi, frame, 4) in
+    { done: false, val: null }
+
+  else if op == 112 then  // IMPORT — not supported in bc_interp yet
+    let _ = next_pc(stack, fi, frame, 8) in
+    { done: false, val: null }
+
   else
     let _ = next_pc(stack, fi, frame, 1) in { done: false, val: null }
 }
 
+fn build_rec_at(pairs, i, acc) {
+  if i >= list.len(pairs) then acc
+  else
+    let key     = list.get(pairs, i) in
+    let val     = list.get(pairs, i + 1) in
+    let new_acc = rec.set(acc, key, val) in
+    build_rec_at(pairs, i + 2, new_acc)
+}
+
+fn build_rec(pairs, acc) {
+  build_rec_at(pairs, 0, acc)
+}
 fn pop_args(frame, n, acc) {
   if n == 0 then acc
   else
