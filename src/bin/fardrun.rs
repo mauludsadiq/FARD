@@ -8411,16 +8411,46 @@ fn call_builtin(
             Ok(Val::Record(m))
         }
         Builtin::NetServe => {
-            // net.serve(port, handler_fn) -> blocking server
-            // handler_fn receives {method, path, headers, body} -> {status, headers, body}
+            // net.serve(port, handler_fn) -> concurrent server (thread per request)
             if args.len() != 2 { bail!("ERROR_BADARG net.serve expects 2 args: port, handler"); }
             let port = match &args[0] { Val::Int(n) => *n as u16, _ => bail!("ERROR_BADARG net.serve: port must be int") };
             let handler = args[1].clone();
             let addr = format!("0.0.0.0:{}", port);
-            let server = tiny_http::Server::http(&addr)
-                .map_err(|e| anyhow!("ERROR_NET net.serve failed to bind {}: {}", addr, e))?;
+            let server = Arc::new(tiny_http::Server::http(&addr)
+                .map_err(|e| anyhow!("ERROR_NET net.serve failed to bind {}: {}", addr, e))?);
             eprintln!("[fard] net.serve listening on http://{}", addr);
+            // Pre-warm module cache by calling handler with a dummy request once
+            {
+                let mut warmup_req = BTreeMap::new();
+                warmup_req.insert("method".to_string(), Val::Text("GET".to_string()));
+                warmup_req.insert("path".to_string(), Val::Text("/__warmup__".to_string()));
+                warmup_req.insert("headers".to_string(), Val::Record(BTreeMap::new()));
+                warmup_req.insert("body".to_string(), Val::Text(String::new()));
+                let _ = call(handler.clone(), vec![Val::Record(warmup_req)], tracer, loader);
+                eprintln!("[fard] net.serve cache warmed ({} modules)", loader.cache.len());
+            }
             for raw_req in server.incoming_requests() {
+                let handler = handler.clone();
+                let child_vm_fns = VM_FNS.with(|cell| cell.borrow().clone());
+                let child_self_slots = VM_SELF_SLOTS.with(|cell| cell.borrow().clone());
+                let tmp = std::env::temp_dir();
+                // Clone the pre-warmed module cache so threads skip re-loading
+                let shared_cache = loader.cache.clone();
+                let root_dir = loader.root_dir.clone();
+                std::thread::spawn(move || {
+                VM_FNS.with(|cell| { *cell.borrow_mut() = child_vm_fns; });
+                VM_SELF_SLOTS.with(|cell| { *cell.borrow_mut() = child_self_slots; });
+                let trace_file = fs::File::create(tmp.join(format!("serve_trace_{}.ndjson", uuid::Uuid::new_v4())))
+                    .unwrap_or_else(|_| fs::File::create(std::env::temp_dir().join("fallback_serve.ndjson")).unwrap());
+                let mut thread_tracer = Tracer {
+                    first_event: true,
+                    artifact_cids: std::collections::BTreeMap::new(),
+                    w: trace_file,
+                    out_dir: tmp.clone(),
+                };
+                let mut thread_loader = ModuleLoader::new(&root_dir);
+                thread_loader.cache = shared_cache;
+                let mut raw_req = raw_req;
                 let method = raw_req.method().as_str().to_string();
                 let url = raw_req.url().to_string();
                 let mut header_map = BTreeMap::new();
@@ -8431,8 +8461,7 @@ fn call_builtin(
                     );
                 }
                 let mut body_bytes = Vec::new();
-                let mut req_body = raw_req;
-                std::io::Read::read_to_end(req_body.as_reader(), &mut body_bytes).ok();
+                std::io::Read::read_to_end((&mut raw_req).as_reader(), &mut body_bytes).ok();
                 let body_str = String::from_utf8_lossy(&body_bytes).to_string();
                 // Build request record
                 let mut req_rec = BTreeMap::new();
@@ -8442,7 +8471,7 @@ fn call_builtin(
                 req_rec.insert("body".to_string(), Val::Text(body_str));
                 let req_val = Val::Record(req_rec);
                 // Call handler
-                let resp_val = match call(handler.clone(), vec![req_val], tracer, loader) {
+                let resp_val = match call(handler.clone(), vec![req_val], &mut thread_tracer, &mut thread_loader) {
                     Ok(v) => v,
                     Err(e) => {
                         eprintln!("[fard] net.serve handler error: {}", e);
@@ -8483,7 +8512,8 @@ fn call_builtin(
                         }
                     }
                 }
-                req_body.respond(response).ok();
+                raw_req.respond(response).ok();
+                }); // end thread::spawn
             }
             Ok(Val::Unit)
         }
