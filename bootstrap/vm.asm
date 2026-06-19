@@ -49,7 +49,7 @@ VAL_SIZE    equ 16
 FRAME_SIZE  equ 64
 MAX_FRAMES  equ 4096
 MAX_GLOBALS equ 256
-HEAP_SIZE   equ 0x4000000   ; 64MB
+HEAP_SIZE   equ 0x10000000  ; 256MB
 
 ; Opcodes
 OP_NOP          equ 0x00
@@ -92,10 +92,13 @@ n_fns:          resq 1
 fns_ptr:        resq 1              ; ptr to array of 24-byte fn descs
 entry_fn:       resq 1
 frame_top:      resq 1
+locals_sp:      resq 1
 call_stack:     resb FRAME_SIZE * MAX_FRAMES
 n_globals:      resq 1
 glob_keys:      resq MAX_GLOBALS    ; name_idx stored as u64
 glob_vals:      resb VAL_SIZE * MAX_GLOBALS
+locals_stack:   resb VAL_SIZE * 512 * 512  ; 4MB frame scratch
+ovf_msg:        db "OVF",10
 null_val_buf:   resb VAL_SIZE
 
 section .data
@@ -129,6 +132,22 @@ global _start
     mov rax, [r12 + 40]
 %endmacro
 
+; VPUSH_INT rax — push integer value directly onto vstack (no heap alloc)
+%macro VPUSH_INT 0
+    mov rcx, [r12 + 40]
+    mov qword [rcx], TAG_INT
+    mov [rcx + 8], rax
+    add qword [r12 + 40], VAL_SIZE
+%endmacro
+
+; VPUSH_BOOL rax — push bool value directly onto vstack (no heap alloc)
+%macro VPUSH_BOOL 0
+    mov rcx, [r12 + 40]
+    mov qword [rcx], TAG_BOOL
+    mov [rcx + 8], rax
+    add qword [r12 + 40], VAL_SIZE
+%endmacro
+
 ; ── Entry ─────────────────────────────────────────────────────────────────────
 _start:
     ; Check argc >= 2
@@ -149,6 +168,8 @@ _start:
     je .err_open
     mov [heap_base], rax
     mov [heap_ptr], rax
+    lea rax, [locals_stack]
+    mov [locals_sp], rax
 
     ; Open file
     mov rdi, [rsp + 16]
@@ -506,8 +527,7 @@ vm_run:
     VPOP
     mov rax, [rax + 8]         ; a
     add rax, rcx
-    call alloc_int
-    VPUSH
+    VPUSH_INT
     jmp .dispatch
 
 ; ── SUB ───────────────────────────────────────────────────────────────────────
@@ -517,8 +537,7 @@ vm_run:
     VPOP
     mov rax, [rax + 8]
     sub rax, rcx
-    call alloc_int
-    VPUSH
+    VPUSH_INT
     jmp .dispatch
 
 ; ── MUL ───────────────────────────────────────────────────────────────────────
@@ -528,8 +547,7 @@ vm_run:
     VPOP
     mov rax, [rax + 8]         ; a
     imul rax, rcx
-    call alloc_int
-    VPUSH
+    VPUSH_INT
     jmp .dispatch
 
 ; ── DIV ───────────────────────────────────────────────────────────────────────
@@ -540,8 +558,7 @@ vm_run:
     mov rax, [rax + 8]
     cqo
     idiv rcx
-    call alloc_int
-    VPUSH
+    VPUSH_INT
     jmp .dispatch
 
 ; ── MOD ───────────────────────────────────────────────────────────────────────
@@ -553,8 +570,7 @@ vm_run:
     cqo
     idiv rcx
     mov rax, rdx
-    call alloc_int
-    VPUSH
+    VPUSH_INT
     jmp .dispatch
 
 ; ── NEG ───────────────────────────────────────────────────────────────────────
@@ -562,8 +578,7 @@ vm_run:
     VPOP
     mov rax, [rax + 8]
     neg rax
-    call alloc_int
-    VPUSH
+    VPUSH_INT
     jmp .dispatch
 
 ; ── Comparisons ───────────────────────────────────────────────────────────────
@@ -575,8 +590,7 @@ vm_run:
     cmp rax, rcx
     sete al
     movzx rax, al
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_ne:
@@ -587,8 +601,7 @@ vm_run:
     cmp rax, rcx
     setne al
     movzx rax, al
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_lt:
@@ -599,8 +612,7 @@ vm_run:
     cmp rax, rcx
     setl al
     movzx rax, al
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_le:
@@ -611,8 +623,7 @@ vm_run:
     cmp rax, rcx
     setle al
     movzx rax, al
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_gt:
@@ -623,8 +634,7 @@ vm_run:
     cmp rax, rcx
     setg al
     movzx rax, al
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_ge:
@@ -635,8 +645,7 @@ vm_run:
     cmp rax, rcx
     setge al
     movzx rax, al
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 ; ── Logic ─────────────────────────────────────────────────────────────────────
@@ -646,8 +655,7 @@ vm_run:
     VPOP
     mov rax, [rax + 8]
     and rax, rcx
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_or:
@@ -656,16 +664,14 @@ vm_run:
     VPOP
     mov rax, [rax + 8]
     or rax, rcx
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 .do_not:
     VPOP
     mov rax, [rax + 8]
     xor rax, 1
-    call alloc_bool
-    VPUSH
+    VPUSH_BOOL
     jmp .dispatch
 
 ; ── JUMP ──────────────────────────────────────────────────────────────────────
@@ -708,6 +714,10 @@ vm_run:
     VPOP
     mov rbx, rax                ; save return val ptr
     mov rcx, [r12 + 24]         ; ret_slot
+
+    ; Retreat locals_sp to this frame's mark (frees locals + vstack)
+    mov rax, [r12 + 48]
+    mov [locals_sp], rax
 
     ; Pop frame
     dec qword [frame_top]
@@ -759,13 +769,14 @@ vm_run:
     add rcx, 2                  ; skip STORE opcode + slot
     mov [r12 + 16], rcx         ; advance caller PC past CALL+nargs+STORE+slot
 
-    ; Pop args into temp buffer on heap
+    ; Pop args into temp buffer from locals_stack (freed on RETURN)
     mov rdi, rbx
     imul rdi, VAL_SIZE
     push rbx
     push rsi
-    call heap_alloc
-    mov r11, rax                ; r11 = args buffer
+    mov r11, [locals_sp]        ; r11 = args buffer from locals_stack
+    add [locals_sp], rdi        ; advance sp past args
+    mov r11, r11                ; (r11 already set)
 
     ; Pop args in reverse order (last arg first from stack)
     pop rsi                     ; dst_slot
@@ -801,6 +812,9 @@ vm_run:
     pop r11                     ; args buffer
     pop rdx                     ; dst_slot
     mov [r12 + 24], rdx         ; set ret_slot in new frame
+    ; Set stack_mark to args buffer base so RETURN frees args too
+    mov [r12 + 48], r11         ; stack_mark = args buffer base
+
 
     ; Copy args into new frame's locals (r14 = new locals)
     xor rbx, rbx
@@ -871,21 +885,30 @@ push_frame:
 
     mov [r12], rbx              ; fn_desc ptr
 
-    ; Allocate locals
-    mov eax, [rbx + 8]          ; n_locals
-    imul rax, VAL_SIZE
-    mov rdi, rax
-    call heap_alloc
-    mov [r12 + 8], rax          ; locals_ptr
+    ; Save stack mark in frame[48] for RETURN to restore
+    mov rax, [locals_sp]
+    mov [r12 + 48], rax
 
-    ; Zero locals
-    mov rdi, rax
+    ; Allocate locals from locals_stack (not heap)
+    mov eax, [rbx + 8]          ; n_locals (into eax, zero-extends rax)
+    imul rax, VAL_SIZE           ; rax = byte size
+    mov rcx, [locals_sp]         ; rcx = current sp = locals base ptr
+    mov [r12 + 8], rcx           ; store locals_ptr in frame
+    add rcx, rax                 ; rcx = new sp
+    mov [locals_sp], rcx         ; bump sp
+    ; Bounds check: locals_sp must not exceed locals_stack end
+    lea rax, [locals_stack]
+    add rax, VAL_SIZE * 512 * 512
+    cmp rcx, rax
+    jge .locals_overflow
+
+    ; Zero locals (rdi = locals ptr = [r12+8], rcx = n_qwords)
+    mov rdi, [r12 + 8]
     mov ecx, [rbx + 8]
     imul rcx, VAL_SIZE
     xor rax, rax
     push rcx
     push rdi
-    mov rdx, rcx
     shr rcx, 3
     rep stosq
     pop rdi
@@ -895,14 +918,25 @@ push_frame:
     mov qword [r12 + 16], 0
     mov qword [r12 + 24], -1
 
-    ; Allocate vstack
-    mov rdi, VAL_SIZE * 256
-    call heap_alloc
-    mov [r12 + 32], rax
-    mov [r12 + 40], rax         ; vstack_top = base (empty)
+    ; Allocate vstack from locals_stack
+    mov rcx, [locals_sp]
+    mov [r12 + 32], rcx
+    mov [r12 + 40], rcx
+    add qword [locals_sp], VAL_SIZE * 8
 
     pop rax
     ret
+
+.locals_overflow:
+    ; Print "OVF" and exit
+    mov rax, 1
+    mov rdi, 1
+    lea rsi, [ovf_msg]
+    mov rdx, 4
+    syscall
+    mov rax, 60
+    mov rdi, 2
+    syscall
 
 ; ── alloc_int(rax=value) → rax=val_ptr ────────────────────────────────────────
 alloc_int:
