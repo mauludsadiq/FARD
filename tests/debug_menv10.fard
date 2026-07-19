@@ -1,0 +1,42 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+import("std/menv") as menv
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+
+let match_src = "fn classify(x) { match x { 0 => \"zero\", 1 => \"one\", _ => \"many\" } }"
+let match_defs = parse.parse_program(match_src)
+let user_env = menv.new()
+menv.set(user_env, "list", list)
+menv.set(user_env, "rec", rec)
+
+let classify_fir = match_defs[0]
+let classify_cl = ev.apply_fn(self_eval, [classify_fir, user_env])
+test "classify is closure" { classify_cl.t == "closure" }
+menv.set(user_env, "classify", classify_cl)
+
+let call0 = { t: "call", fn: { t: "var", name: "classify" }, args: [{ t: "lit_int", v: 0 }] }
+let r0 = ev.apply_fn(self_eval, [call0, user_env])
+test "classify 0" { r0 == "zero" }
+
+let call1 = { t: "call", fn: { t: "var", name: "classify" }, args: [{ t: "lit_int", v: 1 }] }
+let r1 = ev.apply_fn(self_eval, [call1, user_env])
+test "classify 1" { r1 == "one" }
+
+let call5 = { t: "call", fn: { t: "var", name: "classify" }, args: [{ t: "lit_int", v: 5 }] }
+let r5 = ev.apply_fn(self_eval, [call5, user_env])
+test "classify 5" { r5 == "many" }
