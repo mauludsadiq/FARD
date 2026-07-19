@@ -345,6 +345,35 @@ closures: MakeClosure + StoreFnPtr (AbsReloc) + CallIndirect
 captures: fard_lower free-variable analysis, __env__ param ABI
 next: fard_eval native, delete Rust eval loop, FPGA phase via source→lex→parse→lower→OCIR→OMIR→x86-64 |
 
+
+### menv Bootstrap — Self-Hosting Evaluator Verified
+
+The self-hosted evaluator (packages/fard_eval/eval.fard) now runs correctly inside itself via the menv bootstrap. A shared mutable environment (Val::MutEnv) is seeded with stdlib modules, then all defs from eval.fard are loaded into it. Because all closures share the same Arc-backed map, forward references resolve correctly at call time.
+
+Verified passing:
+
+| Test | Result |
+|------|--------|
+| lit_int | 42 |
+| lit_bool | true |
+| call_builtin int.add | 7 |
+| var lookup | 99 |
+| if_node | correct branch |
+| match_expr with wildcard | zero/one/many |
+| let binding | 15 |
+| call with user-defined fn | double(21)=42 |
+| fib(10) via self-hosted eval | 55 |
+| Level-2 self-hosting (eval evaluates eval) | lit_int=42, add=42 |
+
+Key fixes to reach this point:
+
+- Val::MutEnv: shared mutable environment backed by Arc<Mutex<HashMap>> so closures defined before their dependencies still see them at call time
+- fir_val_to_expr: converts FIR Val::Record nodes to Rust Expr for native evaluation, covering all FIR node types including match_expr, let chains, get_field patterns (bool.not style), and call_builtin arithmetic mapping
+- VM forward-reference fix: functions whose free vars are Val::Unit at compile time fall back to tree-walker instead of producing silent Unit calls
+- Record closure dispatch: Val::Record closures with t=closure are callable at all four Rust dispatch sites (call, eval_tco, vm_dispatch_call, named call)
+- apply_fn_with_eval split: self-binding for MutEnv closures uses menv.set (side effect, returns env) rather than rec.set (returns new record), fixing the env corruption that produced Val::Unit callees
+
+
 ### Compiler Components
 
 | File | Description |
