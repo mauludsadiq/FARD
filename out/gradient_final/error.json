@@ -1,0 +1,1 @@
+{"code":"ERROR_BADARG","message":"ERROR_BADARG list.map arg0 must be list","partial_trace_digest":"sha256:6713a0bec05fdd34ea510f42f3f7a4b941ae62e97704018b4abc6f17cbc6b2e7","span":{"col":62,"file":"apps/gradient_ppm.fard","line":7},"witnessed_failure":true}

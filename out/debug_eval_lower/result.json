@@ -1,0 +1,1 @@
+{"result":[{"alias":"rec","path":"std/record","t":"top_import"},{"body":{"args":[{"name":"env","t":"var"},{"name":"name","t":"var"}],"fn":{"field":"get","obj":{"name":"rec","t":"var"},"t":"get_field"},"t":"call"},"name":"env_get","params":["env","name"],"t":"def_fn"}]}

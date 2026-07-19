@@ -1,0 +1,2 @@
+import("std/str") as M
+emit("ok")

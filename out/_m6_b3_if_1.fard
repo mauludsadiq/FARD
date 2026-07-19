@@ -1,0 +1,5 @@
+
+fn inc(x) { x + 1 }
+fn dbl(x) { x * 2 }
+
+if true then 1 |> inc else 1 |> dbl

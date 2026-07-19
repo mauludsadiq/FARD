@@ -1,0 +1,1 @@
+{"code":"ERROR_RUNTIME","message":"vm: call on non-function: type=bool val=\"\"","partial_trace_digest":"sha256:978c63c71266fdcdad1b1df7456b679fb370f7f2b20a57b8a85fe49abeab4fce","span":{"col":64,"file":"tests/video_core/debug_frame_path.fard","line":3},"witnessed_failure":true}

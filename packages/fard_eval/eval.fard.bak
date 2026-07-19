@@ -1,0 +1,126 @@
+import("std/list") as list
+import("std/record") as rec
+
+fn env_empty() { {} }
+
+fn env_get(env, name) { rec.get(env, name) }
+
+fn env_set(env, name, value) { rec.set(env, name, value) }
+
+fn eval_args(args, env) {
+  list.map(args, fn(a) { eval(a, env) })
+}
+
+fn apply_builtin(name, args) {
+  match name {
+    "int.add" => args[0] + args[1],
+    "int.sub" => args[0] - args[1],
+    "int.mul" => args[0] * args[1],
+    "int.div" => args[0] / args[1],
+    "int.eq" => args[0] == args[1],
+    "int.ne" => args[0] != args[1],
+    "int.lt" => args[0] < args[1],
+    "int.le" => args[0] <= args[1],
+    "int.gt" => args[0] > args[1],
+    "int.ge" => args[0] >= args[1],
+    _ => { t: "err", e: "unsupported_builtin" }
+  }
+}
+
+fn make_closure(params, body, env) {
+  { t: "closure", params: params, body: body, env: env }
+}
+
+fn bind_params(params, args, env) {
+  if list.len(params) == 0 then env
+  else bind_params(
+    list.drop(params, 1),
+    list.drop(args, 1),
+    rec.set(env, params[0], args[0])
+  )
+}
+
+fn apply_fn(fn_val, args) {
+  match fn_val.t {
+    "closure" =>
+      let env2 = bind_params(fn_val.params, args, fn_val.env) in
+      eval(fn_val.body, env2),
+    _ => { t: "err", e: "not_callable" }
+  }
+}
+
+fn eval_bool_not(arg, env) {
+  let a = eval(arg, env) in
+  not a
+}
+
+fn eval_bool_and(arg1, arg2, env) {
+  let a = eval(arg1, env) in
+  if a then eval(arg2, env) else false
+}
+
+fn eval_bool_or(arg1, arg2, env) {
+  let a = eval(arg1, env) in
+  if a then true else eval(arg2, env)
+}
+
+fn eval_call_builtin(node, env) {
+  match node.name {
+    "bool.not" => eval_bool_not(node.args[0], env),
+    "bool.and" => eval_bool_and(node.args[0], node.args[1], env),
+    "bool.or" => eval_bool_or(node.args[0], node.args[1], env),
+    _ => apply_builtin(node.name, eval_args(node.args, env))
+  }
+}
+
+fn eval(node, env) {
+  match node.t {
+    "lit_int" => node.v,
+    "lit_text" => node.v,
+    "lit_bool" => node.v,
+
+    "var" => env_get(env, node.name),
+
+    "call_builtin" => eval_call_builtin(node, env),
+
+    "node_fn" => make_closure(node.params, node.body, env),
+
+    "call" =>
+      let fn_val = eval(rec.get(node, "fn"), env) in
+      let args2 = eval_args(node.args, env) in
+      apply_fn(fn_val, args2),
+
+    "let" =>
+      let b = node.bindings[0] in
+      let v = eval(b.value, env) in
+      let env2 = env_set(env, b.name, v) in
+      eval(node.body, env2),
+
+    "def_fn" => make_closure(node.params, node.body, env),
+
+    "if_node" =>
+      let cond = eval(rec.get(node, "cond"), env) in
+      if cond then eval(rec.get(node, "t_branch"), env)
+      else eval(rec.get(node, "f_branch"), env),
+
+    _ => { t: "err", e: "unsupported_eval_node" }
+  }
+}
+
+fn eval_module(m, env) {
+  let env2 = list.fold(m.defs, env, fn(acc, d) {
+    let v = eval(d, acc) in
+    rec.set(acc, d.name, v)
+  }) in
+  env_get(env2, m.entry)
+}
+
+{
+  env_empty: env_empty,
+  env_get: env_get,
+  env_set: env_set,
+  make_closure: make_closure,
+  apply_fn: apply_fn,
+  eval: eval,
+  eval_module: eval_module
+}

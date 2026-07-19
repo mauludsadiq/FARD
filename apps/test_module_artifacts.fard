@@ -1,0 +1,27 @@
+import("fardlex")      as lex
+import("fardparse")    as par
+import("fard_lower")   as lower
+import("fard_codegen") as cg
+import("fard_elf")     as elf
+import("std/fs")       as fs
+import("std/bytes")    as bytes
+import("std/list")     as list
+
+fn compile_module(path, out_path) {
+  let src    = fs.read_text(path) in
+  let tokens = lex.tokenize(src) in
+  let parsed = par.parse_module(tokens, 0) in
+  let ir     = lower.lower_program(parsed.node) in
+  let cg_res = cg.codegen(ir) in
+  let binary = elf.build_elf(cg_res) in
+  let _      = fs.write_bytes(out_path, binary) in
+  { path: path, ok: parsed.ok, n_fns: list.len(ir.fns), bytes: bytes.len(binary) }
+}
+
+[
+  compile_module("apps/fardlex.fard",      "fardc_out2/mod_fardlex"),
+  compile_module("apps/fardparse.fard",    "fardc_out2/mod_fardparse"),
+  compile_module("apps/fard_lower.fard",   "fardc_out2/mod_fard_lower"),
+  compile_module("apps/fard_codegen.fard", "fardc_out2/mod_fard_codegen"),
+  compile_module("apps/fard_elf.fard",     "fardc_out2/mod_fard_elf")
+]

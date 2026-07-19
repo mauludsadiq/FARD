@@ -1,0 +1,28 @@
+import("../std/list_impl") as L
+import("std/list")    as list
+
+test "map" { L.map([1,2,3], fn(x) { x * 2 }) == [2,4,6] }
+test "filter" { L.filter([1,2,3,4], fn(x) { x % 2 == 0 }) == [2,4] }
+test "any true" { L.any([1,2,3], fn(x) { x == 2 }) }
+test "any false" { !L.any([1,2,3], fn(x) { x == 9 }) }
+test "all true" { L.all([2,4,6], fn(x) { x % 2 == 0 }) }
+test "all false" { !L.all([2,3,4], fn(x) { x % 2 == 0 }) }
+test "find hit" { L.find([1,2,3], fn(x) { x == 2 }).some == 2 }
+test "find miss" { rec.has(L.find([1,2,3], fn(x) { x == 9 }), "none") }
+test "head" { L.head([10,20,30]) == 10 }
+test "last" { L.last([10,20,30]) == 30 }
+test "take" { L.take([1,2,3,4,5], 3) == [1,2,3] }
+test "drop" { L.drop([1,2,3,4,5], 2) == [3,4,5] }
+test "reverse" { L.reverse([1,2,3]) == [3,2,1] }
+test "zip" { list.len(L.zip([1,2,3],[4,5,6])) == 3 }
+test "flatten" { L.flatten([[1,2],[3,4]]) == [1,2,3,4] }
+test "range" { L.range(1, 5) == [1,2,3,4] }
+test "repeat" { L.repeat(7, 3) == [7,7,7] }
+test "dedupe" { L.dedupe([1,1,2,2,3]) == [1,2,3] }
+test "sort_by" { L.sort_by([3,1,2], fn(a,b) { if a<b then -1 else if a>b then 1 else 0 }) == [1,2,3] }
+test "sum" { L.sum([1,2,3,4,5]) == 15 }
+test "join" { L.join(["a","b","c"], ",") == "a,b,c" }
+test "chunk" { list.len(L.chunk([1,2,3,4,5], 2)) == 3 }
+test "group_by" { rec.has(L.group_by([1,2,3], fn(x) { if x % 2 == 0 then "even" else "odd" }), "even") }
+
+import("std/rec") as rec

@@ -1,0 +1,9 @@
+
+import("std/result") as result
+
+let r = result.ok(123)
+
+match r {
+  {t:"ok", v:123} => 1,
+  _ => 0
+}

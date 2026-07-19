@@ -1,0 +1,9 @@
+
+import("std/result") as result
+
+let r = result.err("boom")
+
+match r {
+  {t:"err", e:"boom"} => 1,
+  _ => 0
+}

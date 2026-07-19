@@ -1,0 +1,19 @@
+import("../std/math_impl") as M
+
+test "abs pos"      { M.abs(5) == 5 }
+test "abs neg"      { M.abs(-7) == 7 }
+test "sign pos"     { M.sign(3) == 1 }
+test "sign neg"     { M.sign(-3) == -1 }
+test "sign zero"    { M.sign(0) == 0 }
+test "clamp mid"    { M.clamp(5, 0, 10) == 5 }
+test "clamp lo"     { M.clamp(-5, 0, 10) == 0 }
+test "clamp hi"     { M.clamp(15, 0, 10) == 10 }
+test "max"          { M.max(3, 7) == 7 }
+test "min"          { M.min(3, 7) == 3 }
+test "gcd"          { M.gcd(12, 8) == 4 }
+test "lcm"          { M.lcm(4, 6) == 12 }
+test "factorial"    { M.factorial(5) == 120 }
+test "is_even"      { M.is_even(4) }
+test "is_odd"       { M.is_odd(3) }
+test "divmod"       { M.divmod(17, 5).q == 3 && M.divmod(17, 5).r == 2 }
+test "pi"           { M.pi() > 3.14 }

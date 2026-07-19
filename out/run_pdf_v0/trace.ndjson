@@ -1,0 +1,10 @@
+{"cid":"sha256:9e6f33351b8e44d6f7b846edc220dfc42386d1b4a2379ca8bdb40d655f96bc3f","kind":"rel","name":"../../packages/pdf_v0/src/model","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/rec","t":"module_resolve"}
+{"cid":"sha256:e33dbff3aef84e26a063b1e1ce4c56e93bd59cd8b67bc4a2e7bf0e937c831930","kind":"rel","name":"../../packages/pdf_v0/src/highlight","t":"module_resolve"}
+{"cid":"sha256:9e6f33351b8e44d6f7b846edc220dfc42386d1b4a2379ca8bdb40d655f96bc3f","kind":"rel","name":"./model","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
+{"cid":"sha256:17e3f61e02d1c17d8767d52157d04fbd7976303df15682ea53ecec68c795dd23","kind":"rel","name":"../../packages/pdf_v0/src/write_pdf","t":"module_resolve"}
+{"cid":"sha256:a5fb362955955f06d78746451c74c5e3458be27b2304bbb79b5139cef1cf4124","kind":"std","name":"std/io","t":"module_resolve"}
+{"cid":"sha256:079b7806d7457a3a32a8dd66d0c8ea06bfdfa5866e33903a291cc43450535630","kind":"std","name":"std/json","t":"module_resolve"}
+{"cid":"sha256:6ee9abbe332a2405df9911684f75c4fd412652a55f5cf5da1d81e83af2a4ad39","t":"module_graph"}

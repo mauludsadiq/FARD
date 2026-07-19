@@ -1,0 +1,3 @@
+{"code":"QMARK_EXPECT_RESULT","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:da4a3c8b0ebb1144445109d82807569cd960b5c7bbd3aa49272b32bcf36188ac","t":"module_graph"}
+{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> out/_m6_b7_4.fard:4:11: QMARK_EXPECT_RESULT expected result","t":"error"}

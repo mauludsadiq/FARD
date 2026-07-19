@@ -1,0 +1,4 @@
+
+import("std/result") as Result
+emit({k:"hello"})
+0

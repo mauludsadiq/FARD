@@ -1,0 +1,3 @@
+
+fn inc(x) { x + 1 }
+true || ((1 |> inc) == 0) && false

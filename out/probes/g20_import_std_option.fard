@@ -1,0 +1,2 @@
+import("std/option") as M
+emit("ok")

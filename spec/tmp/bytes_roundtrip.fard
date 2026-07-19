@@ -1,0 +1,3 @@
+
+let b = {"t":"bytes","v":"hex:ff0000ff"}
+b

@@ -1,0 +1,1 @@
+{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> spec/tmp/g77_5.fard:3:28: QMARK_EXPECT_RESULT err missing e","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","span":{"col":28,"file":"spec/tmp/g77_5.fard","line":3},"witnessed_failure":true}

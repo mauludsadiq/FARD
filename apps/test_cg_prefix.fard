@@ -1,0 +1,35 @@
+import("fardlex")      as lex
+import("fardparse")    as par
+import("fard_lower")   as lower
+import("fard_codegen") as cg
+import("std/fs")       as fs
+import("std/list")     as list
+import("std/array")    as array
+
+fn take(xs, n) {
+  take_acc(xs, n, 0, [])
+}
+
+fn take_acc(xs, n, i, acc) {
+  if i >= n then acc
+  else take_acc(xs, n, i + 1, list.append(acc, list.get(xs, i)))
+}
+
+let src    = fs.read_text("apps/fardc_native.fard")
+let tokens = lex.tokenize(src)
+let parsed = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(parsed.node)
+
+let main_fn = list.get(ir.fns, ir.entry)
+let prefix_n = 34
+let main_prefix = {
+  name: main_fn.name,
+  arity: main_fn.arity,
+  locals: main_fn.locals,
+  code: take(main_fn.code, prefix_n)
+}
+
+let ir1 = { fns: [main_prefix], entry: 0 }
+let cg1 = cg.codegen(ir1)
+
+{ ok: true, prefix_n: prefix_n, n_addrs: array.len(cg1.fn_addrs) }

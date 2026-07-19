@@ -1,0 +1,21 @@
+import("../apps/fardlex")   as lex
+import("../apps/fardparse") as par
+import("../apps/fard_eval") as ev
+
+fn run(src) {
+  let tokens = lex.tokenize(src) in
+  let parsed = par.parse_module(tokens, 0) in
+  if !parsed.ok then { t: "error", msg: parsed.err }
+  else ev.eval_module(parsed.node)
+}
+
+test "eval 1+2"       { run("1 + 2").v == 3 }
+test "eval string"    { run("\"hello\"").v == "hello" }
+test "eval if true"   { run("if true then 1 else 2").v == 1 }
+test "eval if false"  { run("if false then 1 else 2").v == 2 }
+test "eval module let" {
+  let r = run("let x = 10\nlet y = 5\nx + y") in
+  r.v == 15
+}
+test "eval bool eq" { run("1 == 1").v == true }
+test "eval nested arith" { run("2 * 3 + 4").v == 10 }

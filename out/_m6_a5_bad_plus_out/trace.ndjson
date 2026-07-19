@@ -1,0 +1,3 @@
+{"code":"ERROR_PARSE","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:bff961b7e69431fcf9694734a550d66641a7604849d58d2c2d233072be00f8de","t":"module_graph"}
+{"code":"ERROR_PARSE","message":"ERROR_PARSE unexpected token: Sym(\"+\")","t":"error"}

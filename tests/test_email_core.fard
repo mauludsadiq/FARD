@@ -1,0 +1,43 @@
+import("std/bytes") as bytes
+import("../packages/email-core/email") as email
+
+test "email message fields" {
+  let m = email.message("from@x.com", ["to@x.com"], "Hello", "Body") in
+  m.subject == "Hello"
+}
+
+test "email with_html" {
+  let m = email.with_html(email.message("a@b.com", ["c@d.com"], "s", "body"), "<p>hi</p>") in
+  m.html == "<p>hi</p>"
+}
+
+test "email with_cc" {
+  let m = email.with_cc(email.message("a@b.com", ["c@d.com"], "s", "b"), ["cc@d.com"]) in
+  list.len(m.cc) == 1
+}
+
+test "email to_mime plain" {
+  let m = email.message("a@b.com", ["b@c.com"], "Test", "Hello") in
+  str.contains(email.to_mime(m), "Subject: Test")
+}
+
+test "email to_mime has from" {
+  let m = email.message("from@x.com", ["to@x.com"], "s", "b") in
+  str.contains(email.to_mime(m), "From: from@x.com")
+}
+
+test "email template" {
+  let t = email.template("Hello {{name}}, your code is {{code}}", { name: "Alice", code: "123" }) in
+  t == "Hello Alice, your code is 123"
+}
+
+test "email with_attachment" {
+  let m = email.with_attachment(
+    email.message("a@b.com", ["c@d.com"], "s", "b"),
+    "file.txt", "text/plain", bytes.of_str("hello")
+  ) in
+  list.len(m.attachments) == 1
+}
+
+import("std/str")  as str
+import("std/list") as list

@@ -1,0 +1,11 @@
+
+import("std/result") as result
+
+let f = fn(x) { result.ok(x + 1) }
+
+let r = result.andThen(result.ok(41), f)
+
+match r {
+  {t:"ok", v:42} => 1,
+  _ => 0
+}

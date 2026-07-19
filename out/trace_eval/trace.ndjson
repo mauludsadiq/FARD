@@ -1,0 +1,3 @@
+{"code":"ERROR_PARSE","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:1e52c8332ad137cea0598749e2f1e607ef91f8b08e0c1736cbf22f6cd1fd9a63","t":"module_graph"}
+{"code":"ERROR_PARSE","message":"ERROR_PARSE expected keyword \"in\" but got Kw(\"if\")  --> tests/trace_eval.fard:17:32","t":"error"}

@@ -1,0 +1,1 @@
+{"code":"ERROR_RUNTIME","message":"unbound var: overlay_stream","partial_trace_digest":"sha256:11718d900066c2be8b5a586da644e84028da968611f3d4cb3a1c1d569fc78f62","span":{"col":1,"file":"apps/pdf_v0/pdf_patch_demo.fard","line":12},"witnessed_failure":true}

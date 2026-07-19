@@ -1,0 +1,21 @@
+import("apps/fardparse")    as par
+import("apps/fard_lower")   as lower
+import("apps/fard_codegen") as cg
+import("apps/fard_stdlib")  as stdlib
+import("std/str")   as str
+import("std/array") as array
+
+let src = "let xs = [10, 20, 30]\nlist.len(xs)"
+let tokens = str.lex_tokens(src)
+let ast    = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(ast.node)
+let cg_res = cg.codegen(ir)
+
+let buf = array.new()
+let sr  = stdlib.emit_all_stdlib(buf)
+
+{ stdlib_first: array.get(sr.addrs, 0),
+  stdlib_second: array.get(sr.addrs, 1),
+  stdlib_patch: array.get(cg_res.stdlib_patches, 0),
+  n_stdlib_patches: array.len(cg_res.stdlib_patches),
+  code_len: array.len(cg_res.buf) }

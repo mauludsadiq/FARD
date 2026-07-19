@@ -1,0 +1,7 @@
+
+import("std/result") as result
+let bad = {t:"err", v:{k:1}}
+match bad {
+  {t:"ok", v:v} => result.ok(v),
+  {t:"err", e:e} => result.err(e),
+}

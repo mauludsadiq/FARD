@@ -1,0 +1,3 @@
+{"code":"ERROR_PARSE","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:2a272bf5c0ac4cabc965ca8aa12cfdd283dbf054aac505dbb2ae3973380cd6c3","t":"module_graph"}
+{"code":"ERROR_PARSE","message":"ERROR_PARSE leading zero integer literal","t":"error"}

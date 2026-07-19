@@ -1,0 +1,1 @@
+{"code":"ERROR_BADARG","message":"ERROR_BADARG list.map arg0 must be list","partial_trace_digest":"sha256:14cade000eb2642d926b59d678348003180f978ee1392dbf54829cd077b6144c","span":{"col":73,"file":"apps/video_test_pattern.fard","line":7},"witnessed_failure":true}

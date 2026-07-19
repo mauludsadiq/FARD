@@ -1,0 +1,1 @@
+{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:c32ed4f1b3f5b52bb0ced2fbe627d9abea18ce5ba987badb5eeda028eabb680f","id":0,"kind":"rel","path":"spec/tmp/m2_gate_emit_module.fard","spec":"spec/tmp/m2_gate_emit_module.fard"},{"digest":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","id":1,"kind":"std","spec":"std/result"}]}

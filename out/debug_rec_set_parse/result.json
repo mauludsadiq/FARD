@@ -1,0 +1,1 @@
+{"result":{"args":[{"loc":14,"name":"env","t":"var"},{"loc":16,"name":"name","t":"var"},{"loc":18,"name":"value","t":"var"}],"fn":{"field":"set","loc":10,"obj":{"loc":10,"name":"rec","t":"var"},"t":"get_field"},"loc":10,"t":"call"}}

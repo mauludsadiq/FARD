@@ -1,0 +1,5 @@
+
+fn inc(x) { x + 1 }
+fn dbl(x) { x * 2 }
+
+let y = 1 |> inc in y |> dbl

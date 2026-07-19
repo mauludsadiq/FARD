@@ -1,0 +1,43 @@
+import("../packages/debug-core/debug") as dbg
+import("std/str")  as str
+import("std/list") as list
+
+test "debug snapshot" {
+  let s = dbg.snapshot("x", 42) in
+  s.label == "x" && s.value == 42
+}
+
+test "debug trace printed" {
+  let t = dbg.trace("val", 99) in
+  str.contains(t.printed, "val")
+}
+
+test "debug assert_snapshot pass" {
+  dbg.assert_snapshot("x", 42, "42").ok
+}
+
+test "debug assert_snapshot fail" {
+  !dbg.assert_snapshot("x", 42, "99").ok
+}
+
+test "debug watch" {
+  let w = dbg.watch({ a: 1, b: "hello" }) in
+  rec.has(w, "a") && rec.has(w, "b")
+}
+
+test "debug step_trace" {
+  let t = dbg.step_trace(0, [fn(s) { s + 1 }, fn(s) { s + 1 }, fn(s) { s + 1 }]) in
+  t.state == 3 && list.len(t.history) == 4
+}
+
+test "debug diff_snapshots" {
+  let d = dbg.diff_snapshots({ a: 1, b: 2 }, { a: 1, b: 3 }) in
+  list.len(d) == 1 && list.get(d, 0).key == "b"
+}
+
+test "debug breakpoint hit" {
+  let b = dbg.breakpoint(true, 42, "test") in
+  b.break == true
+}
+
+import("std/rec") as rec

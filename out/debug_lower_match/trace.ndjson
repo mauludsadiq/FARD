@@ -1,0 +1,6 @@
+{"cid":"sha256:861af718e0e9f3b6e43d2f213057ca999521aa5334c0ecccca4ceb233c2ab48b","kind":"std","name":"std/ast","t":"module_resolve"}
+{"cid":"sha256:e18da04bc10e2f9b731532eafbc0a63b0f5adaca9d8141a54828f284b614c940","kind":"rel","name":"../packages/fard_lower/lower","t":"module_resolve"}
+{"cid":"sha256:03bd52757041d6d217df1f4ffd173274a7031f731a07f77327a0009936281c89","kind":"rel","name":"../fir/fir","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/record","t":"module_resolve"}
+{"cid":"sha256:cde763c486edb6f1c5147580860145baac81321a8e524d25c20ece86faef57d6","t":"module_graph"}

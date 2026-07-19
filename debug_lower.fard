@@ -1,0 +1,12 @@
+import("fardparse") as par
+import("fard_lower") as lower
+import("std/str") as str
+import("std/fs") as fs
+import("std/env") as env
+
+let args = env.args()
+let src = fs.read_text("hello4.fard")
+let tokens = str.lex_tokens(src)
+let parsed = par.parse_module(tokens, 0)
+let ir = lower.lower_program(parsed.node)
+ir

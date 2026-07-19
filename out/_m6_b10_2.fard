@@ -1,0 +1,4 @@
+
+fn mk(x) { {a: x, b: x + 2} }
+
+let {a: a, b: b} = (1 |> mk) in a + b

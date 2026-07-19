@@ -1,0 +1,1 @@
+{"code":"ERROR_RUNTIME","message":"  --> out/_m6_a5_bad_sci.fard:1:2: unbound var: e3 -- did you mean 'len'?","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","span":{"col":2,"file":"out/_m6_a5_bad_sci.fard","line":1},"witnessed_failure":true}

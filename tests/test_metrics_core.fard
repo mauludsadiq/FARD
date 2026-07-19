@@ -1,0 +1,45 @@
+import("../packages/metrics-core/metrics") as m
+
+test "counter inc" {
+  let mx = m.inc(m.new(), "requests") in
+  m.counter(mx, "requests") == 1
+}
+
+test "counter inc_by" {
+  let mx = m.inc_by(m.new(), "bytes", 1024) in
+  m.counter(mx, "bytes") == 1024
+}
+
+test "counter default zero" {
+  m.counter(m.new(), "missing") == 0
+}
+
+test "gauge set" {
+  let mx = m.set_gauge(m.new(), "cpu", 42) in
+  m.gauge(mx, "cpu") == 42
+}
+
+test "histogram observe" {
+  let mx = m.observe(m.new(), "latency", 100) in
+  m.histogram_count(mx, "latency") == 1
+}
+
+test "histogram avg" {
+  let mx = m.observe(m.observe(m.new(), "lat", 100), "lat", 200) in
+  m.histogram_avg(mx, "lat") == 150
+}
+
+test "prometheus export" {
+  let mx = m.inc(m.new(), "reqs") in
+  let out = m.to_prometheus(mx, "app") in
+  str.contains(out, "app_reqs")
+}
+
+test "merge metrics" {
+  let a = m.inc(m.new(), "hits") in
+  let b = m.inc(m.inc(m.new(), "hits"), "hits") in
+  let merged = m.merge(a, b) in
+  m.counter(merged, "hits") == 3
+}
+
+import("std/str") as str

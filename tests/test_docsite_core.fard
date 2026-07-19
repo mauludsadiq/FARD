@@ -1,0 +1,36 @@
+import("../packages/docsite-core/docsite") as doc
+import("std/str")  as str
+import("std/list") as list
+
+let sample_src = "/// my-module — does cool things\nfn add(a, b) { a + b }\nfn sub(a, b) { a - b }"
+
+test "docsite extract_fns" {
+  let fns = doc.extract_fns(sample_src) in
+  list.len(fns) == 2
+}
+
+test "docsite fn sig" {
+  let fns = doc.extract_fns(sample_src) in
+  str.contains(list.get(fns, 0).sig, "fn add")
+}
+
+test "docsite module_doc" {
+  let d = doc.module_doc("my-module", sample_src) in
+  d.name == "my-module"
+}
+
+test "docsite to_markdown" {
+  let d = doc.module_doc("my-module", sample_src) in
+  str.contains(doc.to_markdown(d), "# my-module")
+}
+
+test "docsite to_html" {
+  let d = doc.module_doc("my-module", sample_src) in
+  str.contains(doc.to_html(d), "<h1>my-module</h1>")
+}
+
+test "docsite site index" {
+  let d = doc.module_doc("my-module", sample_src) in
+  let s = doc.site([d]) in
+  str.contains(s.index, "my-module")
+}

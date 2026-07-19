@@ -1,0 +1,4 @@
+
+fn f(x) { {inc: (y)=> {t:"ok", v: y + x}} }
+fn g(z) { z * 2 }
+f(1).inc(10)? |> g

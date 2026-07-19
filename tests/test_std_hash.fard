@@ -1,0 +1,7 @@
+import("../std/hash_impl") as H
+import("std/str") as str
+
+test "sha256_text returns sha256: prefix" { str.starts_with(H.sha256_text("hello"), "sha256:") }
+test "short"    { str.len(H.short("hello")) == 8 }
+test "verify"   { H.verify("hello", H.sha256_text("hello")) }
+test "content_id" { str.starts_with(H.content_id(42), "sha256:") }

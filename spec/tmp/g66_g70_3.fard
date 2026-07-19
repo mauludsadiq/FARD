@@ -1,0 +1,11 @@
+
+import("std/result") as result
+
+fn via_qmark() {
+  let _ = result.err({code:"E_Q", msg:"q"})?
+  result.ok(0)
+}
+
+let a = via_qmark()
+let b = result.err({code:"E_Q", msg:"q"})
+{a:a, b:b}

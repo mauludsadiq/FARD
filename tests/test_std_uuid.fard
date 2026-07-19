@@ -1,0 +1,7 @@
+import("../std/uuid_impl") as U
+import("std/str") as str
+
+test "v4 len"    { str.len(U.v4()) == 36 }
+test "validate"  { U.validate(U.v4()) }
+test "nil"       { U.is_nil(U.nil()) }
+test "short"     { str.len(U.short(U.v4())) == 8 }

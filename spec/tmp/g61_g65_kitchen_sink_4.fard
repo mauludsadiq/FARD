@@ -1,0 +1,7 @@
+
+import("std/result") as result
+fn f() {
+  let x = result.err({code:"E_Q", msg:"q"})?
+  result.ok(x)
+}
+f()

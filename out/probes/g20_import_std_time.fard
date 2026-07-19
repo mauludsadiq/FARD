@@ -1,0 +1,2 @@
+import("std/time") as M
+emit("ok")

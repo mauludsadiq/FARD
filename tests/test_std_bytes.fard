@@ -1,0 +1,9 @@
+import("../std/bytes_impl") as B
+import("std/str") as str
+
+test "of_str len"    { B.len(B.of_str("hello")) == 5 }
+test "to_hex"        { str.starts_with(B.to_hex(B.of_str("A")), "41") }
+test "is_empty"      { B.is_empty(B.empty()) }
+test "not empty"     { !B.is_empty(B.of_str("x")) }
+test "from_hex"      { B.len(B.from_hex("4142")) == 2 }
+test "roundtrip"     { B.to_hex(B.from_hex("deadbeef")) == "deadbeef" }

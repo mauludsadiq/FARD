@@ -1,0 +1,2 @@
+import("std/map") as M
+emit("ok")

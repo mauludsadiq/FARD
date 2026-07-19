@@ -1,0 +1,1 @@
+{"result":[{"body":{"args":[{"loc":16,"name":"x","t":"var"},{"loc":18,"name":"y","t":"var"}],"loc":16,"name":"int.add","t":"call_builtin"},"name":"add","params":["x","y"],"t":"def_fn"},{"name":"z","t":"top_let","value":{"args":[{"loc":25,"t":"lit_int","v":1},{"loc":27,"t":"lit_int","v":2}],"fn":{"loc":23,"name":"add","t":"var"},"loc":23,"t":"call"}}]}

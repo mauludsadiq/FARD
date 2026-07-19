@@ -1,0 +1,2 @@
+import("std/trace") as M
+emit("ok")

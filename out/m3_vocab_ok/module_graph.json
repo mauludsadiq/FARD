@@ -1,0 +1,1 @@
+{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:b9fc6d78b70f5b1d7f6c60e3b5c24b4572ce884aa751e01d3836de7ba07ab1dd","id":0,"kind":"rel","path":"spec/tmp/m3_vocab_ok.fard","spec":"spec/tmp/m3_vocab_ok.fard"},{"digest":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","id":1,"kind":"std","spec":"std/result"}]}

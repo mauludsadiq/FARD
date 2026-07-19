@@ -1,0 +1,15 @@
+import("apps/fardparse")    as par
+import("apps/fard_lower")   as lower
+import("apps/fard_codegen") as cg
+import("apps/fard_elf")     as elf
+import("std/str")   as str
+import("std/fs")    as fs
+import("std/bytes") as bytes
+
+let src = "fn fib(n) { if n <= 1 then n else fib(n-1) + fib(n-2) }\nfib(10)"
+let tokens = str.lex_tokens(src)
+let ast    = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(ast.node)
+let binary = elf.build_elf(cg.codegen(ir))
+let _      = fs.write_bytes("fardc_out2/fib_native", binary)
+{ ok: true, bytes: bytes.len(binary) }

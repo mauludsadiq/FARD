@@ -1,0 +1,6 @@
+
+import("std/result") as result
+
+let _ = result.err("E_Q")?
+
+0

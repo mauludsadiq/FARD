@@ -1,0 +1,7 @@
+
+import("std/list") as L
+
+fn inc(x) { x + 1 }
+
+let L = { map: (xs, f) => xs } in
+  [1,2,3] |> L.map(inc)

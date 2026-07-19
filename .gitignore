@@ -7,3 +7,4 @@ apps/debug_*.fard
 probe_*.fard
 check_*.fard
 dump_*.fard
+target/

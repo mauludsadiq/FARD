@@ -1,0 +1,4 @@
+
+emit({k:"p1"})
+let _bs = emit_artifact("p1.bin", {a:1}) in
+0

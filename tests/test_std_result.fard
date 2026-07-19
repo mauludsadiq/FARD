@@ -1,0 +1,15 @@
+import("../std/result_impl") as R
+
+test "ok is_ok"       { R.is_ok(R.ok(42)) }
+test "err is_err"     { R.is_err(R.err("oops")) }
+test "map ok"         { R.unwrap_ok(R.map(R.ok(5), fn(x) { x*2 })) == 10 }
+test "map err pass"   { R.is_err(R.map(R.err("e"), fn(x) { x*2 })) }
+test "and_then ok"    { R.unwrap_ok(R.and_then(R.ok(5), fn(x) { R.ok(x+1) })) == 6 }
+test "and_then err"   { R.is_err(R.and_then(R.err("e"), fn(x) { R.ok(x) })) }
+test "unwrap_or ok"   { R.unwrap_or(R.ok(7), 0) == 7 }
+test "unwrap_or err"  { R.unwrap_or(R.err("e"), 99) == 99 }
+test "map_err"        { R.unwrap_err(R.map_err(R.err("e"), fn(e) { str.concat([e,"!"]) })) == "e!" }
+test "collect ok"     { R.is_ok(R.collect([R.ok(1), R.ok(2)])) }
+test "collect err"    { R.is_err(R.collect([R.ok(1), R.err("e")])) }
+
+import("std/str") as str

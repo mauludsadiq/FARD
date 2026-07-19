@@ -1,0 +1,2 @@
+import("std/artifact") as M
+emit("ok")

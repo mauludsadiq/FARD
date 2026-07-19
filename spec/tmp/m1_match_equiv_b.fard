@@ -1,0 +1,5 @@
+
+import("std/result") as result
+let f = fn(x) { result.ok(x * 2) }
+let r = result.ok(7)
+result.andThen(r, f)

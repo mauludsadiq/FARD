@@ -1,0 +1,50 @@
+import("../packages/auth-core/password") as pwd
+import("../packages/auth-core/jwt")      as jwt
+import("../packages/auth-core/session")  as session
+import("../packages/auth-core/rbac")     as rbac
+
+test "password hash and verify" {
+  let h = pwd.hash_password("secret123") in
+  pwd.verify_password("secret123", h)
+}
+
+test "password wrong password" {
+  let h = pwd.hash_password("secret123") in
+  !pwd.verify_password("wrong", h)
+}
+
+test "jwt sign and verify" {
+  let token = jwt.sign({ user_id: 42, role: "admin" }, "my-secret") in
+  let result = jwt.verify(token, "my-secret") in
+  result.ok && result.payload.user_id == 42
+}
+
+test "jwt wrong secret" {
+  let token = jwt.sign({ user_id: 1 }, "secret") in
+  let result = jwt.verify(token, "wrong") in
+  !result.ok
+}
+
+test "session create and get" {
+  let store = session.new_store() in
+  let r = session.create(store, { user: "alice" }) in
+  let data = session.get(r.store, r.id) in
+  data.user == "alice"
+}
+
+test "session destroy" {
+  let store = session.new_store() in
+  let r = session.create(store, { user: "bob" }) in
+  let store2 = session.destroy(r.store, r.id) in
+  session.get(store2, r.id) == null
+}
+
+test "rbac grant and can" {
+  let p = rbac.grant(rbac.new_policy(), "admin", ["read", "write", "delete"]) in
+  rbac.can(p, "admin", "write")
+}
+
+test "rbac cannot" {
+  let p = rbac.grant(rbac.new_policy(), "viewer", ["read"]) in
+  !rbac.can(p, "viewer", "write")
+}

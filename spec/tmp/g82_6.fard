@@ -1,0 +1,8 @@
+
+import("std/result") as result
+
+let bad = fn(x) { 7 }   // not a Result
+
+let _ = result.andThen(result.ok(1), bad)
+
+0

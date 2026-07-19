@@ -1,0 +1,3 @@
+{"code":"ERROR_PARSE","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:6b44a01d919076b189cfa3d8bb33341b2e9151405975ede0a134b1c58dd010fa","t":"module_graph"}
+{"code":"ERROR_PARSE","message":"ERROR_PARSE expected pattern","t":"error"}

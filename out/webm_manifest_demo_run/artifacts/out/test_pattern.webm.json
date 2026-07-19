@@ -1,0 +1,1 @@
+{"artifact_type":"video/webm-manifest","audio":{"artifact_type":"audio/wav","path":"out/tone_440.wav","title":"tone_440"},"bridge":"rawvid_wav_to_webm_manifest","title":"demo_webm","video":{"artifact_type":"video/x-fard-rawvid","path":"out/test_pattern.fvid","title":"test_pattern"}}

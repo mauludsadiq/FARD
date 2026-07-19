@@ -1,0 +1,6 @@
+
+fn inc(x) { x + 1 }
+fn dbl(x) { x * 2 }
+fn sq(x) { x * x }
+
+1 |> inc |> dbl |> sq

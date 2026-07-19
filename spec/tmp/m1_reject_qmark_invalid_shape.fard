@@ -1,0 +1,4 @@
+
+import("std/result") as result
+let _x = {t:"ok"}?
+result.ok(0)

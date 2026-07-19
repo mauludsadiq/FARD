@@ -1,0 +1,3 @@
+{"code":"ERROR_RUNTIME","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:46a68adb852d7243e9ed7a2ee248c9cab91675eea94367c72f25f78d5f49d156","t":"module_graph"}
+{"code":"ERROR_RUNTIME","message":"ERROR_RUNTIME   --> out/_m6_a5_bad_sci.fard:1:2: unbound var: e3 -- did you mean 'len'?","t":"error"}

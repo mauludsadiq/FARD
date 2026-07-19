@@ -1,0 +1,7 @@
+{"cid":"sha256:a5fb362955955f06d78746451c74c5e3458be27b2304bbb79b5139cef1cf4124","kind":"std","name":"std/io","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/rec","t":"module_resolve"}
+{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
+{"code":"ERROR_RUNTIME","partial_trace_digest":"sha256:b1942034345e38ec299fc3c5084e21d4d57b96aa639d216963c55bd58731667a","t":"witnessed_failure"}
+{"cid":"sha256:282b300e4ced966480747b22f273803e45867485b3ad45ee0383e01398fb7d07","t":"module_graph"}
+{"code":"ERROR_RUNTIME","message":"ERROR_RUNTIME No such file or directory (os error 2)","t":"error"}

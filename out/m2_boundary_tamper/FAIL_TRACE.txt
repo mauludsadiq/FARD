@@ -1,0 +1,1 @@
+FAIL M2_FAIL_MUST_NOT_HAVE_result.json

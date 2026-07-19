@@ -1,0 +1,4 @@
+{"t":"emit","v":{"k":"m3"}}
+{"cid":"sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881","name":"in0","path":"spec/tmp/m3_in.bin","t":"artifact_in"}
+{"cid":"sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862","name":"out0","parents":[{"cid":"sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881","name":"in0"}],"t":"artifact_out"}
+{"cid":"sha256:dd33d11c9ea37f11953243c858503abb3a651bdb142ad4478cff6aecb012a959","t":"module_graph"}

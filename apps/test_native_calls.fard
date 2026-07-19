@@ -1,0 +1,27 @@
+import("fardlex")      as lex
+import("fardparse")    as par
+import("fard_lower")   as lower
+import("std/fs")       as fs
+import("std/list")     as list
+
+fn collect_calls(code, i, n, acc) {
+  if i >= n then acc
+  else
+    let instr = list.get(code, i) in
+    if instr.op == "call" then collect_calls(code, i + 1, n, list.append(acc, { i: i, instr: instr }))
+    else collect_calls(code, i + 1, n, acc)
+}
+
+fn collect_fn_calls(fns, i, n, acc) {
+  if i >= n then acc
+  else
+    let f = list.get(fns, i) in
+    collect_fn_calls(fns, i + 1, n, list.append(acc, { fn_i: i, name: f.name, calls: collect_calls(f.code, 0, list.len(f.code), []) }))
+}
+
+let src    = fs.read_text("apps/fardc_native.fard")
+let tokens = lex.tokenize(src)
+let parsed = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(parsed.node)
+
+collect_fn_calls(ir.fns, 0, list.len(ir.fns), [])

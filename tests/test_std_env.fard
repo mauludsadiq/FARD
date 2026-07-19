@@ -1,0 +1,6 @@
+import("../std/env_impl") as E
+
+test "get_or default" { E.get_or("NONEXISTENT_VAR_XYZ", "default") == "default" }
+test "get_int default" { E.get_int("NONEXISTENT_INT_XYZ", 42) == 42 }
+test "get_bool default" { E.get_bool("NONEXISTENT_BOOL_XYZ", true) == true }
+test "require missing" { !E.require("NONEXISTENT_VAR_XYZ").ok }

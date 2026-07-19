@@ -1,0 +1,33 @@
+import("../packages/orm-core/schema") as schema_mod
+import("../packages/orm-core/query")  as qb
+
+test "schema create sql" {
+  let t = schema_mod.table("users", [
+    schema_mod.pk("id"),
+    schema_mod.required(schema_mod.text("name")),
+    schema_mod.integer("age")
+  ]) in
+  str.starts_with(schema_mod.create_sql(t), "CREATE TABLE IF NOT EXISTS users")
+}
+
+test "query builder basic" {
+  let q = qb.from("users") in
+  qb.to_sql(q) == "SELECT * FROM users"
+}
+
+test "query builder where" {
+  let q = qb.where(qb.from("users"), "age > 18") in
+  qb.to_sql(q) == "SELECT * FROM users WHERE age > 18"
+}
+
+test "query builder limit" {
+  let q = qb.limit(qb.from("users"), 10) in
+  qb.to_sql(q) == "SELECT * FROM users LIMIT 10"
+}
+
+test "query insert sql" {
+  let sql = qb.insert_sql("users", { name: "Alice", age: 30 }) in
+  str.contains(sql, "INSERT INTO users")
+}
+
+import("std/str") as str

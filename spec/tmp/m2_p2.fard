@@ -1,0 +1,4 @@
+
+emit({k:"p2"})
+let _x = import_artifact("spec/tmp/m2_in.bin") in
+0

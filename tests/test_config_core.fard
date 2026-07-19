@@ -1,0 +1,44 @@
+import("../packages/config-core/config") as cfg
+
+test "config get default" {
+  let c = cfg.new({ port: 8080, debug: false }) in
+  cfg.get(c, "port") == 8080
+}
+
+test "config get_or missing" {
+  let c = cfg.new({}) in
+  cfg.get_or(c, "missing", 42) == 42
+}
+
+test "config set" {
+  let c = cfg.set(cfg.new({}), "host", "localhost") in
+  cfg.get(c, "host") == "localhost"
+}
+
+test "config get_bool true" {
+  let c = cfg.new({ flag: "true" }) in
+  cfg.get_bool(c, "flag", false) == true
+}
+
+test "config get_int string" {
+  let c = cfg.new({ port: "9000" }) in
+  cfg.get_int(c, "port", 0) == 9000
+}
+
+test "config validate valid" {
+  let c = cfg.new({ port: 8080 }) in
+  let c2 = cfg.validate(c, [{ key: "port", required: true }]) in
+  cfg.is_valid(c2)
+}
+
+test "config validate missing required" {
+  let c = cfg.new({}) in
+  let c2 = cfg.validate(c, [{ key: "port", required: true }]) in
+  !cfg.is_valid(c2)
+}
+
+test "config profile" {
+  let base = cfg.new({ debug: false, port: 8080 }) in
+  let c = cfg.profile(base, "dev", { dev: { debug: true, port: 3000 } }) in
+  cfg.get(c, "debug") == true
+}

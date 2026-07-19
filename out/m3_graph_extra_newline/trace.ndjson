@@ -1,0 +1,3 @@
+{"cid":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","kind":"std","name":"std/result","t":"module_resolve"}
+{"cid":"sha256:d00c669ec283d271e29fb0a07e48c0be202a66b45c84b593ef161681c8349e60","t":"module_graph"}
+{"cid":"sha256:afc074cb210d06404ac2b07922a6b1e65c1c16dcef314966c8989569260e3f04","name":"x","t":"artifact_out"}

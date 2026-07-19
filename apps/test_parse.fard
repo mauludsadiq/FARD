@@ -1,0 +1,7 @@
+import("fardlex")   as lex
+import("fardparse") as par
+
+let src = "1 + 2"
+let tokens = lex.tokenize(src)
+let parsed = par.parse_module(tokens, 0)
+parsed

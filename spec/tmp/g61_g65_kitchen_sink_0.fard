@@ -1,0 +1,5 @@
+
+import("std/result") as result
+let r = result.ok(5)
+let out = result.andThen(r, fn(x){ result.ok(x + 1) })
+out

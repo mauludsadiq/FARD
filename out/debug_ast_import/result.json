@@ -1,0 +1,1 @@
+{"result":[{"alias":"list","path":"std/list","t":"import"},{"name":"x","t":"let","val":{"args":[{"items":[],"t":"list"}],"f":{"field":"len","obj":{"name":"list","t":"var"},"t":"get"},"t":"call"}},{"body":{"field":"t","obj":{"name":"a","t":"var"},"t":"get"},"name":"f","params":[{"name":"a"}],"t":"fn"}]}

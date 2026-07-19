@@ -1,0 +1,8 @@
+
+fn inc(x) { x + 1 }
+
+let y = 1 |> inc in
+match y {
+  2 => 10,
+  _ => 20,
+}

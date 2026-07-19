@@ -1,0 +1,56 @@
+import("../packages/migration-core/migration") as mig
+import("std/sqlite") as sqlite
+import("std/list")   as list
+import("std/str")    as str
+
+fn fresh(path) {
+  let conn = mig.open(path) in
+  let _ = sqlite.exec(conn.db, "DROP TABLE IF EXISTS _migrations") in
+  let _ = sqlite.exec(conn.db, "DROP TABLE IF EXISTS users") in
+  conn
+}
+
+fn make_m1() {
+  mig.migration(
+    "001_create_users",
+    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+    "DROP TABLE IF EXISTS users"
+  )
+}
+
+fn make_m2() {
+  mig.migration(
+    "002_add_email",
+    "ALTER TABLE users ADD COLUMN email TEXT",
+    "SELECT 1"
+  )
+}
+
+test "migration run applies" {
+  let conn = fresh("/tmp/fard_mig_t1.db") in
+  let r = mig.run(conn, [make_m1()]) in
+  r.ok && list.len(r.applied) == 1
+}
+
+test "migration run idempotent" {
+  let conn = fresh("/tmp/fard_mig_t2.db") in
+  let _ = mig.run(conn, [make_m1()]) in
+  let r2 = mig.run(conn, [make_m1()]) in
+  r2.ok && list.len(r2.applied) == 0 && list.len(r2.skipped) == 1
+}
+
+test "migration status" {
+  let conn = fresh("/tmp/fard_mig_t3.db") in
+  let _ = mig.run(conn, [make_m1()]) in
+  list.len(mig.status(conn)) >= 1
+}
+
+test "migration pending" {
+  let conn = fresh("/tmp/fard_mig_t4.db") in
+  let _ = mig.run(conn, [make_m1()]) in
+  list.len(mig.pending(conn, [make_m1(), make_m2()])) == 1
+}
+
+test "migration checksum" {
+  str.starts_with(make_m1().checksum, "sha256:")
+}

@@ -1,0 +1,1 @@
+{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:c3f4f9044e000e671858339ee658206bb2565fc93914af6bd11b2db2e1046fb8","id":0,"kind":"rel","path":"spec/tmp/m2_gate_grow_node.fard","spec":"spec/tmp/m2_gate_grow_node.fard"},{"digest":"sha256:e7389c134745ef491a3d795be78d3113653b2434bf9344d8ed2de9505eff9d45","id":1,"kind":"std","spec":"std/grow"}]}

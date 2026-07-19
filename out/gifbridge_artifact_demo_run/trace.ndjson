@@ -1,0 +1,6 @@
+{"cid":"sha256:c35798c76cb198a105fc5e8c25b368588f1edd7b86e9040d6eb4bab1f79a43c9","kind":"rel","name":"../packages/video-core/src/export_gifbridge_artifact","t":"module_resolve"}
+{"cid":"sha256:079b7806d7457a3a32a8dd66d0c8ea06bfdfa5866e33903a291cc43450535630","kind":"std","name":"std/json","t":"module_resolve"}
+{"cid":"sha256:e40c4ab44adf57632dc4a8312892de9002ac28e633b045540bb79ce0cf93c61c","kind":"std","name":"std/artifact","t":"module_resolve"}
+{"cid":"sha256:a4066432063e850d4838452f0cacbf804f12ce74aa4f5610a7f6dc118f5a2912","kind":"rel","name":"../../video-core/src/gifbridge","t":"module_resolve"}
+{"cid":"sha256:d8e5978afbe01a86d87a8eb0cafa268d398ffce2b913b921fa7c7ae1aa1df247","name":"out/test_pattern.gif.json","parents":[],"t":"artifact_out"}
+{"cid":"sha256:97d34a94dbafe7e4aeb6216e9be85df3a3baf98220bca0f4daa5aad5e13e1929","t":"module_graph"}

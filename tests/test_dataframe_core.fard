@@ -1,0 +1,40 @@
+import("../packages/dataframe-core/frame") as df
+
+let data = [
+  { name: "Alice", dept: "eng",  salary: 90000 },
+  { name: "Bob",   dept: "eng",  salary: 85000 },
+  { name: "Carol", dept: "mkt",  salary: 75000 }
+]
+
+test "from_records nrows" {
+  df.nrows(df.from_records(data)) == 3
+}
+
+test "from_records ncols" {
+  df.ncols(df.from_records(data)) == 3
+}
+
+test "col access" {
+  let frame = df.from_records(data) in
+  list.len(df.col(frame, "name")) == 3
+}
+
+test "filter_rows" {
+  let frame = df.from_records(data) in
+  let eng = df.filter_rows(frame, fn(r) { r.dept == "eng" }) in
+  df.nrows(eng) == 2
+}
+
+test "select_cols" {
+  let frame = df.from_records(data) in
+  let slim = df.select_cols(frame, ["name", "salary"]) in
+  df.ncols(slim) == 2
+}
+
+test "to_records roundtrip" {
+  let frame = df.from_records(data) in
+  let rows = df.to_records(frame) in
+  list.len(rows) == 3
+}
+
+import("std/list") as list

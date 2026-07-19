@@ -1,0 +1,4 @@
+
+fn inc(x) { x + 1 }
+let xs = [1 |> inc, 2 |> inc]
+xs

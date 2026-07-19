@@ -1,0 +1,22 @@
+import("../apps/fardlex")   as lex
+import("../apps/fardparse") as par
+import("../apps/fard_eval") as ev
+
+fn run(src) {
+  let tokens = lex.tokenize(src) in
+  let parsed = par.parse_module(tokens, 0) in
+  if !parsed.ok then { t: "error", msg: parsed.err }
+  else ev.eval_module(parsed.node)
+}
+
+test "eval fn call"   { run("fn add(x, y) { x + y }\nadd(3, 4)").v == 7 }
+test "eval fn reuse"  { run("fn double(x) { x * 2 }\ndouble(21)").v == 42 }
+test "eval fn chain"  {
+  run("fn add(x, y) { x + y }\nfn mul(x, y) { x * y }\nadd(mul(3, 3), 1)").v == 10
+}
+test "eval recursion" {
+  run("fn fib(n) { if n <= 1 then n else fib(n-1) + fib(n-2) }\nfib(7)").v == 13
+}
+test "eval closure" {
+  run("fn make_adder(n) { fn(x) { x + n } }\nlet add5 = make_adder(5)\nadd5(3)").v == 8
+}

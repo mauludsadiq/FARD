@@ -1,0 +1,4 @@
+
+fn inc(x) { x + 1 }
+let r = { v: 1 |> inc }
+r.v

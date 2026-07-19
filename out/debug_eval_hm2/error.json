@@ -1,0 +1,1 @@
+{"code":"ERROR_RUNTIME","message":"no member 'err' -- did you mean 'env'?","partial_trace_digest":"sha256:3ba9bd220b56730d76df564f95bd68eeb1abd40bad1ca6210a3b64a49b67dc8a","span":{"col":3,"file":"tests/debug_eval_hm2.fard","line":12},"witnessed_failure":true}

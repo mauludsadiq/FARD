@@ -1,0 +1,4 @@
+
+import("std/result") as result
+let f = fn(x) { result.ok(x + 1) }
+f(10)

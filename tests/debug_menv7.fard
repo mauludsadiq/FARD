@@ -12,9 +12,22 @@ let e = menv.new()
 menv.set(e, "list", list)
 menv.set(e, "rec", rec)
 menv.set(e, "type", type)
+menv.set(e, "menv", menv)
 let dummy = list.fold(defs, null, fn(acc, d) {
   if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
 })
 let self_eval = menv.get(e, "eval")
-test "apply_fn_with_eval in eval.env" { rec.has(self_eval.env, "apply_fn_with_eval") }
-test "eval in eval.env" { rec.has(self_eval.env, "eval") }
+let user_env = menv.new()
+menv.set(user_env, "x", 99)
+
+let var_node = { t: "var", name: "x" }
+let r1 = ev.apply_fn(self_eval, [var_node, user_env])
+test "var lookup" { r1 == 99 }
+
+let if_node = { t: "if_node", cond: { t: "lit_bool", v: true }, t_branch: { t: "lit_int", v: 10 }, f_branch: { t: "lit_int", v: 20 } }
+let r2 = ev.apply_fn(self_eval, [if_node, user_env])
+test "if true" { r2 == 10 }
+
+let if_false = { t: "if_node", cond: { t: "lit_bool", v: false }, t_branch: { t: "lit_int", v: 10 }, f_branch: { t: "lit_int", v: 20 } }
+let r3 = ev.apply_fn(self_eval, [if_false, user_env])
+test "if false" { r3 == 20 }

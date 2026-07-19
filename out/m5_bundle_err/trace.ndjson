@@ -1,0 +1,4 @@
+{"cid":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","kind":"std","name":"std/result","t":"module_resolve"}
+{"code":"QMARK_PROPAGATE_ERR","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","t":"witnessed_failure"}
+{"code":"QMARK_PROPAGATE_ERR","e":{"code":"E","msg":"x"},"message":"QMARK_PROPAGATE_ERR Record({\"code\": Text(\"E\"), \"msg\": Text(\"x\")})","t":"error"}
+{"cid":"sha256:c9f36ee1f1beb3a9b9f363de3e86f0f06875e9507a142b60dbefb4d2c57d9ea0","t":"module_graph"}

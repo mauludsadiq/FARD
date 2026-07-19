@@ -1,0 +1,10 @@
+import("../std/datetime_impl") as DT
+
+test "now returns int"  { type.of(DT.now()) == "int" }
+test "seconds"          { DT.seconds(1) == 1000 }
+test "minutes"          { DT.minutes(1) == 60000 }
+test "hours"            { DT.hours(1) == 3600000 }
+test "days"             { DT.days(1) == 86400000 }
+test "elapsed_ms"       { DT.elapsed_ms(DT.now()) >= 0 }
+
+import("std/type") as type

@@ -1,0 +1,6 @@
+{"cid":"sha256:5c64ac7ee80a15e477c341d77904db6ed6b4f69fabb982382059ba2635c09f7b","kind":"rel","name":"../packages/video-core/src/export_transcode_contract_artifact","t":"module_resolve"}
+{"cid":"sha256:079b7806d7457a3a32a8dd66d0c8ea06bfdfa5866e33903a291cc43450535630","kind":"std","name":"std/json","t":"module_resolve"}
+{"cid":"sha256:e40c4ab44adf57632dc4a8312892de9002ac28e633b045540bb79ce0cf93c61c","kind":"std","name":"std/artifact","t":"module_resolve"}
+{"cid":"sha256:817fbe4b3414cd4415f491736c33efa770dc08567cd0534b8d15f60a01779b20","kind":"rel","name":"../../video-core/src/transcode_contract","t":"module_resolve"}
+{"cid":"sha256:424ffe2384160f330286f3c27ddca23c4da7f34c32a513363933ecdf173a5468","name":"out/demo_bundle.webm.contract.json","parents":[],"t":"artifact_out"}
+{"cid":"sha256:16f1fcdb87b95775ab3dd15c8daf33269f44b437bfb22fc27d4a854c4dd4aa70","t":"module_graph"}

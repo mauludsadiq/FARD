@@ -1,0 +1,5 @@
+
+fn inc(x) { x + 1 }
+let chooser = (x) => if x == 2 then 10 else 20
+
+1 |> inc |> chooser

@@ -1,0 +1,11 @@
+
+import("std/result") as result
+fn id(x){ result.ok(x) }
+
+let a = result.andThen(result.ok(7), id)
+let b = result.ok(7)
+
+let c = result.andThen(result.err({code:"E", msg:"m"}), id)
+let d = result.err({code:"E", msg:"m"})
+
+{a:a, b:b, c:c, d:d}

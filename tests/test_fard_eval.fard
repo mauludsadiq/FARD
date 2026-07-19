@@ -1,0 +1,88 @@
+import("../apps/fard_eval") as ev
+
+// Helper: build AST nodes
+fn int_node(n)       { { op: "int", v: n } }
+fn bool_node(b)      { { op: "bool", v: b } }
+fn str_node(s)       { { op: "str", v: s } }
+fn var_node(name)    { { op: "var", name: name } }
+fn bin_node(op, l, r){ { op: "bin", op2: op, left: l, right: r } }
+fn if_node(c, t, e)  { { op: "if", cond: c, then_br: t, else_br: e } }
+fn let_node(n, v, b) { { op: "let", name: n, val: v, body: b } }
+fn list_node(items)  { { op: "list", items: items } }
+fn fn_node(ps, body) { { op: "fn", params: ps, body: body } }
+fn call_node(f, args){ { op: "call", fn_: f, args: args } }
+fn get_node(obj, f)  { { op: "get", obj: obj, field: f } }
+
+let env = ev.env_empty()
+
+test "eval int"  { ev.eval(int_node(42), env).v == 42 }
+test "eval bool" { ev.eval(bool_node(true), env).v == true }
+test "eval str"  { ev.eval(str_node("hi"), env).v == "hi" }
+test "eval null" { ev.eval({ op: "null" }, env).t == "null" }
+
+test "eval bin add" {
+  let node = bin_node("+", int_node(3), int_node(4)) in
+  ev.eval(node, env).v == 7
+}
+
+test "eval bin eq true" {
+  ev.eval(bin_node("==", int_node(5), int_node(5)), env).v == true
+}
+
+test "eval bin lt" {
+  ev.eval(bin_node("<", int_node(3), int_node(5)), env).v == true
+}
+
+test "eval if true" {
+  let node = if_node(bool_node(true), int_node(1), int_node(2)) in
+  ev.eval(node, env).v == 1
+}
+
+test "eval if false" {
+  let node = if_node(bool_node(false), int_node(1), int_node(2)) in
+  ev.eval(node, env).v == 2
+}
+
+test "eval var" {
+  let env2 = ev.env_set(env, "x", ev.val_int(99)) in
+  ev.eval(var_node("x"), env2).v == 99
+}
+
+test "eval let" {
+  let node = let_node("x", int_node(10), bin_node("+", var_node("x"), int_node(5))) in
+  ev.eval(node, env).v == 15
+}
+
+test "eval list" {
+  let node = list_node([int_node(1), int_node(2), int_node(3)]) in
+  let result = ev.eval(node, env) in
+  result.t == "list" && list.len(result.v) == 3
+}
+
+test "eval fn and call" {
+  let f = fn_node(["x", "y"], bin_node("+", var_node("x"), var_node("y"))) in
+  let call = call_node(f, [int_node(10), int_node(32)]) in
+  ev.eval(call, env).v == 42
+}
+
+test "eval get" {
+  let rec_node = { op: "record", fields: [{ key: "a", val: int_node(7) }] } in
+  let get = get_node(rec_node, "a") in
+  ev.eval(get, env).v == 7
+}
+
+test "eval nested let" {
+  let node = let_node("x", int_node(5),
+               let_node("y", int_node(3),
+                 bin_node("+", var_node("x"), var_node("y")))) in
+  ev.eval(node, env).v == 8
+}
+
+test "eval closure captures env" {
+  let outer = let_node("n", int_node(10),
+    let_node("add_n", fn_node(["x"], bin_node("+", var_node("x"), var_node("n"))),
+      call_node(var_node("add_n"), [int_node(5)]))) in
+  ev.eval(outer, env).v == 15
+}
+
+import("std/list") as list

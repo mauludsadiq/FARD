@@ -1,0 +1,1 @@
+{"result":{"env":{"add":{"t":"scheme","ty":{"args":["int"],"ret":{"args":["int"],"ret":"int","t":"tfun"},"t":"tfun"},"vars":[]}},"next":2,"ok":true,"s":{"0":"int","1":"int"}}}

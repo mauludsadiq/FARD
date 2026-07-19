@@ -1,0 +1,13 @@
+import("../std/option_impl") as O
+
+test "some is_some"   { O.is_some(O.some(42)) }
+test "none is_none"   { O.is_none(O.none()) }
+test "map some"       { O.unwrap_or(O.map(O.some(5), fn(x) { x*2 }), 0) == 10 }
+test "map none"       { O.is_none(O.map(O.none(), fn(x) { x*2 })) }
+test "unwrap_or some" { O.unwrap_or(O.some(7), 0) == 7 }
+test "unwrap_or none" { O.unwrap_or(O.none(), 99) == 99 }
+test "and_then"       { O.unwrap_or(O.and_then(O.some(5), fn(x) { O.some(x+1) }), 0) == 6 }
+test "to_result ok"   { O.to_result(O.some(1), "err").ok }
+test "to_result err"  { !O.to_result(O.none(), "err").ok }
+test "filter pass"    { O.is_some(O.filter(O.some(4), fn(x) { x > 2 })) }
+test "filter fail"    { O.is_none(O.filter(O.some(1), fn(x) { x > 2 })) }

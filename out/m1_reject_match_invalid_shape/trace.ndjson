@@ -1,0 +1,4 @@
+{"cid":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","kind":"std","name":"std/result","t":"module_resolve"}
+{"code":"ERROR_MATCH_NO_ARM","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","t":"witnessed_failure"}
+{"cid":"sha256:c89e7c1760539113b67c0fd75c1c815d9b230f32e5227b0e0d4087e30265334a","t":"module_graph"}
+{"code":"ERROR_MATCH_NO_ARM","message":"ERROR_MATCH_NO_ARM   --> spec/tmp/m1_reject_match_invalid_shape.fard:7:1: ERROR_MATCH_NO_ARM no match","t":"error"}

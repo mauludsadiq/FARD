@@ -1,0 +1,17 @@
+import("../apps/fardlex")   as lex
+import("../apps/fardparse") as par
+import("../apps/fard_eval") as ev
+
+fn run(src) {
+  let parsed = par.parse_module(lex.tokenize(src), 0) in
+  if !parsed.ok then { t: "error", msg: parsed.err }
+  else ev.eval_module(parsed.node)
+}
+
+fn runv(src) { run(src).v }
+
+test "match exact"    { runv("let x = 2\nmatch x { 1 => 10, 2 => 20, _ => 99 }") == 20 }
+test "match wildcard" { runv("let x = 5\nmatch x { 1 => 10, _ => 99 }") == 99 }
+test "match str"      { runv("let s = \"b\"\nmatch s { \"a\" => 1, \"b\" => 2, _ => 0 }") == 2 }
+test "record access"  { runv("let r = { x: 42, y: 7 }\nr.x") == 42 }
+test "nested fn"      { runv("fn outer(n) { fn(x) { x + n } }\nlet f = outer(10)\nf(5)") == 15 }

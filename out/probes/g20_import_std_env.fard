@@ -1,0 +1,2 @@
+import("std/env") as M
+emit("ok")

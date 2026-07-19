@@ -1,0 +1,5 @@
+{"cid":"sha256:b305325defec97287dc5cc6f8d97f09af44afac5a72c80a307f1419d74951e0f","kind":"rel","name":"../../packages/pdf_patch/src/patch_pdf","t":"module_resolve"}
+{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
+{"cid":"sha256:a5fb362955955f06d78746451c74c5e3458be27b2304bbb79b5139cef1cf4124","kind":"std","name":"std/io","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/rec","t":"module_resolve"}
+{"cid":"sha256:2b42b2f4804bd1ed9af36754f260802c82f96e37a8abf8acd7b188424d6c54a0","t":"module_graph"}

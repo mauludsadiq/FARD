@@ -1,0 +1,4 @@
+{"cid":"sha256:671c7d93a3d654aaba767736e6818ba85dcd03e8c5e37b4e7ba00eefe5b4c7e8","kind":"rel","name":"../packages/video-core/src/export_bundle","t":"module_resolve"}
+{"cid":"sha256:02989792afae022995a50bb01b5c5e620180296e3379a22b2321b8a392cc1daa","kind":"rel","name":"../../video-core/src/avbundle","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/rec","t":"module_resolve"}
+{"cid":"sha256:8cd39bb44f307501f3b3c881c3ef87d07fd5f372627c8fc15ff4948150250392","t":"module_graph"}

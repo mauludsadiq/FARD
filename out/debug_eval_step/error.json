@@ -1,0 +1,1 @@
+{"code":"ERROR_RUNTIME","message":"no methods on type: unit","partial_trace_digest":"sha256:b476b4592a66a1f30f190326e94a954aa41e2606a313886fdc1a745469695e74","span":{"col":2,"file":"tests/debug_eval_step.fard","line":18},"witnessed_failure":true}

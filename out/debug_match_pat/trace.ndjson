@@ -1,0 +1,12 @@
+{"cid":"sha256:b92557bbc6d5264623d7811dc365739a17cd1033aa068d2055081fa4055870dc","kind":"rel","name":"../packages/fard_eval/eval","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/record","t":"module_resolve"}
+{"cid":"sha256:7a042d215c7691db332a5136424419f04bbb14be6d1968b4f86e1c65a4d9527a","kind":"std","name":"std/type","t":"module_resolve"}
+{"cid":"sha256:7f361bc3084a3112e8ee52305d54e59279eca9d74cf1bca375c2136cfd365cf0","kind":"rel","name":"../packages/fard_parse/parse","t":"module_resolve"}
+{"cid":"sha256:03bd52757041d6d217df1f4ffd173274a7031f731a07f77327a0009936281c89","kind":"rel","name":"../fir/fir","t":"module_resolve"}
+{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
+{"cid":"sha256:48d83aff4432560e3cbbbbce7793f5a20c0912b8a7d283c2fa52a18e9dd75273","kind":"std","name":"std/cast","t":"module_resolve"}
+{"cid":"sha256:a5fb362955955f06d78746451c74c5e3458be27b2304bbb79b5139cef1cf4124","kind":"std","name":"std/io","t":"module_resolve"}
+{"code":"ERROR_RUNTIME","partial_trace_digest":"sha256:1052e9af8a039b765b7dc4ebef8fa9ac626216248b42da0db9962840b64fcdd4","t":"witnessed_failure"}
+{"cid":"sha256:c6380361667ffec53922ed1717653b91b9927d82739f739e26995febb4a299eb","t":"module_graph"}
+{"code":"ERROR_RUNTIME","message":"ERROR_RUNTIME no member 'match_pat' -- available: apply_fn, env_empty, env_get, env_set, eval, eval_module, make_closure, make_named_closure","t":"error"}

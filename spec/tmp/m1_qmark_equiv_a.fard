@@ -1,0 +1,5 @@
+
+import("std/result") as result
+let r = result.ok(3)
+let x = r?
+result.ok(x + 9)

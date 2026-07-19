@@ -1,0 +1,19 @@
+import("../std/rec_impl") as R
+
+test "getOr hit"     { R.getOr({a:1}, "a", 0) == 1 }
+test "getOr miss"    { R.getOr({a:1}, "b", 99) == 99 }
+test "values"        { list.len(R.values({a:1,b:2})) == 2 }
+test "entries"       { list.len(R.entries({a:1,b:2})) == 2 }
+test "from_entries"  { R.from_entries([{key:"x",value:42}]).x == 42 }
+test "map_values"    { R.map_values({a:1,b:2}, fn(v) { v*2 }).a == 2 }
+test "filter_keys"   { !R.has(R.filter_keys({a:1,b:2}, fn(k) { k == "a" }), "b") }
+test "pick"          { R.has(R.pick({a:1,b:2,c:3}, ["a","c"]), "a") }
+test "omit"          { !R.has(R.omit({a:1,b:2}, ["a"]), "a") }
+test "size"          { R.size({a:1,b:2,c:3}) == 3 }
+test "is_empty"      { R.is_empty({}) }
+test "rename"        { R.has(R.rename({a:1}, "a", "b"), "b") }
+test "update"        { R.update({a:1}, "a", fn(v) { v+1 }).a == 2 }
+test "fold"          { R.fold({a:1,b:2}, 0, fn(acc,k,v) { acc+v }) == 3 }
+test "deep_merge"    { R.deep_merge({a:{x:1}}, {a:{y:2}}).a.x == 1 }
+
+import("std/list") as list

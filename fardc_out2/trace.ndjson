@@ -1,0 +1,13 @@
+{"cid":"sha256:ac3da66edb051dccb98bdc426d073bd8a278672df1316747882911d020539ff4","kind":"rel","name":"fardparse","t":"module_resolve"}
+{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/rec","t":"module_resolve"}
+{"cid":"sha256:69b8bd38f1005a9cba58d4de681c0008428bdb5de4355cb81d08bb0c3d48f6ba","kind":"std","name":"std/array","t":"module_resolve"}
+{"cid":"sha256:296a2873ccb00c5a84a9c5a21489efbf6414fd5500366436d21bbe633474a792","kind":"rel","name":"fard_lower","t":"module_resolve"}
+{"cid":"sha256:48d83aff4432560e3cbbbbce7793f5a20c0912b8a7d283c2fa52a18e9dd75273","kind":"std","name":"std/cast","t":"module_resolve"}
+{"cid":"sha256:0f88060453dad953759d5cb6ee8457a9c1e7ae0629d1793b257d3024578db0e2","kind":"rel","name":"fard_emit","t":"module_resolve"}
+{"cid":"sha256:775fa2a421ddf83aafe2f2be790e9dbf09c0003cfd370d96f821e26c64cea160","kind":"std","name":"std/bytes","t":"module_resolve"}
+{"cid":"sha256:7a042d215c7691db332a5136424419f04bbb14be6d1968b4f86e1c65a4d9527a","kind":"std","name":"std/type","t":"module_resolve"}
+{"cid":"sha256:39704699afb86a681ba1663f4fa014eeddc23c3aa53310237a687a4f0bcea1ac","kind":"std","name":"std/fs","t":"module_resolve"}
+{"cid":"sha256:be3d2a35e6935ddca682cfdecea1515bbd31083f1522797c054238e34b70049c","kind":"std","name":"std/env","t":"module_resolve"}
+{"cid":"sha256:51d35e8ddd6c356bf403d15224380c0b8d7d8dd2f213ebdce37cd26f9b13252c","t":"module_graph"}

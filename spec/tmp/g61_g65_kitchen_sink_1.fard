@@ -1,0 +1,5 @@
+
+import("std/result") as result
+let r = result.err({code:"E", msg:"no"})
+let out = result.andThen(r, fn(x){ result.ok(x + 1) })
+out

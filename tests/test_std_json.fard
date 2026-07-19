@@ -1,0 +1,12 @@
+import("../std/json_impl") as J
+import("std/list")    as list
+
+test "encode int"    { J.encode(42) == "42" }
+test "encode str"    { J.encode("hi") == "\"hi\"" }
+test "encode list"   { J.encode([1,2,3]) == "[1,2,3]" }
+test "decode int"    { J.decode("42") == 42 }
+test "decode obj"    { J.decode("{\"x\":1}").x == 1 }
+test "get"          { J.get({a:1,b:2}, "a") == 1 }
+test "get_path"     { J.get_path({a:{b:42}}, ["a","b"]) == 42 }
+test "is_valid"     { J.is_valid("42") }
+test "from_pairs"   { J.from_pairs([["x",1],["y",2]]).x == 1 }

@@ -1,0 +1,61 @@
+import("../packages/cache-core/cache") as cache
+
+test "cache set and get" {
+  let c = cache.set(cache.new(10), "x", 42, 5000) in
+  let r = cache.get(c, "x") in
+  r.hit && r.value == 42
+}
+
+test "cache miss" {
+  let r = cache.get(cache.new(10), "missing") in
+  !r.hit && r.value == null
+}
+
+test "cache delete" {
+  let c = cache.set(cache.new(10), "x", 1, 0) in
+  let c2 = cache.delete(c, "x") in
+  !cache.has(c2, "x")
+}
+
+test "cache size" {
+  let c = cache.set(cache.set(cache.new(10), "a", 1, 0), "b", 2, 0) in
+  cache.size(c) == 2
+}
+
+test "cache lru eviction" {
+  let c = cache.new(2) in
+  let c2 = cache.set(c, "a", 1, 0) in
+  let c3 = cache.set(c2, "b", 2, 0) in
+  let c4 = cache.set(c3, "c", 3, 0) in
+  cache.size(c4) == 2 && !cache.has(c4, "a")
+}
+
+test "cache clear" {
+  let c = cache.set(cache.new(10), "x", 1, 0) in
+  cache.size(cache.clear(c)) == 0
+}
+
+test "cache get_or_set hit" {
+  let c = cache.set(cache.new(10), "k", 99, 0) in
+  let r = cache.get_or_set(c, "k", fn() { 0 }, 0) in
+  r.value == 99
+}
+
+test "cache get_or_set miss" {
+  let r = cache.get_or_set(cache.new(10), "k", fn() { 42 }, 0) in
+  r.value == 42
+}
+
+test "cache invalidate_prefix" {
+  let c = cache.set(cache.set(cache.new(10), "user:1", 1, 0), "user:2", 2, 0) in
+  let c2 = cache.invalidate_prefix(c, "user:") in
+  cache.size(c2) == 0
+}
+
+test "cache stats" {
+  let c = cache.set(cache.new(10), "x", 1, 0) in
+  let r1 = cache.get(c, "x") in
+  let r2 = cache.get(r1.cache, "missing") in
+  let s = cache.stats(r2.cache) in
+  s.hits == 1 && s.misses == 1
+}

@@ -1,0 +1,1 @@
+{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> spec/tmp/m1_reject_case_and_extra.fard:4:42: QMARK_EXPECT_RESULT expected result","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","span":{"col":42,"file":"spec/tmp/m1_reject_case_and_extra.fard","line":4},"witnessed_failure":true}

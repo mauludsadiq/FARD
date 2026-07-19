@@ -1,0 +1,1 @@
+{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> out/_m6_b7_4.fard:4:11: QMARK_EXPECT_RESULT expected result","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","span":{"col":11,"file":"out/_m6_b7_4.fard","line":4},"witnessed_failure":true}

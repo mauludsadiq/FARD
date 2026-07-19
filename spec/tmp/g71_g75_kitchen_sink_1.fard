@@ -1,0 +1,4 @@
+
+import("std/result") as result
+let r = result.err({code:"E", msg:"m"})
+result.unwrap_err(r)

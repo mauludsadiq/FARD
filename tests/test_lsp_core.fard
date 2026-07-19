@@ -1,0 +1,47 @@
+import("../packages/lsp-core/lsp") as lsp
+import("std/str")  as str
+import("std/list") as list
+import("std/json") as json
+
+test "lsp position" {
+  let p = lsp.position(10, 5) in
+  p.line == 10 && p.character == 5
+}
+
+test "lsp diagnostic" {
+  let d = lsp.diagnostic(
+    lsp.range(lsp.position(0,0), lsp.position(0,5)),
+    "undefined var", lsp.severity_error(), "fard-lsp"
+  ) in
+  d.severity == 1
+}
+
+test "lsp completion_item" {
+  let c = lsp.completion_item("str", lsp.kind_module(), "string module", "") in
+  c.label == "str"
+}
+
+test "lsp rpc_response" {
+  let r = lsp.rpc_response(1, { ok: true }) in
+  r.jsonrpc == "2.0" && r.id == 1
+}
+
+test "lsp encode_message" {
+  let msg = lsp.rpc_response(1, { result: "ok" }) in
+  str.contains(lsp.encode_message(msg), "Content-Length:")
+}
+
+test "lsp keywords" {
+  list.len(lsp.fard_keywords()) > 5
+}
+
+test "lsp stdlib completions" {
+  list.len(lsp.stdlib_completions()) > 5
+}
+
+test "lsp initialize_result" {
+  let r = lsp.initialize_result() in
+  rec.has(r, "capabilities")
+}
+
+import("std/rec") as rec

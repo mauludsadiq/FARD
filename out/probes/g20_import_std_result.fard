@@ -1,0 +1,2 @@
+import("std/result") as M
+emit("ok")

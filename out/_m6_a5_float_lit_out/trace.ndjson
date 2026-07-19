@@ -1,0 +1,2 @@
+{"t":"emit","v":{"level":"warn","msg":"LINT_FLOAT_EQ: == on float values is unreliable; use float.eq instead"}}
+{"cid":"sha256:1f155794c8ed696ac14a35482f45867d4b77dfd12fc43931a9901ff279e38a9c","t":"module_graph"}

@@ -1,0 +1,1 @@
+{"result":{"args":[{"args":[{"loc":1,"name":"x","t":"var"},{"loc":3,"name":"y","t":"var"}],"loc":1,"name":"int.add","t":"call_builtin"},{"loc":6,"t":"lit_int","v":3}],"loc":1,"name":"int.mul","t":"call_builtin"}}

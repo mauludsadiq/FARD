@@ -1,0 +1,1 @@
+{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT expected result","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","span":{"col":41,"file":"spec/tmp/g82_7.fard","line":6},"witnessed_failure":true}

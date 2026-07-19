@@ -1,0 +1,3 @@
+{"code":"ERROR_PARSE","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
+{"cid":"sha256:6b17229788fce2d9674d50ed3f2a3872b36644eecd035561b47f72ddc99f2c40","t":"module_graph"}
+{"code":"ERROR_PARSE","message":"ERROR_PARSE expected keyword \"in\" but got Ident(\"io\")  --> tests/minimal_eval.fard:15:29","t":"error"}

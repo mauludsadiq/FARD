@@ -1,0 +1,8 @@
+{"cid":"sha256:dceabd14c2b118ef8ac35f9a75447dec36189e11331197e7753eb70343fdfcf0","kind":"rel","name":"../packages/fard_parse/parse","t":"module_resolve"}
+{"cid":"sha256:03bd52757041d6d217df1f4ffd173274a7031f731a07f77327a0009936281c89","kind":"rel","name":"../fir/fir","t":"module_resolve"}
+{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:48d83aff4432560e3cbbbbce7793f5a20c0912b8a7d283c2fa52a18e9dd75273","kind":"std","name":"std/cast","t":"module_resolve"}
+{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/record","t":"module_resolve"}
+{"cid":"sha256:a5fb362955955f06d78746451c74c5e3458be27b2304bbb79b5139cef1cf4124","kind":"std","name":"std/io","t":"module_resolve"}
+{"cid":"sha256:2c2bb0dda6216f8a3add43d1e0b4aa8066ab00e8290e43d1c474261f571181e1","t":"module_graph"}

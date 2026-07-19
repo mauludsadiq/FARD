@@ -1,0 +1,5 @@
+
+emit({k:"m3"})
+let _x = import_artifact_named("in0", "spec/tmp/m3_in.bin") in
+let _y = emit_artifact_derived("out0", "m3_out.bin", {a:1}, ["in0"]) in
+0

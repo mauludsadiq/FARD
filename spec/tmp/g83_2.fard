@@ -1,0 +1,6 @@
+
+import("std/result") as result
+
+let x = result.ok(9)?
+
+x

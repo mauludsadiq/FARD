@@ -1,0 +1,11 @@
+
+import("std/result") as result
+
+let f = fn(x) { result.ok(x + 1) }
+
+let r = result.andThen(result.err("E0"), f)
+
+match r {
+  {t:"err", e:"E0"} => 1,
+  _ => 0
+}

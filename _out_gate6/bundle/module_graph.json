@@ -1,0 +1,10 @@
+{
+  "entry": "main",
+  "kind": "fard/module_graph/v0",
+  "modules": [
+    {
+      "name": "main",
+      "source": "sha256:d129f8a3d58ec4ada5ed12d8ed07511ff63df8594b6fa60012e5f00f70a41cee"
+    }
+  ]
+}

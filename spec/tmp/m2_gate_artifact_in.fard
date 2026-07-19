@@ -1,0 +1,4 @@
+
+emit({k:"in"})
+let _x = import_artifact("spec/tmp/m2_gate_in.bin") in
+0

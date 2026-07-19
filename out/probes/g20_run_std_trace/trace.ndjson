@@ -1,0 +1,3 @@
+{"cid":"sha256:b01396d739b36c2e64efef2a3eb152dd529b2c2e9d99b02de585d712d021a63e","kind":"std","name":"std/trace","t":"module_resolve"}
+{"t":"emit","v":"ok"}
+{"cid":"sha256:adbb122f7324120ae4a07ac08d33e027fa8a557dd88b02b600568428344137db","t":"module_graph"}

@@ -1,0 +1,13 @@
+import("../std/type_impl") as T
+
+test "is_int"    { T.is_int(42) }
+test "is_float"  { T.is_float(3.14) }
+test "is_text"   { T.is_text("hi") }
+test "is_bool"   { T.is_bool(true) }
+test "is_null"   { T.is_null(null) }
+test "is_list"   { T.is_list([1,2,3]) }
+test "is_record" { T.is_record({a:1}) }
+test "is_number" { T.is_number(42) && T.is_number(3.14) }
+test "is_truthy" { T.is_truthy(1) && T.is_truthy("x") }
+test "is_falsy"  { T.is_falsy(null) && T.is_falsy(false) }
+test "of int"    { T.of(42) == "int" }

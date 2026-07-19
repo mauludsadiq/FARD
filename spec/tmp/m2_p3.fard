@@ -1,0 +1,4 @@
+
+import("std/result") as Result
+let _x = (Result.err({k:"e"}))? in
+0

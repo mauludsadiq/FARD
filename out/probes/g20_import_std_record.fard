@@ -1,0 +1,2 @@
+import("std/record") as M
+emit("ok")

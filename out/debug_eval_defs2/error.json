@@ -1,0 +1,1 @@
+{"code":"ERROR_RUNTIME","message":"vm: call on non-function","partial_trace_digest":"sha256:c874b809c40ba2a4ca9981ea59cac7e4b6a4ed97f355e4b5a6cc056f17acd945","span":{"col":35,"file":"tests/debug_eval_defs2.fard","line":6},"witnessed_failure":true}

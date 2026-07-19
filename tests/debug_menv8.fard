@@ -1,0 +1,36 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+import("std/menv") as menv
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+
+let double_defs = parse.parse_program("fn double(x) { x + x }")
+let double_fir = double_defs[0]
+let user_env = menv.new()
+menv.set(user_env, "list", list)
+menv.set(user_env, "rec", rec)
+let double_closure = ev.apply_fn(self_eval, [double_fir, user_env])
+test "double is closure" { double_closure.t == "closure" }
+menv.set(user_env, "double", double_closure)
+
+let call_node = { t: "call", fn: { t: "var", name: "double" }, args: [{ t: "lit_int", v: 21 }] }
+let r1 = ev.apply_fn(self_eval, [call_node, user_env])
+test "call double 21" { r1 == 42 }
+
+let let_node = { t: "let", bindings: [{ name: "y", value: { t: "lit_int", v: 5 } }], body: { t: "call_builtin", name: "int.mul", args: [{ t: "var", name: "y" }, { t: "lit_int", v: 3 }] } }
+let r2 = ev.apply_fn(self_eval, [let_node, user_env])
+test "let binding" { r2 == 15 }

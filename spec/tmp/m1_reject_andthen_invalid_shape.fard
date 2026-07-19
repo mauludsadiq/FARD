@@ -1,0 +1,4 @@
+
+import("std/result") as result
+let bad = {t:"ok", e:{k:1}}
+result.andThen(bad, fn(x){ result.ok(x) })

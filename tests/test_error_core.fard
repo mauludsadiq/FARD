@@ -1,0 +1,34 @@
+import("../packages/error-core/errors") as err
+
+test "not_found" {
+  let e = err.not_found("User", 42) in
+  !e.ok && e.code == "NOT_FOUND"
+}
+
+test "invalid" {
+  let e = err.invalid("email", "bad format") in
+  !e.ok && e.code == "INVALID"
+}
+
+test "wrap" {
+  let e = err.wrap(err.not_found("User", 1), "getUserById") in
+  str.starts_with(e.msg, "getUserById")
+}
+
+test "is_err" {
+  err.is_err(err.internal("oops"))
+}
+
+test "is_ok" {
+  err.is_ok({ ok: true, v: 42 })
+}
+
+test "to_http_status not_found" {
+  err.to_http_status(err.not_found("X", 1)) == 404
+}
+
+test "to_http_status invalid" {
+  err.to_http_status(err.invalid("f", "r")) == 400
+}
+
+import("std/str") as str

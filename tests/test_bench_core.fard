@@ -1,0 +1,37 @@
+import("../packages/bench-core/bench") as bench
+import("std/list") as list
+import("std/str")  as str
+
+test "bench run" {
+  let b = bench.bench("add loop", fn(i) { i + 1 }, 100) in
+  let r = bench.run_bench(b) in
+  r.iterations == 100 && r.elapsed_ms >= 0
+}
+
+test "bench suite" {
+  let s = bench.add(bench.named("math"),
+    bench.bench("multiply", fn(i) { i * 2 }, 50)) in
+  let r = bench.run_all(s) in
+  list.len(r.results) == 1
+}
+
+test "bench assert_under" {
+  let b = bench.bench("fast", fn(i) { i }, 10) in
+  let r = bench.run_bench(b) in
+  bench.assert_under(r, 1000).ok
+}
+
+test "bench format" {
+  let b = bench.bench("x", fn(i) { i }, 5) in
+  let r = bench.run_bench(b) in
+  str.contains(bench.format_result(r), "x:")
+}
+
+test "bench compare" {
+  let b1 = bench.bench("a", fn(i) { i }, 10) in
+  let b2 = bench.bench("b", fn(i) { i * 2 }, 10) in
+  let r1 = bench.run_bench(b1) in
+  let r2 = bench.run_bench(b2) in
+  let c = bench.compare(r1, r2) in
+  c.faster == "a" || c.faster == "b"
+}

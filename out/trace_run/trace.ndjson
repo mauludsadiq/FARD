@@ -1,0 +1,8 @@
+{"cid":"sha256:a5fb362955955f06d78746451c74c5e3458be27b2304bbb79b5139cef1cf4124","kind":"std","name":"std/io","t":"module_resolve"}
+{"cid":"sha256:8f6cb3d254de2d2112644d7d8111add598d664b751ab4c6b7c30556c496ba8eb","kind":"rel","name":"../packages/audio-core/src/synth","t":"module_resolve"}
+{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
+{"cid":"sha256:61547f3d638257107ff3a68a4c15fe926fd43fb8ecc302893795f4f7b87a82c9","kind":"std","name":"std/math","t":"module_resolve"}
+{"cid":"sha256:48d83aff4432560e3cbbbbce7793f5a20c0912b8a7d283c2fa52a18e9dd75273","kind":"std","name":"std/cast","t":"module_resolve"}
+{"code":"ERROR_RUNTIME","partial_trace_digest":"sha256:fdd7f86821975a1be3007083fe29a6c62d89419fcbb4364f8881d6c7c3639eb7","t":"witnessed_failure"}
+{"cid":"sha256:df459adf41423a4b93063d25c7e668bdca900c754b96a9002065e347bb7a6316","t":"module_graph"}
+{"code":"ERROR_RUNTIME","message":"ERROR_RUNTIME No such file or directory (os error 2)","t":"error"}

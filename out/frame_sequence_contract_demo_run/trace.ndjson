@@ -1,0 +1,6 @@
+{"cid":"sha256:ac2642163dc0ad940bc28a93bbae628f622addc47ad146400576204f77f57446","kind":"rel","name":"../packages/video-core/src/export_frame_sequence_contract_artifact","t":"module_resolve"}
+{"cid":"sha256:079b7806d7457a3a32a8dd66d0c8ea06bfdfa5866e33903a291cc43450535630","kind":"std","name":"std/json","t":"module_resolve"}
+{"cid":"sha256:e40c4ab44adf57632dc4a8312892de9002ac28e633b045540bb79ce0cf93c61c","kind":"std","name":"std/artifact","t":"module_resolve"}
+{"cid":"sha256:5c8ffb6df8263dd5b7e65bc0e2461b199038a36f95f48fe432d77ac7eef0b8a9","kind":"rel","name":"../../video-core/src/frame_sequence_contract","t":"module_resolve"}
+{"cid":"sha256:b478907e5b4af79af6ee228362c3c73fc97f153f309db6e32ec6754c4317af3a","name":"out/test_pattern.frames.contract.json","parents":[],"t":"artifact_out"}
+{"cid":"sha256:4b7dfebf0ca7def953302d1dc33722fd70aecab3373ec8ee1ac54a6339ede4c7","t":"module_graph"}

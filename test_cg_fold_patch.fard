@@ -1,0 +1,12 @@
+import("apps/fardparse")    as par
+import("apps/fard_lower")   as lower
+import("apps/fard_codegen") as cg
+import("std/str")   as str
+import("std/array") as array
+
+let src = "fn add(a, b) { a + b }\nlist.fold([1, 2, 3, 4], 0, add)"
+let tokens = str.lex_tokens(src)
+let ast    = par.parse_module(tokens, 0)
+let ir     = lower.lower_program(ast.node)
+let cg_res = cg.codegen(ir)
+{ patches: array.to_list(cg_res.patches), fn_addrs: array.to_list(cg_res.fn_addrs), n_fns: array.len(cg_res.fn_addrs) }

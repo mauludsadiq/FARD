@@ -1,0 +1,4 @@
+
+emit({k:"m3"})
+let _y = emit_artifact_derived("out0", "x.bin", {a:1}, ["no_such_parent"]) in
+0

@@ -1,0 +1,5 @@
+
+import("std/result") as result
+match {t:"ok", v:1} {
+  {t:"ok", v:v} => v,
+  {t:"err", e:e} => e,
