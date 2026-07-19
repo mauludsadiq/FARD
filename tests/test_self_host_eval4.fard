@@ -1,0 +1,42 @@
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/io") as io
+import("std/menv") as menv
+
+let src = io.read_file("packages/fard_eval/eval.fard").ok
+let defs = parse.parse_program(src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+
+let e2 = menv.new()
+menv.set(e2, "list", list)
+menv.set(e2, "rec", rec)
+menv.set(e2, "type", type)
+menv.set(e2, "menv", menv)
+let dummy2 = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then
+    let cl = ev.apply_fn(self_eval, [d, e2]) in
+    let _ = menv.set(e2, d.name, cl) in
+    null
+  else null
+})
+
+let self_eval2 = menv.get(e2, "eval")
+test "self_eval2 is closure" { self_eval2.t == "closure" }
+
+let user_env = menv.new()
+let r = ev.apply_fn(self_eval2, [{ t: "lit_int", v: 42 }, user_env])
+test "level 2 lit_int" { r == 42 }
+
+let r2 = ev.apply_fn(self_eval2, [{ t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 10 }, { t: "lit_int", v: 32 }] }, user_env])
+test "level 2 add" { r2 == 42 }
