@@ -1,26 +1,25 @@
 import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
 import("std/list") as list
 import("std/record") as rec
 import("std/type") as type
-import("../packages/fard_parse/parse") as parse
 import("std/io") as io
 import("std/menv") as menv
 
 let src = io.read_file("packages/fard_eval/eval.fard").ok
 let defs = parse.parse_program(src)
-let env0 = menv.new()
-let _list = menv.set(env0, "list", list)
-let _rec = menv.set(env0, "rec", rec)
-let _type = menv.set(env0, "type", type)
-let env1 = list.fold(defs, env0, fn(acc, d) {
-  if d.t == "def_fn" then
-    let v = ev.eval(d, acc) in
-      let _ = menv.set(acc, d.name, v) in
-      acc
-  else acc
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
+let dummy = list.fold(defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
 })
-let self_eval = ev.env_get(env1, "eval")
-let user_env = ev.env_empty()
+let self_eval = menv.get(e, "eval")
+let user_env = menv.new()
+menv.set(user_env, "list", list)
+menv.set(user_env, "rec", rec)
 
 let r1 = ev.apply_fn(self_eval, [{ t: "lit_int", v: 42 }, user_env])
 test "lit_int" { r1 == 42 }
@@ -28,6 +27,18 @@ test "lit_int" { r1 == 42 }
 let r2 = ev.apply_fn(self_eval, [{ t: "lit_bool", v: true }, user_env])
 test "lit_bool" { r2 == true }
 
-let add_node = { t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 3 }, { t: "lit_int", v: 4 }] }
-let r4 = ev.apply_fn(self_eval, [add_node, user_env])
-test "call_builtin add" { r4 == 7 }
+let r3 = ev.apply_fn(self_eval, [{ t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 3 }, { t: "lit_int", v: 4 }] }, user_env])
+test "call_builtin add" { r3 == 7 }
+
+menv.set(user_env, "x", 99)
+let r4 = ev.apply_fn(self_eval, [{ t: "var", name: "x" }, user_env])
+test "var lookup" { r4 == 99 }
+
+let r5 = ev.apply_fn(self_eval, [{ t: "if_node", cond: { t: "lit_bool", v: false }, t_branch: { t: "lit_int", v: 1 }, f_branch: { t: "lit_int", v: 2 } }, user_env])
+test "if_node" { r5 == 2 }
+
+let fib_defs = parse.parse_program("fn fib(n) { if n <= 1 then n else fib(n - 1) + fib(n - 2) }")
+let fib_cl = ev.apply_fn(self_eval, [fib_defs[0], user_env])
+menv.set(user_env, "fib", fib_cl)
+let r6 = ev.apply_fn(self_eval, [{ t: "call", fn: { t: "var", name: "fib" }, args: [{ t: "lit_int", v: 10 }] }, user_env])
+test "fib 10" { r6 == 55 }
