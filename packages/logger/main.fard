@@ -24,7 +24,7 @@ fn level_name(level) {
 }
 
 fn level_from_name(name) {
-  let n = str.upper(name)
+  let n = str.upper(name) in
   if n == "TRACE" then 0
   else if n == "DEBUG" then 1
   else if n == "INFO"  then 2
@@ -62,10 +62,10 @@ fn write_and_return(logger, e) {
   let output = logger.output
   let _ = if output == "stdout" then write_stdout(line)
           else if str.starts_with(output, "both:") then
-            let path = str.slice(output, 5, str.len(output))
-            let _ = write_stdout(line)
+            let path = str.slice(output, 5, str.len(output)) in
+            let _ = write_stdout(line) in
             write_to_file(path, line)
-          else write_to_file(output, line)
+          else write_to_file(output, line) in
   e
 }
 
@@ -92,11 +92,13 @@ fn format_text(e) {
   let field_str = if list.len(keys) == 0 then ""
     else str.concat(" ", str.join(list.map(keys, fn(k) {
       str.concat(str.concat(k, "="), json.encode(rec.get(e.fields, k)))
-    }), " "))
-  str.concat(str.concat(str.concat(str.concat(str.concat(
-    str.from_int(e.ts), " "),
-    e.level), " ["),
-    str.concat(e.logger, str.concat("] ", str.concat(e.msg, field_str)))))
+    }), " ")) in
+  str.concat([
+    str.from_int(e.ts), " ",
+    e.level, " [",
+    e.logger, "] ",
+    e.msg, field_str
+  ])
 }
 
 {

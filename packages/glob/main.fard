@@ -6,36 +6,36 @@ import("std/io")   as io
 fn match_pattern(pattern, text) {
   if pattern == "*" then true
   else if str.contains(pattern, "*") then
-    let parts = str.split(pattern, "*")
-    let prefix = list.get(parts, 0)
-    let suffix = if list.len(parts) > 1 then list.get(parts, list.len(parts) - 1) else ""
-    let starts = if str.len(prefix) == 0 then true else str.starts_with(text, prefix)
-    let ends   = if str.len(suffix) == 0 then true else str.ends_with(text, suffix)
+    let parts = str.split(pattern, "*") in
+    let prefix = list.get(parts, 0) in
+    let suffix = if list.len(parts) > 1 then list.get(parts, list.len(parts) - 1) else "" in
+    let starts = if str.len(prefix) == 0 then true else str.starts_with(text, prefix) in
+    let ends   = if str.len(suffix) == 0 then true else str.ends_with(text, suffix) in
     starts && ends
   else pattern == text
 }
 
 fn matches(pattern, path) {
-  let filename = list.get(str.split(path, "/"), list.len(str.split(path, "/")) - 1)
+  let filename = list.get(str.split(path, "/"), list.len(str.split(path, "/")) - 1) in
   if str.contains(pattern, "/") then match_pattern(pattern, path)
   else match_pattern(pattern, filename)
 }
 
 fn glob(dir, pattern) {
-  let entries = io.list_dir(dir)
+  let entries = io.list_dir(dir) in
   if rec.has(entries, "err") then []
   else list.filter(entries.ok, fn(f) { matches(pattern, f) })
 }
 
 fn glob_recursive(dir, pattern) {
-  let entries = io.list_dir(dir)
+  let entries = io.list_dir(dir) in
   if rec.has(entries, "err") then []
   else
     list.flat_map(entries.ok, fn(f) {
-      let full = str.concat(str.concat(dir, "/"), f)
+      let full = str.concat(str.concat(dir, "/"), f) in
       if matches(pattern, f) then [full]
       else
-        let subdir = io.list_dir(full)
+        let subdir = io.list_dir(full) in
         if rec.has(subdir, "ok") then glob_recursive(full, pattern)
         else []
     })

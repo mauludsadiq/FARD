@@ -16,9 +16,9 @@ fn new() {
 
 // Load queue from file
 fn open(path) {
-  let result = io.read_file(path)
+  let result = io.read_file(path) in
   if rec.has(result, "ok") then
-    let data = json.decode(result.ok)
+    let data = json.decode(result.ok) in
     { items: rec.get(data, "items"), size: list.len(rec.get(data, "items")), path: path }
   else
     { items: [], size: 0, path: path }
@@ -27,7 +27,7 @@ fn open(path) {
 // Save queue to file
 fn save(q) {
   if rec.has(q, "path") then
-    let _ = io.write_file(q.path, json.encode({ items: q.items }))
+    let _ = io.write_file(q.path, json.encode({ items: q.items })) in
     q
   else q
 }
@@ -35,13 +35,13 @@ fn save(q) {
 // Enqueue an item — adds to back
 fn enqueue(q, item) {
   let new_items = list.concat([q.items, [item]])
-  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items))
+  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items)) in
   save(new_q)
 }
 
 // Enqueue with a unique ID attached
 fn enqueue_id(q, item) {
-  let tagged = rec.set(item, "_qid", uuid.v4())
+  let tagged = rec.set(item, "_qid", uuid.v4()) in
   enqueue(q, tagged)
 }
 
@@ -49,7 +49,7 @@ fn enqueue_id(q, item) {
 fn do_dequeue(q) {
   let item      = list.get(q.items, 0)
   let new_items = list.drop(q.items, 1)
-  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items))
+  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items)) in
   { item: item, queue: save(new_q) }
 }
 
@@ -66,7 +66,7 @@ fn peek(q) {
 
 // Peek at back without removing
 fn peek_back(q) {
-  let n = list.len(q.items)
+  let n = list.len(q.items) in
   if n == 0 then null
   else list.get(q.items, n - 1)
 }
@@ -80,7 +80,7 @@ fn size(q) { list.len(q.items) }
 // Drain all items — returns {items, queue}
 fn drain(q) {
   let items = q.items
-  let new_q = rec.set(rec.set(q, "items", []), "size", 0)
+  let new_q = rec.set(rec.set(q, "items", []), "size", 0) in
   { items: items, queue: save(new_q) }
 }
 
@@ -89,14 +89,14 @@ fn process_n(q, n, f) {
   let to_process = list.take(q.items, n)
   let remaining  = list.drop(q.items, n)
   let results    = list.map(to_process, f)
-  let new_q      = rec.set(rec.set(q, "items", remaining), "size", list.len(remaining))
+  let new_q      = rec.set(rec.set(q, "items", remaining), "size", list.len(remaining)) in
   { processed: results, queue: save(new_q) }
 }
 
 // Filter items in queue by predicate
 fn filter_queue(q, pred) {
   let new_items = list.filter(q.items, pred)
-  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items))
+  let new_q     = rec.set(rec.set(q, "items", new_items), "size", list.len(new_items)) in
   save(new_q)
 }
 
@@ -107,10 +107,10 @@ fn enqueue_all(q, items) {
 
 // Dequeue all items one at a time, applying f to each
 fn consume_all(q, f) {
-  let result = while { q: q, results: [], done: false }
+  let result = while { q: q, results: [], done: false } in
     fn(s) { s.done == false && is_empty(s.q) == false }
     fn(s) {
-      let d = dequeue(s.q)
+      let d = dequeue(s.q) in
       { q: d.queue, results: list.concat([s.results, [f(d.item)]]), done: false }
     }
   { results: result.value.results, queue: result.value.q }
@@ -118,7 +118,7 @@ fn consume_all(q, f) {
 
 // Clear all items
 fn clear(q) {
-  let new_q = rec.set(rec.set(q, "items", []), "size", 0)
+  let new_q = rec.set(rec.set(q, "items", []), "size", 0) in
   save(new_q)
 }
 

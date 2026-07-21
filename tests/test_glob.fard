@@ -1,0 +1,8 @@
+
+import("../packages/glob/main") as glob
+
+test "matches fard" { glob.matches("*.fard", "main.fard") }
+test "matches star" { glob.matches("*", "anything") }
+test "no match" { glob.matches("*.fard", "main.rs") == false }
+test "ext helper" { glob.ext("fard") == "*.fard" }
+test "prefix match" { glob.matches("test_*.fard", "test_foo.fard") }

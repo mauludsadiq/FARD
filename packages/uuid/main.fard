@@ -22,7 +22,7 @@ fn to_hex(s) { str.replace(s, "-", "") }
 
 // Add hyphens to a 32-char hex string
 fn from_hex(hex) {
-  let s = str.lower(hex)
+  let s = str.lower(hex) in
   if str.len(s) != 32 then null
   else
     str.concat(str.concat(str.concat(str.concat(
@@ -37,7 +37,7 @@ fn from_hex(hex) {
 fn version(s) {
   if is_valid(s) == false then null
   else
-    let v = str.slice(s, 14, 15)
+    let v = str.slice(s, 14, 15) in
     if v == "4" then 4
     else if v == "1" then 1
     else if v == "3" then 3
@@ -53,7 +53,7 @@ fn batch(n) {
 
 // Generate a short ID (first 8 chars of UUID hex, no hyphens)
 fn short_id() {
-  let u = uuid.v4()
+  let u = uuid.v4() in
   str.slice(str.replace(u, "-", ""), 0, 8)
 }
 
