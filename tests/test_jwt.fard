@@ -1,0 +1,18 @@
+
+import("../packages/jwt/main") as jwt
+import("std/str") as str
+import("std/rec") as rec
+
+let secret = "my-secret-key"
+let claims = { sub: "user123", name: "Alice", iat: 1700000000 }
+let token = jwt.encode(claims, secret)
+test "token is text" { str.len(token) > 0 }
+test "token has two dots" { str.contains(token, ".") }
+
+let result = jwt.verify(token, secret)
+test "verify ok" { result.ok }
+test "verify sub" { rec.get(result.claims, "sub") == "user123" }
+test "verify name" { rec.get(result.claims, "name") == "Alice" }
+
+let bad = jwt.verify(token, "wrong-secret")
+test "wrong secret fails" { bad.ok == false }

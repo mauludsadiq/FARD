@@ -7,6 +7,7 @@ import("std/str")    as str
 import("std/list")   as list
 import("std/rand")   as rand
 import("std/bytes")  as bytes
+import("std/json") as json
 
 // --- Hashing ---
 
@@ -75,8 +76,7 @@ fn verify_sig(message, secret, signature) {
 
 // Sign a record as JSON
 fn sign_record(data, secret) {
-  import("std/json") as json
-  let canonical = json.canonicalize(json.encode(data))
+  let canonical = json.canonicalize(json.encode(data)) in
   sign(canonical, secret)
 }
 

@@ -1,0 +1,24 @@
+
+import("../packages/csv-extra/main") as csv
+import("std/list") as list
+import("std/record") as rec
+
+let data = "name,age,city
+Alice,30,NYC
+Bob,25,LA
+Carol,35,NYC"
+let rows = csv.parse_with_headers(data)
+test "row count" { csv.count(rows) == 3 }
+test "first name" { rec.get(list.get(rows, 0), "name") == "Alice" }
+test "first age" { rec.get(list.get(rows, 0), "age") == "30" }
+
+let nyc = csv.filter_rows(rows, fn(r) { rec.get(r, "city") == "NYC" })
+test "filter NYC" { list.len(nyc) == 2 }
+
+let names = csv.column(rows, "name")
+test "column names" { list.len(names) == 3 }
+test "first col val" { list.get(names, 0) == "Alice" }
+
+let selected = csv.select_columns(rows, ["name", "city"])
+test "select cols" { rec.has(list.get(selected, 0), "name") }
+test "select excludes age" { rec.has(list.get(selected, 0), "age") == false }

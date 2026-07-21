@@ -72,8 +72,8 @@ fn row_to_csv(headers, row) {
 fn to_csv(rows) {
   if list.len(rows) == 0 then ""
   else
-    let headers   = rec.keys(list.get(rows, 0))
-    let data_rows = list.map(rows, fn(row) { row_to_csv(headers, row) })
+    let headers   = rec.keys(list.get(rows, 0)) in
+    let data_rows = list.map(rows, fn(row) { row_to_csv(headers, row) }) in
     str.join(list.concat([[str.join(headers, ",")], data_rows]), "\n")
 }
 

@@ -1,0 +1,17 @@
+
+import("../packages/crypto-extra/main") as crypto
+import("std/str") as str
+
+let token = crypto.random_token()
+test "token not empty" { str.len(token) > 0 }
+
+let hex = crypto.random_hex(8)
+test "hex length" { str.len(hex) == 16 }
+
+let salt = crypto.random_salt()
+test "salt not empty" { str.len(salt) > 0 }
+
+let hash = crypto.hash_password("mypassword", salt)
+test "hash not empty" { str.len(hash) > 0 }
+test "verify correct" { crypto.verify_password("mypassword", salt, hash) }
+test "verify wrong" { crypto.verify_password("wrongpass", salt, hash) == false }
