@@ -1,0 +1,32 @@
+
+import("../packages/tensor-core/src/tensor") as tensor
+import("../packages/tensor-core/src/ops") as ops
+import("../packages/tensor-core/src/nn") as nn
+import("std/list") as list
+
+let t = tensor.zeros([2, 3])
+test "zeros shape" { t.shape == [2, 3] }
+test "zeros data len" { list.len(t.data) == 6 }
+test "zeros value" { list.get(t.data, 0) == 0.0 }
+
+let o = tensor.ones([3])
+test "ones shape" { o.shape == [3] }
+test "ones value" { list.get(o.data, 0) == 1.0 }
+
+let a = tensor.from_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+let b = tensor.from_list([5.0, 6.0, 7.0, 8.0], [2, 2])
+let c = ops.matmul(a, b)
+test "matmul shape" { c.out.shape == [2, 2] }
+test "matmul [0,0]" { list.get(c.out.data, 0) == 19.0 }
+test "matmul [0,1]" { list.get(c.out.data, 1) == 22.0 }
+test "matmul [1,0]" { list.get(c.out.data, 2) == 43.0 }
+test "matmul [1,1]" { list.get(c.out.data, 3) == 50.0 }
+
+let layer = nn.linear(2, 3, 0.1)
+test "linear w shape" { layer.w.shape == [3, 2] }
+test "linear b shape" { layer.b.shape == [3] }
+
+let x = tensor.from_list([1.0, 2.0], [1, 2])
+let out = nn.linear_forward(layer, x)
+test "linear_forward shape" { out.out.shape == [1, 3] }
+test "linear_forward len" { list.len(out.out.data) == 3 }
