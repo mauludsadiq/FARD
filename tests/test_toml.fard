@@ -1,0 +1,15 @@
+
+import("../packages/toml/main") as toml
+import("std/str") as str
+
+let data = { name: "fard", version: "1.0.0", debug: true }
+let encoded = toml.encode(data)
+test "encode not empty" { str.len(encoded) > 0 }
+test "encode has name" { str.contains(encoded, "name") }
+test "encode has version" { str.contains(encoded, "version") }
+
+let src = "name = \"hello\"
+value = 42"
+let parsed = toml.parse(src)
+test "parse name" { parsed.name == "hello" }
+test "parse value" { parsed.value == 42 }

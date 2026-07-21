@@ -3,6 +3,7 @@ import("std/str")  as str
 import("std/list") as list
 import("std/rec")  as rec
 import("std/type") as type
+import("std/int")  as int
 
 fn trim_comment(line) {
   str.trim(list.get(str.split(line, "#"), 0))
@@ -13,11 +14,13 @@ fn parse_string(v) {
 }
 
 fn parse_scalar(raw) {
-  let v = str.trim(raw)
+  let v = str.trim(raw) in
   if str.starts_with(v, "\"") then parse_string(v)
   else if v == "true"  then true
   else if v == "false" then false
-  else v
+  else
+    let parsed = int.parse(v) in
+    if parsed.t == "ok" then parsed.v else v
 }
 
 fn parse_array_inner(inner) {

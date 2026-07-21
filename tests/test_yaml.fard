@@ -1,0 +1,14 @@
+
+import("../packages/yaml/main") as yaml
+import("std/str") as str
+
+let data = { name: "fard", version: "1.0.0" }
+let encoded = yaml.encode(data)
+test "encode not empty" { str.len(encoded) > 0 }
+test "encode has name" { str.contains(encoded, "name") }
+
+let src = "name: hello
+value: 42"
+let parsed = yaml.parse(src)
+test "parse name" { parsed.name == "hello" }
+test "parse value" { parsed.value == 42 }
