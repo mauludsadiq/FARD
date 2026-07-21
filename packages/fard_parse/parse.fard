@@ -4,10 +4,70 @@ import("std/list") as list
 import("std/cast") as cast
 import("std/record") as rec
 
+fn empty_text() { str.slice("x", 0, 0) }
+
 fn trim(s) { str.trim(s) }
 
 fn drop_empty(xs) {
-  list.filter(xs, fn(x) { trim(x) != "" })
+  list.filter(xs, fn(x) { trim(x) != empty_text() })
+}
+
+fn quote_parity_from(s, i, escaped, odd) {
+  if i >= str.len(s) then
+    odd
+  else
+    let c = str.slice(s, i, i + 1) in
+    if escaped then
+      quote_parity_from(s, i + 1, false, odd)
+    else if c == "\\" then
+      quote_parity_from(s, i + 1, true, odd)
+    else if c == "\"" then
+      quote_parity_from(
+        s,
+        i + 1,
+        false,
+        if odd then false else true
+      )
+    else
+      quote_parity_from(s, i + 1, false, odd)
+}
+
+fn has_odd_unescaped_quotes(s) {
+  quote_parity_from(s, 0, false, false)
+}
+
+fn starts_unescaped_quote(s) {
+  str.len(s) > 0 && str.slice(s, 0, 1) == "\""
+}
+
+fn join_quoted_toks(xs, out, i, inside, acc) {
+  if i >= list.len(xs) then
+    if acc == empty_text() then out else list.concat([out, [acc]])
+  else
+    let x = xs[i] in
+    let toggles = has_odd_unescaped_quotes(x) in
+    if inside then
+      let next_acc = str.concat([acc, " ", x]) in
+      if toggles then
+        join_quoted_toks(
+          xs,
+          list.concat([out, [next_acc]]),
+          i + 1,
+          false,
+          empty_text()
+        )
+      else
+        join_quoted_toks(xs, out, i + 1, true, next_acc)
+    else if toggles then
+      join_quoted_toks(xs, out, i + 1, true, x)
+    else
+      join_quoted_toks(
+        xs,
+        list.concat([out, [x]]),
+        i + 1,
+        false,
+        empty_text()
+      )
 }
 
 fn normalize_ops(s) {
@@ -30,21 +90,162 @@ fn normalize_ops(s) {
   str.replace(s16, "__NE__", "!=")
 }
 
+fn is_token_suffix(c) {
+  c == "," || c == ")" || c == "]" || c == "}"
+}
+
+fn quoted_suffixes_rev(x, n, suffixes) {
+  if n <= 0 then
+    { text: x, suffixes: suffixes }
+  else
+    let c = str.slice(x, n - 1, n) in
+    if is_token_suffix(c) then
+      quoted_suffixes_rev(
+        str.slice(x, 0, n - 1),
+        n - 1,
+        list.concat([[c], suffixes])
+      )
+    else
+      { text: x, suffixes: suffixes }
+}
+
+fn quoted_token_parts(x) {
+  let r = quoted_suffixes_rev(x, str.len(x), []) in
+  list.concat([[r.text], r.suffixes])
+}
+
+fn append_text(a, b) {
+  str.concat([a, b])
+}
+
+fn flush_token(out, buf) {
+  if str.len(buf) == 0 then out
+  else list.concat([out, [buf]])
+}
+
+fn split_brackets_from(s, i, in_quote, escaped, buf, out) {
+  if i >= str.len(s) then
+    flush_token(out, buf)
+  else
+    let c = str.slice(s, i, i + 1) in
+    if escaped then
+      split_brackets_from(
+        s,
+        i + 1,
+        in_quote,
+        false,
+        append_text(buf, c),
+        out
+      )
+    else if in_quote && c == "\\" then
+      split_brackets_from(
+        s,
+        i + 1,
+        true,
+        true,
+        append_text(buf, c),
+        out
+      )
+    else if c == "\"" then
+      split_brackets_from(
+        s,
+        i + 1,
+        !in_quote,
+        false,
+        append_text(buf, c),
+        out
+      )
+    else if !in_quote && (c == "[" || c == "]") then
+      split_brackets_from(
+        s,
+        i + 1,
+        false,
+        false,
+        empty_text(),
+        list.concat([flush_token(out, buf), [c]])
+      )
+    else
+      split_brackets_from(
+        s,
+        i + 1,
+        in_quote,
+        false,
+        append_text(buf, c),
+        out
+      )
+}
+
+fn split_brackets(s) {
+  split_brackets_from(
+    s,
+    0,
+    false,
+    false,
+    empty_text(),
+    []
+  )
+}
+
+fn normalize_nonbracket_piece(x) {
+  if starts_unescaped_quote(x) then
+    quoted_token_parts(x)
+  else
+    let s1 = str.replace(x, ".", " . ") in
+    let s2 = str.replace(s1, "{", " { ") in
+    let s3 = str.replace(s2, "}", " } ") in
+    let s4 = normalize_ops(s3) in
+    drop_empty(str.split(s4, " "))
+}
+
+fn normalize_split_parts(xs, i, out) {
+  if i >= list.len(xs) then
+    out
+  else
+    normalize_split_parts(
+      xs,
+      i + 1,
+      list.concat([
+        out,
+        normalize_nonbracket_piece(xs[i])
+      ])
+    )
+}
+
+fn normalize_token_piece(x) {
+  if starts_unescaped_quote(x) then
+    quoted_token_parts(x)
+  else
+    let s0 = str.replace(x, "[", " [ ") in
+    let s1 = str.replace(s0, "]", " ] ") in
+    let s2 = str.replace(s1, ".", " . ") in
+    let s3 = str.replace(s2, "{", " { ") in
+    let s4 = str.replace(s3, "}", " } ") in
+    let s5 = normalize_ops(s4) in
+    drop_empty(str.split(s5, " "))
+}
+
+fn normalize_token_pieces(xs, i, out) {
+  if i >= list.len(xs) then
+    out
+  else
+    normalize_token_pieces(
+      xs,
+      i + 1,
+      list.concat([out, normalize_token_piece(xs[i])])
+    )
+}
+
 fn tokenize(s) {
   let s0 = str.replace(s, "\n", " ") in
   let raw0 = str.split(s0, " ") in
-  let joined = join_quoted_toks(drop_empty(raw0), [], 0, false, "") in
-  let s1 = str.join(joined, " ") in
-  let s2 = str.replace(s1, ".", " . ") in
-  let s3 = normalize_ops(s2) in
-  let raw = str.split(s3, " ") in
-  drop_empty(raw)
+  let joined = join_quoted_toks(drop_empty(raw0), [], 0, false, empty_text()) in
+  normalize_token_pieces(joined, 0, [])
 }
 
 fn st_new(tokens) { { tokens: tokens, pos: 0 } }
 
 fn st_peek(st) {
-  if st.pos >= list.len(st.tokens) then ""
+  if st.pos >= list.len(st.tokens) then empty_text()
   else st.tokens[st.pos]
 }
 
@@ -59,13 +260,54 @@ fn is_digit_token(t) {
   str.len(t) > 0 && is_digit_char(str.slice(t, 0, 1))
 }
 
+fn compact_ref_parts(parts, i, node) {
+  if i >= list.len(parts) then
+    node
+  else
+    compact_ref_parts(
+      parts,
+      i + 1,
+      {
+        t: "get_field",
+        obj: node,
+        field: parts[i]
+      }
+    )
+}
+
+fn compact_ref(s) {
+  let parts = str.split(s, ".") in
+  if list.len(parts) == 0 then
+    fir.var(s)
+  else
+    compact_ref_parts(parts, 1, fir.var(parts[0]))
+}
+
+fn compact_index_atom(s) {
+  if is_digit_token(s) then
+    fir.lit_int(cast.int(s))
+  else if is_quoted_string(s) then
+    {
+      t: "lit_text",
+      v: str.slice(s, 1, str.len(s) - 1)
+    }
+  else
+    compact_ref(s)
+}
+
 fn parse_index_expr(t) {
   let bracket_pos = str.index_of(t, "[") in
-  let obj_name = str.slice(t, 0, bracket_pos) in
-  let idx_str = str.slice(t, bracket_pos + 1, str.len(t) - 1) in
-  let obj_node = fir.var(obj_name) in
-  let idx_node = if is_digit_token(idx_str) then fir.lit_int(cast.int(idx_str)) else fir.var(idx_str) in
-  { t: "index", obj: obj_node, idx: idx_node }
+  let obj_text = str.slice(t, 0, bracket_pos) in
+  let idx_text = str.slice(
+    t,
+    bracket_pos + 1,
+    str.len(t) - 1
+  ) in
+  {
+    t: "index",
+    obj: compact_ref(obj_text),
+    idx: compact_index_atom(idx_text)
+  }
 }
 
 fn dquote() { str.slice("a\"b", 1, 2) }
@@ -78,9 +320,12 @@ fn parse_int_atom(t) {
   if is_digit_token(t) then fir.lit_int(cast.int(t))
   else if t == "true" then { t: "lit_bool", v: true }
   else if t == "false" then { t: "lit_bool", v: false }
-  else if str.contains(t, "[") then parse_index_expr(t)
-  else if is_quoted_string(t) then { t: "lit_text", v: str.slice(t, 1, str.len(t) - 1) }
-  else fir.var(t)
+  else if is_quoted_string(t) then
+    { t: "lit_text", v: str.slice(t, 1, str.len(t) - 1) }
+  else if str.contains(t, "[") then
+    parse_index_expr(t)
+  else
+    fir.var(t)
 }
 
 fn make_call_node(fn_node, args) {
@@ -109,11 +354,49 @@ fn parse_postfix(parse_one, base, loc) {
     let r = parse_args(parse_one, st_next(base.st), []) in
     let call_node = rec.set(make_call_node(base.node, r.args), "loc", loc) in
     parse_postfix(parse_one, { node: call_node, st: r.st }, loc)
+  else if tok == "[" then
+    let ridx = parse_one(st_next(base.st)) in
+    let close = st_peek(ridx.st) in
+    if close == "]" then
+      let index_node = {
+        t: "index",
+        obj: base.node,
+        idx: ridx.node,
+        loc: loc
+      } in
+      parse_postfix(
+        parse_one,
+        {
+          node: index_node,
+          st: st_next(ridx.st)
+        },
+        loc
+      )
+    else
+      {
+        node: {
+          t: "err",
+          e: "expected_rbracket"
+        },
+        st: ridx.st
+      }
   else if tok == "." then
     let field = st_peek(st_next(base.st)) in
     let st2 = st_next(st_next(base.st)) in
-    let get_node = { t: "get_field", obj: base.node, field: field, loc: loc } in
-    parse_postfix(parse_one, { node: get_node, st: st2 }, loc)
+    let get_node = {
+      t: "get_field",
+      obj: base.node,
+      field: field,
+      loc: loc
+    } in
+    parse_postfix(
+      parse_one,
+      {
+        node: get_node,
+        st: st2
+      },
+      loc
+    )
   else
     base
 }
@@ -130,26 +413,18 @@ fn parse_primary(parse_one, st) {
   else
     let atom = parse_int_atom(tok) in
     let atom_loc = rec.set(atom, "loc", loc) in
-    let base = { node: atom_loc, st: st_next(st) } in
-    let tok2 = st_peek(base.st) in
-    if tok2 == "(" then
-      let r2 = parse_args(parse_one, st_next(base.st), []) in
-      let call_node = rec.set(make_call_node(base.node, r2.args), "loc", loc) in
-      parse_postfix(parse_one, { node: call_node, st: r2.st }, loc)
-    else if tok2 == "." then
-      let field = st_peek(st_next(base.st)) in
-      let st3 = st_next(st_next(base.st)) in
-      let get_node = { t: "get_field", obj: base.node, field: field, loc: loc } in
-      parse_postfix(parse_one, { node: get_node, st: st3 }, loc)
-    else
-      base
+    let base = {
+      node: atom_loc,
+      st: st_next(st)
+    } in
+    parse_postfix(parse_one, base, loc)
 }
 
 fn parse_list_items(parse_one, st, acc) {
   let tok = st_peek(st) in
   if tok == "]" then { items: acc, st: st_next(st) }
   else if tok == "," then parse_list_items(parse_one, st_next(st), acc)
-  else if tok == "" then { items: acc, st: st }
+  else if tok == empty_text() then { items: acc, st: st }
   else
     let r = parse_one(st) in
     parse_list_items(parse_one, r.st, list.concat([acc, [r.node]]))
@@ -202,10 +477,10 @@ fn parse_cmp_tail(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "==" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: rec.set(fir.call_builtin("int.eq", [lhs, r.node]), "loc", lhs.loc), st: r.st }
+    { node: rec.set(fir.call_builtin("value.eq", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "!=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: rec.set(fir.call_builtin("int.ne", [lhs, r.node]), "loc", lhs.loc), st: r.st }
+    { node: rec.set(fir.call_builtin("value.ne", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "<=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
     { node: rec.set(fir.call_builtin("int.le", [lhs, r.node]), "loc", lhs.loc), st: r.st }
@@ -272,7 +547,7 @@ fn parse_match_arms(parse_expr_fn, st, acc) {
   let tok = st_peek(st) in
   if tok == "}" then
     { arms: acc, st: st_next(st) }
-  else if tok == "" then
+  else if tok == empty_text() then
     { arms: acc, st: st }
   else if tok == "," then
     parse_match_arms(parse_expr_fn, st_next(st), acc)
@@ -301,7 +576,7 @@ fn parse_record_fields_expr(parse_expr_fn, st, acc) {
   let tok = st_peek(st) in
   if tok == "}" then { fields: acc, st: st_next(st) }
   else if tok == "," then parse_record_fields_expr(parse_expr_fn, st_next(st), acc)
-  else if tok == "" then { fields: acc, st: st }
+  else if tok == empty_text() then { fields: acc, st: st }
   else
     let key = strip_colon(tok) in
     let st1 = st_next(st) in
@@ -385,7 +660,7 @@ fn parse_if(s) {
 
 fn parse_params_text(s) {
   let t = trim(s) in
-  if t == "" then []
+  if t == empty_text() then []
   else list.map(str.split(t, ","), fn(x) { trim(x) })
 }
 
@@ -399,7 +674,7 @@ fn parse_module_text(src) {
   let p1 = split_once_text(s, "{") in
   let header = trim(p1.left) in
   let body_part = p1.right in
-  let h1 = str.replace(header, "fn ", "") in
+  let h1 = str.replace(header, "fn ", empty_text()) in
   let p2 = split_once_text(h1, "(") in
   let name = trim(p2.left) in
   let p3 = split_once_text(p2.right, ")") in
@@ -447,7 +722,7 @@ fn parse_top_let(st) {
 
 fn parse_top_items(st, acc) {
   let tok = st_peek(st) in
-  if tok == "" then acc
+  if tok == empty_text() then acc
   else if tok == "fn" then
     let r = parse_top_fn(st_next(st)) in
     parse_top_items(r.st, list.concat([acc, [r.node]]))
@@ -516,18 +791,41 @@ fn normalize_ops(s) {
   str.replace(s16, "__NE__", "!=")
 }
 
+fn normalize_token_piece(x) {
+  if starts_unescaped_quote(x) then
+    quoted_token_parts(x)
+  else
+    let s0 = str.replace(x, "[", " [ ") in
+    let s1 = str.replace(s0, "]", " ] ") in
+    let s2 = str.replace(s1, ".", " . ") in
+    let s3 = str.replace(s2, "{", " { ") in
+    let s4 = str.replace(s3, "}", " } ") in
+    let s5 = normalize_ops(s4) in
+    drop_empty(str.split(s5, " "))
+}
+
+fn normalize_token_pieces(xs, i, out) {
+  if i >= list.len(xs) then
+    out
+  else
+    normalize_token_pieces(
+      xs,
+      i + 1,
+      list.concat([out, normalize_token_piece(xs[i])])
+    )
+}
+
 fn tokenize(s) {
   let s0 = str.replace(s, "\n", " ") in
-  let s1 = str.replace(s0, ".", " . ") in
-  let s2 = normalize_ops(s1) in
-  let raw = str.split(s2, " ") in
-  drop_empty(raw)
+  let raw0 = str.split(s0, " ") in
+  let joined = join_quoted_toks(drop_empty(raw0), [], 0, false, empty_text()) in
+  normalize_token_pieces(joined, 0, [])
 }
 
 fn st_new(tokens) { { tokens: tokens, pos: 0 } }
 
 fn st_peek(st) {
-  if st.pos >= list.len(st.tokens) then ""
+  if st.pos >= list.len(st.tokens) then empty_text()
   else st.tokens[st.pos]
 }
 
@@ -544,11 +842,17 @@ fn is_digit_token(t) {
 
 fn parse_index_expr(t) {
   let bracket_pos = str.index_of(t, "[") in
-  let obj_name = str.slice(t, 0, bracket_pos) in
-  let idx_str = str.slice(t, bracket_pos + 1, str.len(t) - 1) in
-  let obj_node = fir.var(obj_name) in
-  let idx_node = if is_digit_token(idx_str) then fir.lit_int(cast.int(idx_str)) else fir.var(idx_str) in
-  { t: "index", obj: obj_node, idx: idx_node }
+  let obj_text = str.slice(t, 0, bracket_pos) in
+  let idx_text = str.slice(
+    t,
+    bracket_pos + 1,
+    str.len(t) - 1
+  ) in
+  {
+    t: "index",
+    obj: compact_ref(obj_text),
+    idx: compact_index_atom(idx_text)
+  }
 }
 
 
@@ -579,11 +883,49 @@ fn parse_postfix(parse_one, base, loc) {
     let r = parse_args(parse_one, st_next(base.st), []) in
     let call_node = rec.set(make_call_node(base.node, r.args), "loc", loc) in
     parse_postfix(parse_one, { node: call_node, st: r.st }, loc)
+  else if tok == "[" then
+    let ridx = parse_one(st_next(base.st)) in
+    let close = st_peek(ridx.st) in
+    if close == "]" then
+      let index_node = {
+        t: "index",
+        obj: base.node,
+        idx: ridx.node,
+        loc: loc
+      } in
+      parse_postfix(
+        parse_one,
+        {
+          node: index_node,
+          st: st_next(ridx.st)
+        },
+        loc
+      )
+    else
+      {
+        node: {
+          t: "err",
+          e: "expected_rbracket"
+        },
+        st: ridx.st
+      }
   else if tok == "." then
     let field = st_peek(st_next(base.st)) in
     let st2 = st_next(st_next(base.st)) in
-    let get_node = { t: "get_field", obj: base.node, field: field, loc: loc } in
-    parse_postfix(parse_one, { node: get_node, st: st2 }, loc)
+    let get_node = {
+      t: "get_field",
+      obj: base.node,
+      field: field,
+      loc: loc
+    } in
+    parse_postfix(
+      parse_one,
+      {
+        node: get_node,
+        st: st2
+      },
+      loc
+    )
   else
     base
 }
@@ -600,26 +942,18 @@ fn parse_primary(parse_one, st) {
   else
     let atom = parse_int_atom(tok) in
     let atom_loc = rec.set(atom, "loc", loc) in
-    let base = { node: atom_loc, st: st_next(st) } in
-    let tok2 = st_peek(base.st) in
-    if tok2 == "(" then
-      let r2 = parse_args(parse_one, st_next(base.st), []) in
-      let call_node = rec.set(make_call_node(base.node, r2.args), "loc", loc) in
-      parse_postfix(parse_one, { node: call_node, st: r2.st }, loc)
-    else if tok2 == "." then
-      let field = st_peek(st_next(base.st)) in
-      let st3 = st_next(st_next(base.st)) in
-      let get_node = { t: "get_field", obj: base.node, field: field, loc: loc } in
-      parse_postfix(parse_one, { node: get_node, st: st3 }, loc)
-    else
-      base
+    let base = {
+      node: atom_loc,
+      st: st_next(st)
+    } in
+    parse_postfix(parse_one, base, loc)
 }
 
 fn parse_list_items(parse_one, st, acc) {
   let tok = st_peek(st) in
   if tok == "]" then { items: acc, st: st_next(st) }
   else if tok == "," then parse_list_items(parse_one, st_next(st), acc)
-  else if tok == "" then { items: acc, st: st }
+  else if tok == empty_text() then { items: acc, st: st }
   else
     let r = parse_one(st) in
     parse_list_items(parse_one, r.st, list.concat([acc, [r.node]]))
@@ -672,10 +1006,10 @@ fn parse_cmp_tail(parse_one, lhs, st) {
   let tok = st_peek(st) in
   if tok == "==" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: rec.set(fir.call_builtin("int.eq", [lhs, r.node]), "loc", lhs.loc), st: r.st }
+    { node: rec.set(fir.call_builtin("value.eq", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "!=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
-    { node: rec.set(fir.call_builtin("int.ne", [lhs, r.node]), "loc", lhs.loc), st: r.st }
+    { node: rec.set(fir.call_builtin("value.ne", [lhs, r.node]), "loc", lhs.loc), st: r.st }
   else if tok == "<=" then
     let r = parse_add_sub(parse_one, st_next(st)) in
     { node: rec.set(fir.call_builtin("int.le", [lhs, r.node]), "loc", lhs.loc), st: r.st }
@@ -742,7 +1076,7 @@ fn parse_match_arms(parse_expr_fn, st, acc) {
   let tok = st_peek(st) in
   if tok == "}" then
     { arms: acc, st: st_next(st) }
-  else if tok == "" then
+  else if tok == empty_text() then
     { arms: acc, st: st }
   else if tok == "," then
     parse_match_arms(parse_expr_fn, st_next(st), acc)
@@ -771,7 +1105,7 @@ fn parse_record_fields_expr(parse_expr_fn, st, acc) {
   let tok = st_peek(st) in
   if tok == "}" then { fields: acc, st: st_next(st) }
   else if tok == "," then parse_record_fields_expr(parse_expr_fn, st_next(st), acc)
-  else if tok == "" then { fields: acc, st: st }
+  else if tok == empty_text() then { fields: acc, st: st }
   else
     let key = strip_colon(tok) in
     let st1 = st_next(st) in
@@ -855,7 +1189,7 @@ fn parse_if(s) {
 
 fn parse_params_text(s) {
   let t = trim(s) in
-  if t == "" then []
+  if t == empty_text() then []
   else list.map(str.split(t, ","), fn(x) { trim(x) })
 }
 
@@ -869,7 +1203,7 @@ fn parse_module_text(src) {
   let p1 = split_once_text(s, "{") in
   let header = trim(p1.left) in
   let body_part = p1.right in
-  let h1 = str.replace(header, "fn ", "") in
+  let h1 = str.replace(header, "fn ", empty_text()) in
   let p2 = split_once_text(h1, "(") in
   let name = trim(p2.left) in
   let p3 = split_once_text(p2.right, ")") in
@@ -917,7 +1251,7 @@ fn parse_top_let(st) {
 
 fn parse_top_items(st, acc) {
   let tok = st_peek(st) in
-  if tok == "" then acc
+  if tok == empty_text() then acc
   else if tok == "fn" then
     let r = parse_top_fn(st_next(st)) in
     parse_top_items(r.st, list.concat([acc, [r.node]]))

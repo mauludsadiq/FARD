@@ -1,0 +1,21 @@
+
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/record") as rec
+import("std/io") as io
+
+let src = io.read_file("packages/fard_parse/parse.fard").ok
+let defs = parse.parse_program(src)
+let st_peek = list.find(defs, fn(d) { d.t == "def_fn" && d.name == "st_peek" })
+let body = st_peek.some.body
+test "body t" { body.t }
+let cond = rec.get(body, "cond")
+test "cond t" { cond.t }
+test "cond name" { rec.get(cond, "name") }
+let t_branch = rec.get(body, "t_branch")
+test "t_branch t" { t_branch.t }
+let f_branch = rec.get(body, "f_branch")
+test "f_branch t" { f_branch.t }
+test "f_branch obj t" { rec.get(f_branch, "obj").t }
+test "f_branch idx t" { rec.get(f_branch, "idx").t }
+test "f_branch idx name" { rec.get(rec.get(f_branch, "idx"), "name") }

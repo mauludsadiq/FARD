@@ -4694,6 +4694,14 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
         },
         Expr::Null => Ok(Val::Unit),
         Expr::Var(n) => env.get(n).ok_or_else(|| {
+            let env_keys: Vec<String> = env.keys();
+
+            eprintln!("=== UNBOUND VAR ===");
+            eprintln!("name={:?}", n);
+            eprintln!("name_len={}", n.len());
+            eprintln!("name_bytes={:?}", n.as_bytes());
+            eprintln!("env_keys={:?}", env_keys);
+
             // Suggest stdlib import if name matches a known module
             let stdlib_modules = [
                 "str","list","math","io","json","hash","http","re","map","set",
@@ -4705,8 +4713,6 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
             if stdlib_modules.contains(&n.as_str()) {
                 anyhow!("unbound var: {n} -- did you forget to import? Try: import(\"std/{n}\") as {n}")
             } else {
-                // Find similar names in env using edit distance
-                let env_keys: Vec<String> = env.keys();
                 let suggestion = env_keys.iter()
                     .filter(|k| edit_distance(k, n) <= 2 && !k.is_empty())
                     .min_by_key(|k| edit_distance(k, n))
@@ -4758,7 +4764,7 @@ fn eval(e: &Expr, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader)
                 (Val::Record(m), Val::Text(k)) => {
                     m.get(&k).cloned().ok_or_else(|| anyhow!("ERROR_KEY key {:?} not found", k))
                 }
-                _ => bail!("ERROR_BADARG index operator requires list[int] or rec[str]"),
+                (v2, i2) => bail!("ERROR_BADARG index operator requires list[int] or rec[str], got {:?}[{:?}]", v2.type_name(), i2.type_name()),
             }
         }
         Expr::Get(obj, k) => {
@@ -5304,6 +5310,274 @@ fn val_eq(a: &Val, b: &Val) -> bool {
     }
 }
 
+
+fn eval_fir(fir: &Val, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
+    match fir {
+        Val::Int(n) => Ok(Val::Int(*n)),
+        Val::Float(f) => Ok(Val::Float(*f)),
+        Val::Bool(b) => Ok(Val::Bool(*b)),
+        Val::Text(s) => Ok(Val::Text(s.clone())),
+        Val::Unit => Ok(Val::Unit),
+        Val::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items { out.push(eval_fir(item, env, tracer, loader)?); }
+            Ok(Val::List(out))
+        }
+        Val::Record(m) => {
+            let t = match m.get("t") {
+                Some(Val::Text(s)) => s.as_str(),
+                _ => return Ok(fir.clone()), // not a FIR node, return as-is
+            };
+            match t {
+                "lit_int" => Ok(m.get("v").cloned().unwrap_or(Val::Unit)),
+                "lit_bool" => Ok(m.get("v").cloned().unwrap_or(Val::Unit)),
+                "lit_text" => Ok(m.get("v").cloned().unwrap_or(Val::Unit)),
+                "lit_null" => Ok(Val::Unit),
+                "var" => {
+                    let name = match m.get("name") { Some(Val::Text(s)) => s.as_str(), _ => return Ok(Val::Unit) };
+                    if name.is_empty() { return Ok(Val::Text(String::new())); }
+                    if let Some(v) = env.get(name) { return Ok(v); }
+                    if let Some(Val::MutEnv(me)) = env.get("__closure_env__") {
+                        if let Some(v) = me.lock().unwrap().get(name).cloned() { return Ok(v); }
+                    }
+                    let keys: Vec<String> = env.keys();
+                    let suggestion = keys.iter()
+                        .filter(|k| edit_distance(k, name) <= 2 && !k.is_empty() && !k.starts_with("__"))
+                        .min_by_key(|k| edit_distance(k, name))
+                        .map(|s| format!(" -- did you mean '{}'?", s))
+                        .unwrap_or_default();
+                    bail!("unbound var: {}{}", name, suggestion)
+                }
+                "get_field" => {
+                    let obj = match m.get("obj") { Some(v) => v, _ => return Ok(Val::Unit) };
+                    let field = match m.get("field") { Some(Val::Text(s)) => s.clone(), _ => return Ok(Val::Unit) };
+                    let obj_val = eval_fir(obj, env, tracer, loader)?;
+                    match obj_val {
+                        Val::Record(rm) => Ok(rm.get(&field).cloned().unwrap_or(Val::Unit)),
+                        Val::MutEnv(me) => Ok(me.lock().unwrap().get(&field).cloned().unwrap_or(Val::Unit)),
+                        other => {
+                            // method dispatch
+                            let type_mod = match &other {
+                                Val::List(_) => Some("std/list"),
+                                Val::Text(_) => Some("std/str"),
+                                Val::Int(_) => Some("std/int"),
+                                Val::Bytes(_) => Some("std/bytes"),
+                                Val::Float(_) => Some("std/float"),
+                                _ => None,
+                            };
+                            if let Some(mod_name) = type_mod {
+                                let here = loader.root_dir.clone();
+                                let mod_map = loader.load_module(mod_name, &here, tracer)?;
+                                if let Some(f) = mod_map.get(&field) {
+                                    return Ok(Val::BoundMethod(Box::new(other), Box::new(f.clone())));
+                                }
+                            }
+                            bail!("no member '{}' on {:?}", field, other.type_name())
+                        }
+                    }
+                }
+                "index" => {
+                    let obj = match m.get("obj") { Some(v) => v, _ => bail!("index: no obj") };
+                    let idx = match m.get("idx") { Some(v) => v, _ => bail!("index: no idx") };
+                    let obj_val = eval_fir(obj, env, tracer, loader)?;
+                    let idx_val = eval_fir(idx, env, tracer, loader)?;
+                    match (obj_val, idx_val) {
+                        (Val::List(xs), Val::Int(n)) => {
+                            if n < 0 || n as usize >= xs.len() { bail!("ERROR_OOB index {} out of bounds (len {})", n, xs.len()); }
+                            Ok(xs[n as usize].clone())
+                        }
+                        (Val::Record(rm), Val::Text(k)) => Ok(rm.get(&k).cloned().unwrap_or(Val::Unit)),
+                        (v, i) => bail!("ERROR_BADARG index requires list[int] or rec[str], got {:?}[{:?}]", v.type_name(), i.type_name()),
+                    }
+                }
+                "if_node" => {
+                    let cond = match m.get("cond") { Some(v) => v, _ => bail!("if_node: no cond") };
+                    let cond_val = eval_fir(cond, env, tracer, loader)?;
+                    match cond_val {
+                        Val::Bool(true) => {
+                            let t_branch = match m.get("t_branch") { Some(v) => v.clone(), _ => bail!("if_node: no t_branch") };
+                            eval_fir(&t_branch, env, tracer, loader)
+                        }
+                        Val::Bool(false) | Val::Unit => {
+                            let f_branch = match m.get("f_branch") { Some(v) => v.clone(), _ => bail!("if_node: no f_branch") };
+                            eval_fir(&f_branch, env, tracer, loader)
+                        }
+                        _ => bail!("if_node: cond must be bool"),
+                    }
+                }
+                "let" => {
+                    let bindings = match m.get("bindings") { Some(Val::List(v)) => v.clone(), _ => bail!("let: no bindings") };
+                    let body = match m.get("body") { Some(v) => v.clone(), _ => bail!("let: no body") };
+                    // Iterative let: avoid creating extra Rust stack frames
+                    for b in &bindings {
+                        if let Val::Record(bm) = b {
+                            let name = match bm.get("name") { Some(Val::Text(s)) => s.clone(), _ => bail!("let binding: no name") };
+                            let val_fir = match bm.get("value") { Some(v) => v.clone(), _ => bail!("let binding: no value") };
+                            let val = eval_fir(&val_fir, env, tracer, loader)?;
+                            env.set(name, val);
+                        }
+                    }
+                    eval_fir(&body, env, tracer, loader)
+                }
+                "call" => {
+                    let fn_fir = match m.get("fn") { Some(v) => v.clone(), _ => bail!("call: no fn") };
+                    let args_fir = match m.get("args") { Some(Val::List(v)) => v.clone(), _ => vec![] };
+                    let fn_val = eval_fir(&fn_fir, env, tracer, loader)?;
+                    let mut args = Vec::with_capacity(args_fir.len());
+                    for a in &args_fir { args.push(eval_fir(a, env, tracer, loader)?); }
+                    call(fn_val, args, tracer, loader)
+                }
+                "call_builtin" => {
+                    let name = match m.get("name") { Some(Val::Text(s)) => s.clone(), _ => bail!("call_builtin: no name") };
+                    let args_fir = match m.get("args") { Some(Val::List(v)) => v.clone(), _ => vec![] };
+                    let mut args = Vec::with_capacity(args_fir.len());
+                    for a in &args_fir { args.push(eval_fir(a, env, tracer, loader)?); }
+                    // Map to binary ops
+                    match name.as_str() {
+                        "int.add" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a + b)); } }
+                        "int.sub" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a - b)); } }
+                        "int.mul" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a * b)); } }
+                        "int.div" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a / b)); } }
+                        "int.eq"  => { eprintln!("int.eq args: {:?} {:?}", args.get(0).map(|v| v.type_name()), args.get(1).map(|v| v.type_name())); if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a == b)); } }
+                        "int.ne"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a != b)); } }
+                        "int.lt"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a < b)); } }
+                        "int.le"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a <= b)); } }
+                        "int.gt"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a > b)); } }
+                        "int.ge"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a >= b)); } }
+                        "bool.not" => { if let Val::Bool(b) = &args[0] { return Ok(Val::Bool(!b)); } }
+                        "bool.and" => { if let (Val::Bool(a), Val::Bool(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(*a && *b)); } }
+                        "bool.or"  => { if let (Val::Bool(a), Val::Bool(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(*a || *b)); } }
+                        "value.eq" => { if args.len() >= 2 { return Ok(Val::Bool(val_eq(&args[0], &args[1]))); } }
+                        "value.ne" => { if args.len() >= 2 { return Ok(Val::Bool(!val_eq(&args[0], &args[1]))); } }
+                        _ => {}
+                    }
+                    // Generic: split on dot and call as method
+                    let parts: Vec<&str> = name.splitn(2, '.').collect();
+                    if parts.len() == 2 {
+                        // First try env lookup
+                        if let Some(mod_val) = env.get(parts[0]) {
+                            let fn_val = match &mod_val {
+                                Val::Record(rm) => rm.get(parts[1]).cloned().ok_or_else(|| anyhow!("call_builtin: {}.{} not found", parts[0], parts[1]))?,
+                                _ => bail!("call_builtin: {} is not a module record", parts[0]),
+                            };
+                            call(fn_val, args, tracer, loader)
+                        } else {
+                            // Try loading as std module
+                            let here = loader.root_dir.clone();
+                            let mod_map = loader.load_module(&format!("std/{}", parts[0]), &here, tracer)
+                                .map_err(|_| anyhow!("call_builtin: module {} not found", parts[0]))?;
+                            let fn_val = mod_map.get(parts[1]).cloned()
+                                .ok_or_else(|| anyhow!("call_builtin: {}.{} not found", parts[0], parts[1]))?;
+                            call(fn_val, args, tracer, loader)
+                        }
+                    } else {
+                        bail!("call_builtin: unknown builtin {}", name)
+                    }
+                }
+                "match_expr" => {
+                    let expr_fir = match m.get("expr") { Some(v) => v.clone(), _ => bail!("match_expr: no expr") };
+                    let arms = match m.get("arms") { Some(Val::List(v)) => v.clone(), _ => bail!("match_expr: no arms") };
+                    let sv = eval_fir(&expr_fir, env, tracer, loader)?;
+                    for arm in &arms {
+                        if let Val::Record(am) = arm {
+                            let pat_val = match am.get("pat_val") { Some(v) => v, _ => continue };
+                            let matches = match pat_val {
+                                Val::Record(pm) => {
+                                    let pt = pm.get("t").and_then(|v| if let Val::Text(s) = v { Some(s.as_str()) } else { None }).unwrap_or("");
+                                    match pt {
+                                        "lit_text" => { let pv = pm.get("v").and_then(|v| if let Val::Text(s) = v { Some(s.as_str()) } else { None }).unwrap_or(""); if let Val::Text(sv) = &sv { sv.as_str() == pv } else { false } }
+                                        "lit_int"  => { let pv = pm.get("v").and_then(|v| if let Val::Int(n) = v { Some(*n) } else { None }).unwrap_or(0); if let Val::Int(sv) = &sv { *sv == pv } else { false } }
+                                        "lit_bool" => { let pv = pm.get("v").and_then(|v| if let Val::Bool(b) = v { Some(*b) } else { None }).unwrap_or(false); if let Val::Bool(sv) = &sv { *sv == pv } else { false } }
+                                        "get_field" => {
+                                            // "bool.not" style — evaluate to get string
+                                            let obj_s = pm.get("obj").and_then(|v| if let Val::Record(om) = v { om.get("v").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }) } else { None }).unwrap_or_default();
+                                            let field_s = pm.get("field").and_then(|v| if let Val::Text(s) = v { Some(s.as_str()) } else { None }).unwrap_or("");
+                                            let pat_str = format!("{}.{}", obj_s, field_s);
+                                            if let Val::Text(sv) = &sv { sv.as_str() == pat_str.as_str() } else { false }
+                                        }
+                                        "var" => true, // wildcard
+                                        _ => true,     // unknown pattern = wildcard
+                                    }
+                                }
+                                _ => true, // wildcard
+                            };
+                            if matches {
+                                let body = match am.get("body") { Some(v) => v.clone(), _ => bail!("match arm: no body") };
+                                // Bind capture variable if pattern is a named var
+                                if let Val::Record(pm) = pat_val {
+                                    let pt = pm.get("t").and_then(|v| if let Val::Text(s) = v { Some(s.as_str()) } else { None }).unwrap_or("");
+                                    if pt == "var" {
+                                        if let Some(Val::Text(vname)) = pm.get("name") {
+                                            if vname != "_" { env.set(vname.clone(), sv.clone()); }
+                                        }
+                                    }
+                                }
+                                return eval_fir(&body, env, tracer, loader);
+                            }
+                        }
+                    }
+                    bail!("match_expr: no arm matched")
+                }
+                "lit_list" => {
+                    let items = match m.get("items") { Some(Val::List(v)) => v.clone(), _ => vec![] };
+                    let mut out = Vec::with_capacity(items.len());
+                    for item in &items { out.push(eval_fir(item, env, tracer, loader)?); }
+                    Ok(Val::List(out))
+                }
+                "lit_record" => {
+                    let fields = match m.get("fields") { Some(Val::List(v)) => v.clone(), _ => vec![] };
+                    let mut rm = BTreeMap::new();
+                    for f in &fields {
+                        if let Val::Record(fm) = f {
+                            let k = match fm.get("key") { Some(Val::Text(s)) => s.clone(), _ => bail!("lit_record field: no key") };
+                            let v = match fm.get("value") { Some(v) => eval_fir(v, env, tracer, loader)?, _ => Val::Unit };
+                            rm.insert(k, v);
+                        }
+                    }
+                    Ok(Val::Record(rm))
+                }
+                "node_fn" | "def_fn" => {
+                    let params = match m.get("params") { Some(Val::List(v)) => v.clone(), _ => vec![] };
+                    let body = match m.get("body") { Some(v) => v.clone(), _ => bail!("fn: no body") };
+                    let name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None });
+                    let mut closure_rec = BTreeMap::new();
+                    closure_rec.insert("t".to_string(), Val::Text("closure".to_string()));
+                    closure_rec.insert("params".to_string(), Val::List(params));
+                    closure_rec.insert("body".to_string(), body);
+                    // Capture env: reuse parent MutEnv Arc if no local overrides needed
+                    let local_keys: Vec<String> = env.keys().into_iter().filter(|k| k != "__closure_env__").collect();
+                    let captured_env = if local_keys.is_empty() {
+                        // No local bindings — share parent MutEnv directly
+                        env.get("__closure_env__").unwrap_or(Val::MutEnv(Arc::new(Mutex::new(std::collections::HashMap::new()))))
+                    } else {
+                        // Has local bindings — create child MutEnv with parent as base
+                        let mut env_map = std::collections::HashMap::new();
+                        if let Some(Val::MutEnv(parent)) = env.get("__closure_env__") {
+                            for (k, v) in parent.lock().unwrap().iter() { env_map.insert(k.clone(), v.clone()); }
+                        }
+                        for k in &local_keys {
+                            if let Some(v) = env.get(k) { env_map.insert(k.clone(), v); }
+                        }
+                        Val::MutEnv(Arc::new(Mutex::new(env_map)))
+                    };
+                    closure_rec.insert("env".to_string(), captured_env);
+                    if let Some(n) = name { closure_rec.insert("name".to_string(), Val::Text(n)); }
+                    Ok(Val::Record(closure_rec))
+                }
+                "err" => {
+                    let e_val = m.get("e").cloned().unwrap_or(Val::Unit);
+                    let mut rm = BTreeMap::new();
+                    rm.insert("t".to_string(), Val::Text("err".to_string()));
+                    rm.insert("e".to_string(), e_val);
+                    Ok(Val::Record(rm))
+                }
+                _ => Ok(fir.clone()), // unknown FIR node type — return as-is
+            }
+        }
+        other => Ok(other.clone()),
+    }
+}
+
 fn apply_record_closure(m: &BTreeMap<String, Val>, cur_args: Vec<Val>, tracer: &mut Tracer, loader: &mut ModuleLoader) -> Result<Val> {
     let params = match m.get("params") { Some(Val::List(v)) => v.clone(), _ => bail!("closure: no params") };
     let body_val = match m.get("body") { Some(v) => v.clone(), _ => bail!("closure: no body") };
@@ -5312,36 +5586,35 @@ fn apply_record_closure(m: &BTreeMap<String, Val>, cur_args: Vec<Val>, tracer: &
     let fn_name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None }).unwrap_or("anonymous".to_string());
     let name = m.get("name").and_then(|v| if let Val::Text(s) = v { Some(s.clone()) } else { None });
     if params.len() != cur_args.len() { bail!("arity mismatch: expected {} got {}", params.len(), cur_args.len()); }
-    let mut base_env = match m.get("env") {
-        Some(Val::MutEnv(e)) => {
-            let mut ne = Env::new();
-            for (k, v) in e.lock().unwrap().iter() { ne.set(k.clone(), v.clone()); }
-            ne
-        }
-        Some(Val::Record(rm)) => {
-            let mut ne = Env::new();
-            for (k, v) in rm.iter() { ne.set(k.clone(), v.clone()); }
-            ne
-        }
-        _ => Env::new()
-    };
-    if let Some(ref n) = name {
-        let self_val = Val::Record(m.clone());
-        base_env.set(n.clone(), self_val);
+    // Build call_env without copying entire MutEnv — store as __closure_env__ for lazy lookup
+    let mut call_env = Env::new();
+    match m.get("env") {
+        Some(Val::MutEnv(e)) => { call_env.set("__closure_env__".to_string(), Val::MutEnv(e.clone())); }
+        Some(Val::Record(rm)) => { for (k, v) in rm.iter() { call_env.set(k.clone(), v.clone()); } }
+        _ => {}
     }
-    let mut call_env = base_env.child();
+    if let Some(ref n) = name {
+        call_env.set(n.clone(), Val::Record(m.clone()));
+    }
     for (p, a) in params.iter().zip(cur_args.into_iter()) {
         if let Val::Text(pname) = p { call_env.set(pname.clone(), a); }
     }
-    let expr = fir_val_to_expr(body_val).map_err(|e| anyhow!("fir_val_to_expr failed for fn={} body_t={}: {}", fn_name, body_t, e))?;
-    CALL_DEPTH.with(|d| *d.borrow_mut() += 1);
-    let result = eval(&expr, &mut call_env, tracer, loader).map_err(|e| e.context(format!("inside closure [{}] body_t={}", fn_name, body_t)));
+    let result = eval_fir(&body_val, &mut call_env, tracer, loader).map_err(|e| e.context(format!("inside closure [{}] body_t={}", fn_name, body_t)));
     CALL_DEPTH.with(|d| *d.borrow_mut() -= 1);
     result
 }
 
 fn fir_val_to_expr(v: Val) -> Result<Expr> {
     match v {
+        Val::Int(n) => return Ok(Expr::Int(n)),
+        Val::Float(f) => return Ok(Expr::FloatLit(f)),
+        Val::Bool(b) => return Ok(Expr::Bool(b)),
+        Val::Text(s) => return Ok(Expr::Str(s)),
+        Val::Unit => return Ok(Expr::Null),
+        Val::List(items) => {
+            let exprs: Result<Vec<Expr>> = items.into_iter().map(fir_val_to_expr).collect();
+            return Ok(Expr::List(exprs?));
+        }
         Val::Record(ref m) => {
             let t = match m.get("t") {
                 Some(Val::Text(s)) => s.as_str(),
@@ -5363,7 +5636,12 @@ fn fir_val_to_expr(v: Val) -> Result<Expr> {
                 "lit_null" => Ok(Expr::Null),
                 "var" => {
                     let name = match m.get("name") { Some(Val::Text(s)) => s.clone(), _ => bail!("var: no name") };
-                    Ok(Expr::Var(name))
+                    // Empty name means empty string literal (tokenizer artifact)
+                    if name.is_empty() {
+                        Ok(Expr::Str(String::new()))
+                    } else {
+                        Ok(Expr::Var(name))
+                    }
                 }
                 "get_field" => {
                     let obj = match m.get("obj") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("get_field: no obj") };
@@ -5385,6 +5663,11 @@ fn fir_val_to_expr(v: Val) -> Result<Expr> {
                 "index" => {
                     let obj = match m.get("obj") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("index: no obj") };
                     let idx = match m.get("idx") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("index: no idx") };
+                    Ok(Expr::Index(Box::new(obj), Box::new(idx)))
+                }
+                "index_access" => {
+                    let obj = match m.get("obj") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("index_access: no obj") };
+                    let idx = match m.get("idx") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("index_access: no idx") };
                     Ok(Expr::Index(Box::new(obj), Box::new(idx)))
                 }
                 "call" => {
@@ -5519,6 +5802,14 @@ fn fir_val_to_expr(v: Val) -> Result<Expr> {
                 "top_let" => {
                     let val = match m.get("value") { Some(v) => fir_val_to_expr(v.clone())?, _ => bail!("top_let: no value") };
                     Ok(val)
+                }
+                "err" => {
+                    // FIR error record — convert to a record literal {t:"err", e:...}
+                    let e_val = match m.get("e") { Some(v) => fir_val_to_expr(v.clone())?, _ => Expr::Null };
+                    Ok(Expr::Rec(vec![
+                        ("t".to_string(), Expr::Str("err".to_string())),
+                        ("e".to_string(), e_val),
+                    ]))
                 }
                 _ => bail!("fir_val_to_expr: unknown FIR node type: {}", t),
             }
@@ -9592,7 +9883,6 @@ fn call_builtin(
         Builtin::FardCallEval => {
             if args.len() != 3 { bail!("menv.call_eval expects 3 args"); }
             let fir_body = args[0].clone();
-            let expr = fir_val_to_expr(fir_body)?;
             let mut native_env = match &args[1] {
                 Val::MutEnv(m) => {
                     let mut e = Env::new();
@@ -9606,7 +9896,7 @@ fn call_builtin(
                 }
                 _ => Env::new()
             };
-            eval(&expr, &mut native_env, tracer, loader)
+            eval_fir(&fir_body, &mut native_env, tracer, loader)
         }
         Builtin::ApplyClosure => {
             if args.len() != 2 { bail!("menv.apply_closure expects (closure_record, args_list)"); }

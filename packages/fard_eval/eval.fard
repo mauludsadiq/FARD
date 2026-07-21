@@ -25,6 +25,8 @@ fn apply_builtin(name, args) {
     "int.le" => args[0] <= args[1],
     "int.gt" => args[0] > args[1],
     "int.ge" => args[0] >= args[1],
+    "value.eq" => args[0] == args[1],
+    "value.ne" => args[0] != args[1],
     _ => { t: "err", e: "unsupported_builtin" }
   }
 }

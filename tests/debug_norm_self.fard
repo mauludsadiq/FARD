@@ -1,0 +1,61 @@
+
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("../packages/fir/fir") as fir
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/str") as str
+import("std/cast") as cast
+import("std/io") as io
+import("std/menv") as menv
+
+let eval_src = io.read_file("packages/fard_eval/eval.fard").ok
+let eval_defs = parse.parse_program(eval_src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec)
+menv.set(e, "type", type)
+menv.set(e, "menv", menv)
+menv.set(e, "str", str)
+let dummy = list.fold(eval_defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+
+let parse_src = io.read_file("packages/fard_parse/parse.fard").ok
+let parse_defs = parse.parse_program(parse_src)
+let pe = menv.new()
+menv.set(pe, "list", list)
+menv.set(pe, "rec", rec)
+menv.set(pe, "type", type)
+menv.set(pe, "menv", menv)
+menv.set(pe, "str", str)
+menv.set(pe, "cast", cast)
+menv.set(pe, "fir", fir)
+
+let dummy2 = list.fold(parse_defs, null, fn(acc, d) {
+  if d.t == "def_fn" then
+    let cl = ev.apply_fn(self_eval, [d, pe]) in
+    let _ = menv.set(pe, d.name, cl) in null
+  else null
+})
+
+let call_norm = { t: "call", fn: { t: "var", name: "normalize_ops" }, args: [{ t: "lit_text", v: "a+b" }] }
+let r1 = ev.apply_fn(self_eval, [call_norm, pe])
+test "normalize_ops type" { type.of(r1) }
+test "normalize_ops result" { r1 }
+
+let call_drop = { t: "call", fn: { t: "var", name: "drop_empty" }, args: [{ t: "lit_list", items: [{ t: "lit_text", v: "a" }, { t: "lit_text", v: "" }] }] }
+let r2 = ev.apply_fn(self_eval, [call_drop, pe])
+test "drop_empty type" { type.of(r2) }
+
+let call_st_new = { t: "call", fn: { t: "var", name: "st_new" }, args: [{ t: "lit_list", items: [{ t: "lit_text", v: "fn" }] }] }
+let r3 = ev.apply_fn(self_eval, [call_st_new, pe])
+test "st_new type" { type.of(r3) }
+test "st_new result" { r3.tokens[0] }
+
+let call_st_peek = { t: "call", fn: { t: "var", name: "st_peek" }, args: [{ t: "lit_record", fields: [{ key: "tokens", value: { t: "lit_list", items: [{ t: "lit_text", v: "fn" }] } }, { key: "pos", value: { t: "lit_int", v: 0 } }] }] }
+let r4 = ev.apply_fn(self_eval, [call_st_peek, pe])
+test "st_peek type" { type.of(r4) }
+test "st_peek result" { r4 }

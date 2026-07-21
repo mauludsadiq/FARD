@@ -1,0 +1,13 @@
+
+import("../packages/fard_parse/parse") as parse
+import("std/list") as list
+import("std/type") as type
+
+let r1 = parse.parse_program("fn f(x) { x == 1 }")
+test "eq lowered to value.eq" { r1[0].body.name == "value.eq" }
+
+let r2 = parse.parse_program("fn f(x) { x != 1 }")
+test "ne lowered to value.ne" { r2[0].body.name == "value.ne" }
+
+let r3 = parse.parse_program("fn f(s) { s == \"hello\" }")
+test "str eq lowered to value.eq" { r3[0].body.name == "value.eq" }
