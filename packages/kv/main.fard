@@ -4,6 +4,7 @@
 import("std/io")   as io
 import("std/json") as json
 import("std/rec")  as rec
+import("std/list") as list
 import("std/str")  as str
 
 fn default_path() { ".fard_kv.json" }
@@ -59,12 +60,11 @@ fn keys(store) {
 }
 
 fn count(store) {
-  import("std/list") as list
   list.len(rec.keys(store.data))
 }
 
 fn clear(store) {
-  let saved = save(store.path, {})
+  let saved = save(store.path, {}) in
   { path: store.path, data: {} }
 }
 

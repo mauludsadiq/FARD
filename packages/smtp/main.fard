@@ -3,6 +3,8 @@
 import("std/str")     as str
 import("std/list")    as list
 import("std/process") as process
+import("std/rec")     as rec
+import("std/type")    as type
 
 fn message(from, to, subject, body) {
   { from: from, to: to, subject: subject, body: body,
@@ -14,7 +16,6 @@ fn with_bcc(msg, bcc)    { rec.set(msg, "bcc", bcc) }
 fn with_html(msg, html)  { rec.set(msg, "html", html) }
 
 fn format_rfc2822(msg) {
-  import("std/rec") as rec
   let lines = [
     str.concat("From: ", msg.from),
     str.concat("To: ", if type.of(msg.to) == "list" then str.join(msg.to, ", ") else msg.to),
@@ -24,12 +25,10 @@ fn format_rfc2822(msg) {
     "",
     msg.body
   ]
-  str.join(lines, "\r\n")
+  str.join(lines, "\n")
 }
 
 fn send_curl(msg, smtp_url, username, password) {
-  import("std/rec") as rec
-  import("std/type") as type
   let to_addr = if type.of(msg.to) == "list" then list.get(msg.to, 0) else msg.to
   let raw     = format_rfc2822(msg)
   let result  = process.spawn("curl", [
@@ -44,7 +43,6 @@ fn send_curl(msg, smtp_url, username, password) {
 }
 
 fn send_sendmail(msg) {
-  import("std/type") as type
   let to_addr = if type.of(msg.to) == "list" then list.get(msg.to, 0) else msg.to
   let raw     = format_rfc2822(msg)
   let result  = process.spawn("sendmail", ["-t"], raw)

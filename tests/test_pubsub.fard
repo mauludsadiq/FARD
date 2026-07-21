@@ -1,0 +1,21 @@
+
+import("../packages/pubsub/main") as ps
+import("std/list") as list
+import("std/type") as type
+
+let bus = ps.new()
+test "new bus type" { type.of(bus) == "record" }
+
+let b2 = ps.subscribe(bus, "news", "sub1", fn(msg) { msg })
+test "subscriber count" { ps.subscriber_count(b2, "news") == 1 }
+
+let b3 = ps.publish(b2, "news", "hello world")
+let hist = ps.history_for(b3, "news")
+test "history len" { list.len(hist) == 1 }
+test "history msg" { list.get(hist, 0).message == "hello world" }
+
+let b4 = ps.publish(b3, "news", "second message")
+test "history grows" { list.len(ps.history_for(b4, "news")) == 2 }
+
+let b5 = ps.clear_history(b4)
+test "clear history" { list.len(b5.history) == 0 }

@@ -1,0 +1,11 @@
+
+import("../packages/kv/main") as kv
+import("std/type") as type
+import("std/record") as rec
+
+let store = kv.open("/tmp/test_kv2.json")
+let s2 = kv.set(store, "name", "Alice")
+let val = kv.get(s2, "name")
+test "val type" { type.of(val) }
+test "data name direct" { rec.get(s2.data, "name") }
+test "val eq Alice" { val == "Alice" }

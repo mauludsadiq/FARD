@@ -1,0 +1,23 @@
+
+import("../packages/kv/main") as kv
+import("std/type") as type
+
+let store = kv.open("/tmp/test_kv.json")
+test "open store" { type.of(store) == "record" }
+
+let s2 = kv.set(store, "name", "Alice")
+test "get after set" { kv.get(s2, "name").value == "Alice" }
+test "get ok" { kv.get(s2, "name").ok }
+test "has key" { kv.has(s2, "name") }
+test "missing key" { kv.has(s2, "age") == false }
+
+let s3 = kv.set(s2, "age", 30)
+test "count" { kv.count(s3) == 2 }
+test "get_or missing" { kv.get_or(s3, "city", "NYC") == "NYC" }
+test "get_or present" { kv.get_or(s3, "name", "Bob") == "Alice" }
+
+let s4 = kv.delete(s3, "age")
+test "after delete" { kv.has(s4, "age") == false }
+
+let s5 = kv.clear(s4)
+test "after clear" { kv.count(s5) == 0 }

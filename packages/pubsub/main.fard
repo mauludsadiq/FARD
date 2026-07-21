@@ -27,8 +27,8 @@ fn subscribe(bus, topic, handler_id, handler) {
 fn unsubscribe(bus, topic, handler_id) {
   if rec.has(bus.subscribers, topic) == false then bus
   else
-    let topic_subs = rec.get(bus.subscribers, topic)
-    let new_subs   = rec.remove(topic_subs, handler_id)
+    let topic_subs = rec.get(bus.subscribers, topic) in
+    let new_subs   = rec.remove(topic_subs, handler_id) in
     rec.set(bus, "subscribers", rec.set(bus.subscribers, topic, new_subs))
 }
 
@@ -89,7 +89,7 @@ fn async_subscribe(abus, topic, handler) {
       fn(s) {
         let msg = chan.try_recv(ch)
         if rec.has(msg, "some") then
-          let _ = handler(msg.some)
+          let _ = handler(msg.some) in
           { done: false }
         else { done: false }
       }
@@ -101,8 +101,8 @@ fn async_subscribe(abus, topic, handler) {
 fn async_publish(abus, topic, message) {
   if rec.has(abus.channels, topic) == false then abus
   else
-    let ch = rec.get(abus.channels, topic)
-    let _  = chan.send(ch, message)
+    let ch = rec.get(abus.channels, topic) in
+    let _  = chan.send(ch, message) in
     abus
 }
 

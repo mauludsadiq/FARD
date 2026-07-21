@@ -1,0 +1,20 @@
+
+import("../packages/smtp/main") as smtp
+import("std/str") as str
+import("std/list") as list
+
+let msg = smtp.message("from@test.com", ["to@test.com"], "Hello", "Test body")
+test "message from" { msg.from == "from@test.com" }
+test "message subject" { msg.subject == "Hello" }
+test "message body" { msg.body == "Test body" }
+
+let preview = smtp.preview(msg)
+test "preview has from" { str.contains(preview, "from@test.com") }
+test "preview has subject" { str.contains(preview, "Hello") }
+test "preview has to" { str.contains(preview, "to@test.com") }
+
+let msg2 = smtp.with_cc(msg, ["cc@test.com"])
+test "with_cc" { list.len(msg2.cc) == 1 }
+
+let msg3 = smtp.with_html(msg, "<b>HTML body</b>")
+test "with_html" { str.contains(msg3.html, "<b>") }
