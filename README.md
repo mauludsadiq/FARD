@@ -374,6 +374,34 @@ Key fixes to reach this point:
 - apply_fn_with_eval split: self-binding for MutEnv closures uses menv.set (side effect, returns env) rather than rec.set (returns new record), fixing the env corruption that produced Val::Unit callees
 
 
+### eval_fir — Direct FIR Evaluator
+
+Added `eval_fir` — a direct FIR Val interpreter in Rust that evaluates FARD FIR records without converting to `Expr` first. This eliminates the memory explosion from `fir_val_to_expr` on deeply nested FIR trees.
+
+Key properties:
+- Handles all FIR node types: lit_int, lit_bool, lit_text, lit_null, var, get_field, index, if_node, let, call, call_builtin, match_expr, lit_list, lit_record, node_fn, def_fn, err
+- Lazy closure env: closures store `__closure_env__` as an Arc reference, not a copy of the full env
+- Var lookup checks local env first, then falls back to `__closure_env__` MutEnv
+- Let bindings are iterative — no extra Rust stack frames per binding
+
+### value.eq / value.ne — Generic Equality
+
+The FARD parser previously lowered `==` and `!=` to `int.eq` / `int.ne`, causing failures when comparing strings, booleans, or other types through the self-hosted evaluator. Fixed:
+
+- `packages/fard_parse/parse.fard` now emits `value.eq` and `value.ne`
+- `eval_fir` handles `value.eq` / `value.ne` via `val_eq` (already used by the native evaluator)
+- `packages/fard_eval/eval.fard` `apply_builtin` handles `value.eq` and `value.ne`
+
+### Self-Hosted Parser Verified
+
+The native `parse.fard` module (loaded via native Rust import) now correctly emits `value.eq`/`value.ne` and is verified to work:
+
+| Test | Result |
+|------|--------|
+| `==` lowered to `value.eq` | ✓ |
+| `!=` lowered to `value.ne` | ✓ |
+| String `==` uses `value.eq` | ✓ |
+
 ### Compiler Components
 
 | File | Description |
