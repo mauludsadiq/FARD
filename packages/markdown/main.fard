@@ -27,7 +27,7 @@ fn render_heading(line) {
 
 fn inline_code(s) {
   if str.contains(s, "`") then
-    let parts = str.split(s, "`")
+    let parts = str.split(s, "`") in
     list.fold(list.range(0, list.len(parts)), "", fn(acc, i) {
       let part = list.get(parts, i)
       if i % 2 == 1 then str.concat(acc, str.concat("<code>", str.concat(escape_html(part), "</code>")))
@@ -38,7 +38,7 @@ fn inline_code(s) {
 
 fn apply_bold(s) {
   if str.contains(s, "**") then
-    let parts = str.split(s, "**")
+    let parts = str.split(s, "**") in
     list.fold(list.range(0, list.len(parts)), "", fn(acc, i) {
       let part = list.get(parts, i)
       if i % 2 == 1 then str.concat(acc, str.concat("<strong>", str.concat(part, "</strong>")))

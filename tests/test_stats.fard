@@ -1,0 +1,16 @@
+
+import("../packages/stats/main") as stats
+
+let xs = [2, 4, 4, 4, 5, 5, 7, 9]
+test "sum int" { stats.sum(xs) == 40 }
+test "mean int" { stats.mean(xs) == 5 }
+test "min int" { stats.min(xs) == 2 }
+test "max int" { stats.max(xs) == 9 }
+test "empty sum" { stats.sum([]) == 0 }
+test "empty mean" { stats.mean([]) == 0 }
+
+let fs = [1.5, 2.5, 3.0, 4.0]
+test "sum float" { stats.sum(fs) == 11.0 }
+test "mean float" { stats.mean(fs) == 2.75 }
+test "min float" { stats.min(fs) == 1.5 }
+test "max float" { stats.max(fs) == 4.0 }

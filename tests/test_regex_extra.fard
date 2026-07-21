@@ -1,0 +1,11 @@
+
+import("../packages/regex-extra/main") as regex
+
+test "glob star matches all" { regex.match_glob("*", "anything") }
+test "glob star empty" { regex.match_glob("*", "") }
+test "glob exact" { regex.match_glob("hello", "hello") }
+test "glob exact fail" { regex.match_glob("hello", "world") == false }
+test "glob question" { regex.match_glob("h?llo", "hello") }
+test "glob prefix star" { regex.match_glob("*.fard", "main.fard") }
+test "glob prefix star fail" { regex.match_glob("*.fard", "main.rs") == false }
+test "glob middle star" { regex.match_glob("h*o", "hello") }

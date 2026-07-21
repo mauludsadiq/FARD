@@ -31,7 +31,7 @@ fn match_star(rest_pattern, text) {
 // --- String predicates ---
 
 fn is_alpha(s) {
-  let chars = str.chars(s)
+  let chars = str.chars(s) in
   if list.len(chars) == 0 then false
   else list.all(chars, fn(c) {
     str.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", c)
@@ -39,13 +39,13 @@ fn is_alpha(s) {
 }
 
 fn is_digit(s) {
-  let chars = str.chars(s)
+  let chars = str.chars(s) in
   if list.len(chars) == 0 then false
   else list.all(chars, fn(c) { str.contains("0123456789", c) })
 }
 
 fn is_alphanumeric(s) {
-  let chars = str.chars(s)
+  let chars = str.chars(s) in
   if list.len(chars) == 0 then false
   else list.all(chars, fn(c) {
     str.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", c)
@@ -85,8 +85,8 @@ fn is_uppercase(s) {
 // --- Common validators ---
 
 fn check_email_parts(parts) {
-  let local  = list.get(parts, 0)
-  let domain = list.get(parts, 1)
+  let local  = list.get(parts, 0) in
+  let domain = list.get(parts, 1) in
   str.len(local) > 0 && str.contains(domain, ".") && str.len(domain) > 2
 }
 
@@ -108,18 +108,18 @@ fn is_uuid(s) {
 }
 
 fn is_ip(s) {
-  let parts = str.split(s, ".")
+  let parts = str.split(s, ".") in
   if list.len(parts) != 4 then false
   else list.all(parts, fn(p) {
     if is_digit(p) == false then false
     else
-      let n = str.len(p)
+      let n = str.len(p) in
       n >= 1 && n <= 3
   })
 }
 
 fn is_semver(s) {
-  let parts = str.split(s, ".")
+  let parts = str.split(s, ".") in
   if list.len(parts) < 2 then false
   else list.all(parts, fn(p) { is_digit(p) && str.len(p) > 0 })
 }
@@ -133,7 +133,7 @@ fn is_slug(s) {
 }
 
 fn is_json(s) {
-  let t = str.trim(s)
+  let t = str.trim(s) in
   (str.starts_with(t, "{") && str.ends_with(t, "}")) ||
   (str.starts_with(t, "[") && str.ends_with(t, "]")) ||
   (str.starts_with(t, "\"") && str.ends_with(t, "\""))
@@ -142,18 +142,18 @@ fn is_json(s) {
 // --- Find/extract ---
 
 fn find_all_between(s, open, close) {
-  let parts = str.split(s, open)
+  let parts = str.split(s, open) in
   let found = list.flat_map(list.drop(parts, 1), fn(p) {
     if str.contains(p, close) then
-      let end = str.index_of(p, close)
+      let end = str.index_of(p, close) in
       [str.slice(p, 0, end)]
     else []
-  })
+  }) in
   found
 }
 
 fn count_occurrences(s, needle) {
-  let parts = str.split(s, needle)
+  let parts = str.split(s, needle) in
   list.len(parts) - 1
 }
 
@@ -168,19 +168,19 @@ fn split_on_any(s, delimiters) {
 }
 
 fn trim_chars(s, chars_to_trim) {
-  let char_list = str.chars(chars_to_trim)
-  let s_chars   = str.chars(s)
+  let char_list = str.chars(chars_to_trim) in
+  let s_chars   = str.chars(s) in
   let start = list.fold(list.range(0, list.len(s_chars)), 0, fn(acc, i) {
     if acc == i && list.any(char_list, fn(c) { c == list.get(s_chars, i) }) then i + 1
     else acc
-  })
+  }) in
   let end_result = while { i: list.len(s_chars) - 1, done: false }
     fn(st) { st.done == false && st.i >= start }
     fn(st) {
-      let c = list.get(s_chars, st.i)
+      let c = list.get(s_chars, st.i) in
       if list.any(char_list, fn(tc) { tc == c }) then { i: st.i - 1, done: false }
       else { i: st.i, done: true }
-    }
+    } in
   str.slice(s, start, end_result.value.i + 1)
 }
 

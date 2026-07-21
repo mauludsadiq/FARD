@@ -1,0 +1,21 @@
+
+import("../packages/markdown/main") as md
+import("std/str") as str
+
+let h1 = md.to_html("# Hello")
+test "h1 tag" { str.contains(h1, "<h1>") }
+test "h1 content" { str.contains(h1, "Hello") }
+
+let para = md.render_line("just text")
+test "paragraph tag" { str.contains(para, "<p>") }
+
+let bold = md.render_line("**bold text**")
+test "bold tag" { str.contains(bold, "<strong>") }
+
+let code = md.inline_code("use `x` here")
+test "inline code tag" { str.contains(code, "<code>") }
+test "inline code content" { str.contains(code, "x") }
+
+let escaped = md.escape_html("<div>")
+test "lt escaped" { str.contains(escaped, "&lt;") }
+test "gt escaped" { str.contains(escaped, "&gt;") }
