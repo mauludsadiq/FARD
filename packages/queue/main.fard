@@ -107,12 +107,12 @@ fn enqueue_all(q, items) {
 
 // Dequeue all items one at a time, applying f to each
 fn consume_all(q, f) {
-  let result = while { q: q, results: [], done: false } in
+  let result = while { q: q, results: [], done: false }
     fn(s) { s.done == false && is_empty(s.q) == false }
     fn(s) {
       let d = dequeue(s.q) in
       { q: d.queue, results: list.concat([s.results, [f(d.item)]]), done: false }
-    }
+    } in
   { results: result.value.results, queue: result.value.q }
 }
 

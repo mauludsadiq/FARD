@@ -1,0 +1,26 @@
+
+import("../packages/table/main") as tbl
+import("std/list") as list
+
+let rows = [
+  { name: "Alice", age: 30, city: "NYC" },
+  { name: "Bob",   age: 25, city: "LA"  },
+  { name: "Carol", age: 35, city: "NYC" }
+]
+let t = tbl.from_rows(rows)
+test "row count" { tbl.count(t) == 3 }
+test "columns count" { list.len(tbl.columns(t)) == 3 }
+
+let nyc = tbl.filter(t, fn(r) { r.city == "NYC" })
+test "filter NYC" { tbl.count(nyc) == 2 }
+
+let names = tbl.select(t, ["name", "city"])
+test "select cols" { list.len(tbl.columns(names)) == 2 }
+
+let ages = tbl.col(t, "age")
+test "col values" { list.len(ages) == 3 }
+
+let grouped = tbl.group_by(t, "city")
+test "group by count" { list.len(grouped) == 2 }
+let nyc_group = list.find(grouped, fn(g) { g.key == "NYC" })
+test "group NYC rows" { tbl.count(nyc_group.some.rows) == 2 }

@@ -52,8 +52,8 @@ fn verify_with_timestamp(message, secret, signature, timestamp, max_age_secs) {
   if age > max_age_secs then
     { ok: false, error: "signature expired" }
   else
-    let signed_msg = str.concat(str.concat(timestamp, "."), message)
-    let expected   = sign(signed_msg, secret)
+    let signed_msg = str.concat(str.concat(timestamp, "."), message) in
+    let expected   = sign(signed_msg, secret) in
     if expected == signature then { ok: true, error: null }
     else { ok: false, error: "signature mismatch" }
 }

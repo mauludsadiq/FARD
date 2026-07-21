@@ -1,0 +1,18 @@
+
+import("../packages/cache/main") as cache
+import("std/type") as type
+
+let c = cache.new(3)
+test "new cache" { type.of(c) == "record" }
+
+let c2 = cache.set(c, "a", 1)
+test "get hit" { cache.get(c2, "a").value == 1 }
+test "get miss" { cache.get(c2, "b").hit == false }
+test "has key" { cache.has(c2, "a") }
+
+let c3 = cache.set(c2, "b", 2)
+let c4 = cache.set(c3, "c", 3)
+test "count at cap" { cache.has(c4, "c") }
+
+let c5 = cache.delete(c4, "a")
+test "after delete" { cache.has(c5, "a") == false }

@@ -79,10 +79,10 @@ fn size(cache) {
 }
 
 fn evict_expired(cache) {
-  let live = list.filter(rec.keys(cache.entries), fn(k) { in
+  let live = list.filter(rec.keys(cache.entries), fn(k) {
     is_expired(rec.get(cache.entries, k)) == false
   })
-  let new_entries = list.fold(live, {}, fn(acc, k) { in
+  let new_entries = list.fold(live, {}, fn(acc, k) {
     rec.set(acc, k, rec.get(cache.entries, k))
   })
   rec.set(cache, "entries", new_entries)

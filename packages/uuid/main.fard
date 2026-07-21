@@ -4,6 +4,7 @@ import("std/uuid") as uuid
 import("std/str")  as str
 import("std/list") as list
 import("std/hash") as hash
+import("std/time") as time
 
 // Generate a random UUID v4
 fn v4() { uuid.v4() }
@@ -47,7 +48,6 @@ fn version(s) {
 
 // Generate n unique UUIDs
 fn batch(n) {
-  import("std/list") as list
   list.map(list.range(0, n), fn(_) { uuid.v4() })
 }
 
@@ -59,7 +59,6 @@ fn short_id() {
 
 // Generate a UUID and return with timestamp
 fn stamped() {
-  import("std/time") as time
   { id: uuid.v4(), ts: time.now() }
 }
 

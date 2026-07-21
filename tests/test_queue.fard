@@ -1,0 +1,24 @@
+
+import("../packages/queue/main") as q
+import("std/type") as type
+
+let queue = q.new()
+test "new queue" { type.of(queue) == "record" }
+test "empty" { q.is_empty(queue) }
+test "size zero" { q.size(queue) == 0 }
+
+let q2 = q.enqueue(queue, "first")
+let q3 = q.enqueue(q2, "second")
+let q4 = q.enqueue(q3, "third")
+test "size after enqueue" { q.size(q4) == 3 }
+test "not empty" { q.is_empty(q4) == false }
+
+let d1 = q.dequeue(q4)
+test "dequeue item" { d1.item == "first" }
+test "size after dequeue" { q.size(d1.queue) == 2 }
+
+let d2 = q.dequeue(d1.queue)
+test "dequeue second" { d2.item == "second" }
+
+let peeked = q.peek(q4)
+test "peek first" { peeked == "first" }

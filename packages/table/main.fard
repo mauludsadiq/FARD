@@ -7,7 +7,7 @@ import("std/type") as type
 fn from_rows(rows) { { rows: rows } }
 
 fn from_csv_rows(headers, data_rows) {
-  let rows = list.map(data_rows, fn(row) { in
+  let rows = list.map(data_rows, fn(row) {
     list.fold(list.range(0, list.len(headers)), {}, fn(acc, i) {
       rec.set(acc, list.get(headers, i), if i < list.len(row) then list.get(row, i) else null)
     })
@@ -50,7 +50,7 @@ fn add_column(tbl, name, f) {
 fn group_by(tbl, col_name) {
   let grouped = list.fold(tbl.rows, {}, fn(acc, row) {
     let key      = if rec.has(row, col_name) then
-      let v = rec.get(row, col_name)
+      let v = rec.get(row, col_name) in
       let t = type.of(v) in
       if t == "text" then v else str.from_int(v)
     else "null"
@@ -75,10 +75,10 @@ fn tail(tbl, n) { from_rows(list.drop(tbl.rows, list.len(tbl.rows) - n)) }
 
 fn join(tbl_a, tbl_b, key) {
   from_rows(list.flat_map(tbl_a.rows, fn(row_a) {
-    let val = if rec.has(row_a, key) then rec.get(row_a, key) else null
-    let matches = list.filter(tbl_b.rows, fn(row_b) { in
+    let val = if rec.has(row_a, key) then rec.get(row_a, key) else null in
+    let matches = list.filter(tbl_b.rows, fn(row_b) {
       if rec.has(row_b, key) then rec.get(row_b, key) == val else false
-    })
+    }) in
     list.map(matches, fn(row_b) { rec.merge(row_a, row_b) })
   }))
 }
@@ -86,11 +86,11 @@ fn join(tbl_a, tbl_b, key) {
 fn to_csv(tbl) {
   if list.len(tbl.rows) == 0 then ""
   else
-    let headers = columns(tbl)
-    let hdr_row = str.join(headers, ",")
-    let data = list.map(tbl.rows, fn(row) { in
+    let headers = columns(tbl) in
+    let hdr_row = str.join(headers, ",") in
+    let data = list.map(tbl.rows, fn(row) {
       str.join(list.map(headers, fn(h) {
-        let v = if rec.has(row, h) then rec.get(row, h) else ""
+        let v = if rec.has(row, h) then rec.get(row, h) else "" in
         let t = type.of(v) in
         if t == "text" then v
         else if t == "int" then str.from_int(v)
@@ -98,7 +98,7 @@ fn to_csv(tbl) {
         else if t == "bool" then if v then "true" else "false"
         else ""
       }), ",")
-    })
+    }) in
     str.join(list.concat([[hdr_row], data]), "\n")
 }
 

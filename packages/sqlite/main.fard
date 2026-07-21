@@ -5,6 +5,8 @@ import("std/ffi")  as ffi
 import("std/str")  as str
 import("std/rec")  as rec
 import("std/type") as type
+import("std/list") as list
+import("std/io")   as io
 
 fn find_dylib() {
   let candidates = [
@@ -13,8 +15,6 @@ fn find_dylib() {
     "/usr/local/lib/libfard_db_native.dylib",
     "/usr/local/lib/libfard_db_native.so"
   ]
-  import("std/list") as list
-  import("std/io")   as io
   let found = list.find(candidates, fn(p) { io.file_exists(p) })
   if rec.has(found, "some") then found.some
   else "libfard_db_native"
@@ -25,8 +25,8 @@ fn open(path) {
   if rec.has(dylib, "err") then
     { ok: false, error: dylib.err, db: null }
   else
-    let handle = dylib.ok
-    let result = ffi.call(handle, "fdb_open", [path])
+    let handle = dylib.ok in
+    let result = ffi.call(handle, "fdb_open", [path]) in
     if rec.has(result, "err") then
       { ok: false, error: result.err, db: null }
     else if result.ok == -1 then

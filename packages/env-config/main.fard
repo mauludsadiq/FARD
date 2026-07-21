@@ -43,7 +43,7 @@ fn from_env(schema) {
     if val == null && required then
       { ok: false, errors: list.concat([acc.errors, [str.concat("missing required: ", env_key)]]), config: acc.config }
     else
-      let final_val = if val == null then default else val
+      let final_val = if val == null then default else val in
       { ok: acc.ok, errors: acc.errors, config: rec.set(acc.config, key, final_val) }
   })
   result
@@ -56,10 +56,10 @@ fn parse_dotenv(src) {
     if str.len(trimmed) == 0 then acc
     else if str.starts_with(trimmed, "#") then acc
     else if str.contains(trimmed, "=") then
-      let parts = str.split(trimmed, "=")
-      let key   = str.trim(list.get(parts, 0))
-      let val   = str.trim(str.join(list.drop(parts, 1), "="))
-      let clean = if str.starts_with(val, "\"") then str.slice(val, 1, str.len(val) - 1) else val
+      let parts = str.split(trimmed, "=") in
+      let key   = str.trim(list.get(parts, 0)) in
+      let val   = str.trim(str.join(list.drop(parts, 1), "=")) in
+      let clean = if str.starts_with(val, "\"") then str.slice(val, 1, str.len(val) - 1) else val in
       rec.set(acc, key, clean)
     else acc
   })

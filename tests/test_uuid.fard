@@ -1,0 +1,15 @@
+
+import("../packages/uuid/main") as uuid
+import("std/str") as str
+
+let id = uuid.v4()
+test "v4 length" { str.len(id) == 36 }
+test "v4 has dashes" { str.contains(id, "-") }
+
+let nil = uuid.nil()
+test "nil is zeros" { nil == "00000000-0000-0000-0000-000000000000" }
+test "is_nil nil" { uuid.is_nil(nil) }
+test "is_nil v4" { uuid.is_nil(id) == false }
+
+let short = uuid.short_id()
+test "short len" { str.len(short) > 0 }
