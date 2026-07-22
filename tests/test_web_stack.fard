@@ -1,0 +1,60 @@
+import("std/record") as rec
+
+import("../packages/fard-web/main") as web
+import("../packages/http-middleware/main") as mw
+import("std/str") as str
+import("std/list") as list
+import("std/type") as type
+import("std/json") as json
+
+// Response builders
+test "ok 200" { web.ok({ msg: "hi" }).status == 200 }
+test "created 201" { web.created({ id: 1 }).status == 201 }
+test "no_content 204" { web.no_content().status == 204 }
+test "bad_request 400" { web.bad_request("err").status == 400 }
+test "unauthorized 401" { web.unauthorized("denied").status == 401 }
+test "forbidden 403" { web.forbidden("no").status == 403 }
+test "not_found 404" { web.not_found("missing").status == 404 }
+test "conflict 409" { web.conflict("dup").status == 409 }
+
+// Response body contains JSON
+let r = web.ok({ name: "Alice", age: 30 })
+test "ok body json" { str.contains(r.body, "Alice") }
+test "ok content type" { rec.has(r.headers, "Content-Type") }
+
+// Router dispatch
+let routes = [
+  web.get("/users", fn(req) { web.ok([{ id: 1, name: "Alice" }]) }),
+  web.post("/users", fn(req) { web.created({ id: 2 }) }),
+  web.get("/users/:id", fn(req) { web.ok({ id: web.req_param(req, "id") }) }),
+  web.delete("/users/:id", fn(req) { web.no_content() })
+]
+let handler = web.router(routes)
+
+let get_req = { method: "GET", path: "/users", body: "", headers: {} }
+let get_res = handler(get_req)
+test "GET /users" { get_res.status == 200 }
+
+let post_req = { method: "POST", path: "/users", body: "{}", headers: {} }
+let post_res = handler(post_req)
+test "POST /users" { post_res.status == 201 }
+
+let not_found_req = { method: "GET", path: "/missing", body: "", headers: {} }
+let nf_res = handler(not_found_req)
+test "404 unmatched" { nf_res.status == 404 }
+
+// Middleware pipeline
+let logged = mw.wrap(handler, [mw.logger()])
+test "middleware wraps" { type.of(logged) == "func" }
+let logged_res = logged(get_req)
+test "middleware passes through" { logged_res.status == 200 }
+
+// CORS middleware
+let cors_handler = mw.wrap(handler, [mw.cors(["https://example.com"])])
+let cors_res = cors_handler(get_req)
+test "cors response" { cors_res.status == 200 }
+
+// Path matching
+test "match exact" { web.match_path("/users", "/users").ok }
+test "match param" { web.match_path("/users/:id", "/users/42").ok }
+test "no match" { web.match_path("/users", "/posts").ok == false }
