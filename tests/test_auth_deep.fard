@@ -1,0 +1,61 @@
+import("std/list") as list
+
+import("../packages/jwt/main") as jwt
+import("../packages/crypto-extra/main") as crypto
+import("../packages/hmac-sign/main") as hs
+import("std/str") as str
+import("std/rec") as rec
+import("std/type") as type
+
+// JWT full workflow
+let secret = "super-secret-key-for-testing"
+let claims = { sub: "user_42", role: "admin", iat: 1700000000, exp: 9999999999 }
+let token = jwt.encode(claims, secret)
+test "token is text" { type.of(token) == "text" }
+test "token has 2 dots" { list.len(str.split(token, ".")) == 3 }
+
+let verified = jwt.verify(token, secret)
+test "verify ok" { verified.ok }
+test "verify sub" { rec.get(verified.claims, "sub") == "user_42" }
+test "verify role" { rec.get(verified.claims, "role") == "admin" }
+
+let bad_secret = jwt.verify(token, "wrong-secret")
+test "wrong secret fails" { bad_secret.ok == false }
+
+let tampered = jwt.verify("eyJ.tampered.payload", secret)
+test "tampered fails" { tampered.ok == false }
+
+// JWT with expiry check
+let full = jwt.verify_full(token, secret)
+test "verify_full ok" { full.ok }
+
+// Password hashing
+let salt = crypto.random_salt()
+let hash = crypto.hash_password("my_password_123", salt)
+test "hash not empty" { str.len(hash) > 0 }
+test "hash verify correct" { crypto.verify_password("my_password_123", salt, hash) }
+test "hash verify wrong" { crypto.verify_password("wrong_password", salt, hash) == false }
+test "hash verify wrong2" { crypto.verify_password("my_password_123", "wrong_salt", hash) == false }
+
+// Different salts produce different hashes
+let salt2 = crypto.random_salt()
+let hash2 = crypto.hash_password("my_password_123", salt2)
+test "diff salts diff hashes" { hash != hash2 }
+
+// HMAC signing
+let payload = "user_id=42&action=delete&timestamp=1700000000"
+let sig = hs.sign(payload, secret)
+test "sig not empty" { str.len(sig) > 0 }
+test "sig verify" { hs.verify(payload, secret, sig) }
+test "sig tampered" { hs.verify("tampered", secret, sig) == false }
+
+// Webhook signing
+let webhook_sig = hs.sign_webhook(payload, secret)
+test "webhook sig prefix" { str.starts_with(webhook_sig, "sha256=") }
+test "webhook verify" { hs.verify_webhook(payload, secret, webhook_sig) }
+
+// Random tokens
+let tok1 = crypto.random_token()
+let tok2 = crypto.random_token()
+test "token unique" { tok1 != tok2 }
+test "token length" { str.len(tok1) > 0 }

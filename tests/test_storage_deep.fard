@@ -1,0 +1,62 @@
+
+import("../packages/kv/main") as kv
+import("../packages/cache/main") as cache
+import("../packages/queue/main") as queue
+import("../packages/sqlite/main") as db
+import("std/list") as list
+import("std/type") as type
+import("std/rec") as rec
+
+// KV store - full CRUD
+let store = kv.open("/tmp/fard_kv_deep.json")
+let s1 = kv.set(store, "user:1", "Alice")
+let s2 = kv.set(s1, "user:2", "Bob")
+let s3 = kv.set(s2, "user:3", "Carol")
+test "kv count 3" { kv.count(s3) >= 3 }
+test "kv get 1" { kv.get(s3, "user:1").value == "Alice" }
+test "kv get 2" { kv.get(s3, "user:2").value == "Bob" }
+test "kv has 3" { kv.has(s3, "user:3") }
+test "kv missing" { kv.has(s3, "user:99") == false }
+test "kv get_or" { kv.get_or(s3, "user:99", "unknown") == "unknown" }
+let s4 = kv.delete(s3, "user:2")
+test "kv delete" { kv.has(s4, "user:2") == false }
+test "kv delete keeps" { kv.has(s4, "user:1") }
+
+// Cache with capacity
+let c = cache.new(3)
+let c1 = cache.set(c, "a", 1)
+let c2 = cache.set(c1, "b", 2)
+let c3 = cache.set(c2, "c", 3)
+test "cache get a" { cache.get(c3, "a").value == 1 }
+test "cache get b" { cache.get(c3, "b").value == 2 }
+test "cache hit a" { cache.get(c3, "a").hit }
+test "cache miss x" { cache.get(c3, "x").hit == false }
+test "cache has a" { cache.has(c3, "a") }
+test "cache delete" { cache.has(cache.delete(c3, "a"), "a") == false }
+
+// Queue FIFO ordering
+let q = queue.new()
+let q1 = queue.enqueue(q, "first")
+let q2 = queue.enqueue(q1, "second")
+let q3 = queue.enqueue(q2, "third")
+test "queue size 3" { queue.size(q3) == 3 }
+let d1 = queue.dequeue(q3)
+test "dequeue first" { d1.item == "first" }
+let d2 = queue.dequeue(d1.queue)
+test "dequeue second" { d2.item == "second" }
+let d3 = queue.dequeue(d2.queue)
+test "dequeue third" { d3.item == "third" }
+test "queue empty after" { queue.is_empty(d3.queue) }
+
+// SQLite
+let conn = db.open("/tmp/fard_deep_test2.db")
+test "db open ok" { conn.ok }
+let r1 = db.set(conn.db, "key1", "value1")
+test "db set ok" { r1.ok }
+let g1 = db.get(conn.db, "key1")
+test "db get 1" { g1.ok }
+test "db get val" { g1.value == "value1" }
+let cnt = db.count(conn.db)
+test "db count gte 1" { cnt >= 1 }
+let del = db.delete(conn.db, "key1")
+test "db delete ok" { del.ok }
