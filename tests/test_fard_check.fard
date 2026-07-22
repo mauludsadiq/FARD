@@ -1,0 +1,25 @@
+
+import("../packages/fard-check/main") as check
+import("std/list") as list
+import("std/type") as type
+
+let r1 = check.check_not_null("Alice", "name")
+test "not_null ok" { r1.ok }
+
+let r2 = check.check_not_null(null, "name")
+test "not_null fail" { r2.ok == false }
+
+let r3 = check.check_min(21, 18, "age")
+test "check_min ok" { r3.ok }
+
+let r4 = check.check_min(10, 18, "age")
+test "check_min fail" { r4.ok == false }
+
+let r5 = check.check_one_of("green", ["red", "green", "blue"], "color")
+test "one_of ok" { r5.ok }
+
+let r6 = check.check_one_of("purple", ["red", "green", "blue"], "color")
+test "one_of fail" { r6.ok == false }
+
+let ok_val = check.ok(42)
+test "ok value" { ok_val.value == 42 }

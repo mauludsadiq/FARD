@@ -1,0 +1,20 @@
+
+import("../packages/fard-bench/main") as bench
+import("std/str") as str
+import("std/type") as type
+
+let fake_result = {
+  name: "test_op",
+  iterations: 100,
+  total_ms: 50,
+  avg_ms: 0,
+  min_ms: 0,
+  max_ms: 2,
+  ops_per_sec: 2000
+}
+let fmt = bench.format_result(fake_result)
+test "format has name" { str.contains(fmt, "test_op") }
+test "format type" { type.of(fmt) == "text" }
+
+let compare_fmt = bench.bench_compare
+test "bench_compare exists" { type.of(compare_fmt) == "func" }
