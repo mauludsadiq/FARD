@@ -1,0 +1,23 @@
+
+import("../packages/rate-limiter/main") as rl
+import("std/type") as type
+
+let limiter = rl.new(10, 5)
+test "new limiter" { type.of(limiter) == "record" }
+test "initial tokens" { rl.peek_available(limiter) == 5 }
+
+let r1 = rl.allow(limiter)
+test "allow ok" { r1.ok }
+
+let r2 = rl.consume(limiter, 3)
+test "consume ok" { r2.ok }
+test "tokens after consume" { rl.peek_available(r2.limiter) == 2 }
+
+let reset = rl.reset(limiter)
+test "reset tokens" { rl.peek_available(reset) == 5 }
+
+let lmap = rl.new_map(10, 3)
+let r3 = rl.allow_key(lmap, "user1")
+test "allow key" { r3.ok }
+let r4 = rl.allow_key(lmap, "user2")
+test "allow different key" { r4.ok }

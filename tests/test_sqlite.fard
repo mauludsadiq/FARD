@@ -1,0 +1,22 @@
+
+import("../packages/sqlite/main") as db
+import("std/type") as type
+
+let conn = db.open("/tmp/test_fard.db")
+test "open db" { conn.ok }
+
+let s1 = db.set(conn.db, "name", "Alice")
+test "set value" { s1.ok }
+
+let val = db.get(conn.db, "name")
+test "get value" { val.value == "Alice" }
+test "get ok" { val.ok }
+
+let cnt = db.count(conn.db)
+test "count gte 1" { cnt >= 1 }
+
+let s3 = db.delete(conn.db, "name")
+test "delete" { s3.ok }
+
+let missing = db.get(conn.db, "name")
+test "get after delete" { missing.ok == false }
