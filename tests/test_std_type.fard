@@ -1,13 +1,49 @@
-import("../std/type_impl") as T
+import("std/str") as str
 
-test "is_int"    { T.is_int(42) }
-test "is_float"  { T.is_float(3.14) }
-test "is_text"   { T.is_text("hi") }
-test "is_bool"   { T.is_bool(true) }
-test "is_null"   { T.is_null(null) }
-test "is_list"   { T.is_list([1,2,3]) }
-test "is_record" { T.is_record({a:1}) }
-test "is_number" { T.is_number(42) && T.is_number(3.14) }
-test "is_truthy" { T.is_truthy(1) && T.is_truthy("x") }
-test "is_falsy"  { T.is_falsy(null) && T.is_falsy(false) }
-test "of int"    { T.of(42) == "int" }
+import("std/type") as type
+import("std/list") as list
+
+// type.of for all types
+test "type int" { type.of(42) == "int" }
+test "type float" { type.of(3.14) == "float" }
+test "type bool true" { type.of(true) == "bool" }
+test "type bool false" { type.of(false) == "bool" }
+test "type null" { type.of(null) == "null" || type.of(null) == "unit" }
+test "type text" { type.of("hello") == "text" }
+test "type list" { type.of([1,2,3]) == "list" }
+test "type record" { type.of({x:1}) == "record" }
+test "type func" { type.of(fn(x) { x }) == "func" }
+
+// type checking patterns
+fn is_number(v) {
+  type.of(v) == "int" || type.of(v) == "float"
+}
+test "is_number int" { is_number(42) }
+test "is_number float" { is_number(3.14) }
+test "is_number str" { is_number("hi") == false }
+
+// Dynamic dispatch via type
+fn stringify(v) {
+  match type.of(v) {
+    "int"    => str.from_int(v),
+    "float"  => "float",
+    "bool"   => if v then "true" else "false",
+    "null"   => "null",
+    "unit"   => "null",
+    "text"   => v,
+    "list"   => "list",
+    "record" => "record",
+    _        => "unknown"
+  }
+}
+test "stringify int" { stringify(42) == "42" }
+test "stringify bool" { stringify(true) == "true" }
+test "stringify null" { stringify(null) == "null" }
+test "stringify text" { stringify("hi") == "hi" }
+test "stringify list" { stringify([1,2]) == "list" }
+test "stringify record" { stringify({x:1}) == "record" }
+
+// Type in collections
+let mixed = [42, "hello", true, null, [1,2], {x:1}]
+let types = list.map(mixed, fn(v) { type.of(v) })
+test "mixed types" { list.get(types, 0) == "int" && list.get(types, 1) == "text" && list.get(types, 2) == "bool" }

@@ -1,0 +1,29 @@
+
+import("std/io") as io
+import("std/str") as str
+import("std/type") as type
+
+let path = "/tmp/fard_test_io.txt"
+let _ = io.write_file(path, "hello fard")
+test "write file" { io.file_exists(path) }
+
+let content = io.read_file(path)
+test "read content" { str.contains(content.ok, "hello") }
+
+let _ = io.write_file(path, "line1
+line2
+line3")
+let back = io.read_file(path)
+test "roundtrip" { str.contains(back.ok, "line2") }
+
+let dir_path = "/tmp/fard_test_dir_xyz"
+let _ = io.make_dir(dir_path)
+test "make_dir exists" { io.file_exists(dir_path) }
+
+test "file exists" { io.file_exists(path) }
+test "file not exists" { io.file_exists("/tmp/nonexistent_fard_xyz_123.txt") == false }
+
+let _ = io.write_file(path, "v1")
+let _ = io.write_file(path, "v2")
+let r = io.read_file(path)
+test "overwrite" { str.contains(r.ok, "v2") }
