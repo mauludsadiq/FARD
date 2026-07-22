@@ -1,0 +1,61 @@
+
+import("std/list") as list
+import("std/type") as type
+import("std/int") as int
+import("std/rec") as rec
+
+// Result type pattern {ok, value} / {ok:false, error}
+fn safe_div(a, b) {
+  if b == 0 then { ok: false, error: "division by zero" }
+  else { ok: true, value: a / b }
+}
+test "result ok" { safe_div(10, 2).ok }
+test "result value" { safe_div(10, 2).value == 5 }
+test "result fail" { safe_div(10, 0).ok == false }
+test "result error msg" { safe_div(10, 0).error == "division by zero" }
+
+// Option type pattern {some} / {none}
+fn safe_head(xs) {
+  if list.len(xs) == 0 then { none: null }
+  else { some: list.get(xs, 0) }
+}
+test "option some" { rec.has(safe_head([1,2,3]), "some") }
+test "option some val" { safe_head([1,2,3]).some == 1 }
+test "option none" { rec.has(safe_head([]), "none") }
+
+// Null coalescing ??
+test "null coalesce null" { null ?? 42 == 42 }
+test "null coalesce non-null" { (10 ?? 42) == 10 }
+test "null coalesce string" { null ?? "default" == "default" }
+test "null coalesce zero" { (0 ?? 42) == 0 }
+test "null coalesce false" { (false ?? true) == false }
+
+// Safe access ?.
+let rec_with_null = { a: { b: 42 }, c: null }
+test "safe access ok" { rec_with_null.a?.b == 42 }
+test "safe access null" { rec_with_null.c?.x == null }
+
+// Error propagation pattern
+fn parse_and_double(s) {
+  let r = int.parse(s) in
+  if r.t == "ok" then { ok: true, value: r.v * 2 }
+  else { ok: false, error: "not a number" }
+}
+test "propagate ok" { parse_and_double("21").value == 42 }
+test "propagate fail" { parse_and_double("abc").ok == false }
+
+// Chaining results
+fn chain(a, b) {
+  let r1 = safe_div(a, b) in
+  if r1.ok == false then r1
+  else safe_div(r1.value, 2)
+}
+test "chain ok" { chain(20, 2).value == 5 }
+test "chain fail" { chain(20, 0).ok == false }
+
+// Default values via ??
+fn get_port(config) {
+  rec.get(config, "port") ?? 8080
+}
+test "default present" { get_port({ port: 3000 }) == 3000 }
+test "default missing" { get_port({}) == 8080 }

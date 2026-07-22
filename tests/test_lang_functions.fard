@@ -1,0 +1,69 @@
+
+import("std/list") as list
+
+// Named functions
+fn add(a, b) { a + b }
+fn square(x) { x * x }
+fn identity(x) { x }
+fn const_fn(x) { fn(_) { x } }
+
+test "named fn" { add(3, 4) == 7 }
+test "named fn sq" { square(5) == 25 }
+test "identity" { identity(42) == 42 }
+test "const fn" { const_fn(99)(0) == 99 }
+
+// Anonymous functions
+let double = fn(x) { x * 2 }
+let add1 = fn(x) { x + 1 }
+test "anon fn" { double(21) == 42 }
+test "anon chain" { add1(double(10)) == 21 }
+
+// Higher-order functions
+fn apply(f, x) { f(x) }
+fn compose(f, g) { fn(x) { f(g(x)) } }
+test "apply" { apply(double, 5) == 10 }
+test "compose" { compose(double, add1)(3) == 8 }
+
+// Closures capturing bindings
+fn make_adder(n) { fn(x) { x + n } }
+fn make_multiplier(n) { fn(x) { x * n } }
+let add5 = make_adder(5)
+let times3 = make_multiplier(3)
+test "closure add5" { add5(10) == 15 }
+test "closure times3" { times3(7) == 21 }
+test "closure composed" { add5(times3(4)) == 17 }
+
+// Recursion
+fn factorial(n) {
+  if n <= 1 then 1 else n * factorial(n - 1)
+}
+fn fib(n) {
+  if n <= 1 then n else fib(n - 1) + fib(n - 2)
+}
+test "factorial 5" { factorial(5) == 120 }
+test "factorial 10" { factorial(10) == 3628800 }
+test "fib 0" { fib(0) == 0 }
+test "fib 1" { fib(1) == 1 }
+test "fib 10" { fib(10) == 55 }
+
+// Functions as values in lists
+let fns = [double, add1, square]
+test "fn in list" { list.get(fns, 0)(5) == 10 }
+test "fn map" { list.map([1,2,3], double) == [2,4,6] }
+test "fn filter" { list.filter([1,2,3,4,5], fn(x) { x > 3 }) == [4,5] }
+test "fn fold" { list.fold([1,2,3,4,5], 0, fn(acc,x) { acc + x }) == 15 }
+
+// Multi-arg closures
+fn clamp(lo, hi) { fn(x) { if x < lo then lo else if x > hi then hi else x } }
+let clamp_0_100 = clamp(0, 100)
+test "clamp in range" { clamp_0_100(50) == 50 }
+test "clamp below" { clamp_0_100(-5) == 0 }
+test "clamp above" { clamp_0_100(150) == 100 }
+
+// Mutual recursion
+fn is_even(n) { if n == 0 then true else is_odd(n - 1) }
+fn is_odd(n) { if n == 0 then false else is_even(n - 1) }
+test "is_even 4" { is_even(4) }
+test "is_odd 3" { is_odd(3) }
+test "is_even 0" { is_even(0) }
+test "is_odd 0" { is_odd(0) == false }

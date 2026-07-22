@@ -1,0 +1,79 @@
+
+import("std/list") as list
+
+// Sequential let bindings
+test "sequential let" {
+  let a = 1 in
+  let b = 2 in
+  let c = a + b in
+  c == 3
+}
+
+// Shadowing
+test "shadowing" {
+  let x = 1 in
+  let x = x + 1 in
+  x == 2
+}
+
+test "shadow outer" {
+  let x = 10 in
+  let y = (let x = 5 in x * 2) in
+  x + y == 20
+}
+
+// Let in closures
+fn make_counter(start) {
+  let n = start in
+  fn() { n }
+}
+test "let in closure" { make_counter(42)() == 42 }
+
+// Let binding complex expr
+test "let complex" {
+  let xs = list.map([1,2,3], fn(x) { x * x }) in
+  let total = list.fold(xs, 0, fn(acc, x) { acc + x }) in
+  total == 14
+}
+
+// Let with record destructuring via field access
+test "let record field" {
+  let p = { x: 3, y: 4 } in
+  let dist = p.x * p.x + p.y * p.y in
+  dist == 25
+}
+
+// Nested let
+test "nested let" {
+  let a =
+    let b = 5 in
+    let c = 6 in
+    b * c
+  in a == 30
+}
+
+// Let in match arm
+fn describe(n) {
+  match n {
+    0 => "zero",
+    _ =>
+      let abs_n = if n < 0 then -n else n in
+      if abs_n < 10 then "small" else "large"
+  }
+}
+test "let in match arm small" { describe(5) == "small" }
+test "let in match arm large" { describe(100) == "large" }
+test "let in match arm neg" { describe(-3) == "small" }
+
+// top-level let
+let PI = 3
+let TAU = PI * 2
+test "top let PI" { PI == 3 }
+test "top let TAU" { TAU == 6 }
+
+// Let binding function result
+fn expensive(x) { x * x + x + 1 }
+test "let memoize pattern" {
+  let result = expensive(10) in
+  result + result == 222
+}

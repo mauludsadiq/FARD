@@ -1,0 +1,58 @@
+
+import("std/str") as str
+import("std/float") as float
+
+// Integer arithmetic
+test "int add" { 3 + 4 == 7 }
+test "int sub" { 10 - 3 == 7 }
+test "int mul" { 6 * 7 == 42 }
+test "int div" { 15 / 3 == 5 }
+test "int div floor" { 7 / 2 == 3 }
+test "int mod" { 10 % 3 == 1 }
+test "int neg" { -5 + 5 == 0 }
+test "int precedence" { 2 + 3 * 4 == 14 }
+test "int parens" { (2 + 3) * 4 == 20 }
+test "int chain" { 1 + 2 + 3 + 4 + 5 == 15 }
+
+// Float arithmetic
+test "float add" { 1.5 + 2.5 == 4.0 }
+test "float sub" { 5.0 - 1.5 == 3.5 }
+test "float mul" { 2.0 * 3.14 == 6.28 }
+test "float div" { 10.0 / 4.0 == 2.5 }
+test "int to float" { 1 + 0.5 == 1.5 }
+
+// Comparison operators
+test "eq int" { 5 == 5 }
+test "ne int" { 5 != 6 }
+test "lt" { 3 < 5 }
+test "le equal" { 5 <= 5 }
+test "le less" { 4 <= 5 }
+test "gt" { 7 > 3 }
+test "ge equal" { 5 >= 5 }
+test "ge greater" { 6 >= 5 }
+
+// String comparison
+test "str eq" { "hello" == "hello" }
+test "str ne" { "hello" != "world" }
+
+// Bool operators
+test "and tt" { true && true }
+test "and tf" { (true && false) == false }
+test "and ff" { (false && false) == false }
+test "or tt" { true || false }
+test "or ff" { (false || false) == false }
+test "not t" { !true == false }
+test "not f" { !false == true }
+
+// Short circuit
+let side_effect = false
+test "and short circuit" { (false && side_effect) == false }
+test "or short circuit" { true || side_effect }
+
+// value.eq cross type
+test "null eq null" { null == null }
+test "bool eq bool" { true == true }
+test "list eq list" { [1,2] == [1,2] }
+test "list ne list" { [1,2] != [1,3] }
+test "record eq" { {x:1} == {x:1} }
+test "record ne" { {x:1} != {x:2} }

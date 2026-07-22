@@ -1,0 +1,104 @@
+import("std/str") as str
+
+import("std/list") as list
+import("std/type") as type
+
+// Match on int
+fn int_match(n) {
+  match n {
+    0 => "zero",
+    1 => "one",
+    _ => "other"
+  }
+}
+test "match int 0" { int_match(0) == "zero" }
+test "match int 1" { int_match(1) == "one" }
+test "match int other" { int_match(42) == "other" }
+
+// Match on string
+fn greet(lang) {
+  match lang {
+    "en" => "hello",
+    "fr" => "bonjour",
+    "es" => "hola",
+    _    => "hi"
+  }
+}
+test "match str en" { greet("en") == "hello" }
+test "match str fr" { greet("fr") == "bonjour" }
+test "match str unknown" { greet("de") == "hi" }
+
+// Match on bool
+fn bool_label(b) { match b { true => "yes", false => "no" } }
+test "match bool t" { bool_label(true) == "yes" }
+test "match bool f" { bool_label(false) == "no" }
+
+// Match on record .t field (FIR-style dispatch)
+fn node_val(node) {
+  match node.t {
+    "int"  => node.v,
+    "str"  => node.v,
+    "bool" => node.v,
+    _      => null
+  }
+}
+test "match node int" { node_val({ t: "int", v: 42 }) == 42 }
+test "match node str" { node_val({ t: "str", v: "hi" }) == "hi" }
+test "match node unknown" { node_val({ t: "other", v: 0 }) == null }
+
+// Wildcard binding
+fn describe_list(xs) {
+  match list.len(xs) {
+    0 => "empty",
+    1 => "singleton",
+    _ => "multiple"
+  }
+}
+test "match wildcard empty" { describe_list([]) == "empty" }
+test "match wildcard single" { describe_list([1]) == "singleton" }
+test "match wildcard multi" { describe_list([1,2,3]) == "multiple" }
+
+// Match as expression in let
+test "match in let" {
+  let result = match 42 {
+    0 => "zero",
+    _ => "nonzero",
+  } in
+  result == "nonzero"
+}
+
+// Nested match
+fn classify(x, y) {
+  match x {
+    0 => match y {
+      0 => "origin",
+      _ => "y-axis"
+    },
+    _ => match y {
+      0 => "x-axis",
+      _ => "quadrant"
+    }
+  }
+}
+test "nested match origin" { classify(0, 0) == "origin" }
+test "nested match y-axis" { classify(0, 5) == "y-axis" }
+test "nested match x-axis" { classify(3, 0) == "x-axis" }
+test "nested match quadrant" { classify(3, 4) == "quadrant" }
+
+// Match with computation in arm
+fn fizzbuzz(n) {
+  match n % 15 {
+    0 => "FizzBuzz",
+    _ => match n % 3 {
+      0 => "Fizz",
+      _ => match n % 5 {
+        0 => "Buzz",
+        _ => str.from_int(n)
+      }
+    }
+  }
+}
+test "fizzbuzz 15" { fizzbuzz(15) == "FizzBuzz" }
+test "fizzbuzz 9" { fizzbuzz(9) == "Fizz" }
+test "fizzbuzz 10" { fizzbuzz(10) == "Buzz" }
+test "fizzbuzz 7" { fizzbuzz(7) == "7" }

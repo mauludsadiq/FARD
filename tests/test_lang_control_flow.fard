@@ -1,0 +1,78 @@
+
+import("std/list") as list
+
+// if/then/else as expression
+test "if true" { (if true then 1 else 2) == 1 }
+test "if false" { (if false then 1 else 2) == 2 }
+test "if nested" { (if true then (if false then 1 else 2) else 3) == 2 }
+test "if with expr" { (if 1 + 1 == 2 then "yes" else "no") == "yes" }
+test "if returns value" { let x = if true then 42 else 0 in x == 42 }
+
+// match on literals
+fn classify_int(n) {
+  match n {
+    0 => "zero",
+    1 => "one",
+    2 => "two",
+    _ => "many"
+  }
+}
+test "match zero" { classify_int(0) == "zero" }
+test "match one" { classify_int(1) == "one" }
+test "match wildcard" { classify_int(99) == "many" }
+
+// match on strings
+fn day_type(d) {
+  match d {
+    "Saturday" => "weekend",
+    "Sunday"   => "weekend",
+    _          => "weekday"
+  }
+}
+test "match sat" { day_type("Saturday") == "weekend" }
+test "match sun" { day_type("Sunday") == "weekend" }
+test "match mon" { day_type("Monday") == "weekday" }
+
+// match on bool
+fn bool_str(b) {
+  match b {
+    true  => "yes",
+    false => "no"
+  }
+}
+test "match true" { bool_str(true) == "yes" }
+test "match false" { bool_str(false) == "no" }
+
+// match on record t field
+fn eval_node(node) {
+  match node.t {
+    "lit_int"  => node.v,
+    "lit_bool" => node.v,
+    "lit_text" => node.v,
+    _          => null
+  }
+}
+test "match record t int" { eval_node({ t: "lit_int", v: 42 }) == 42 }
+test "match record t text" { eval_node({ t: "lit_text", v: "hi" }) == "hi" }
+test "match record t unknown" { eval_node({ t: "other", v: 0 }) == null }
+
+// while state machine
+fn sum_to(n) {
+  let result = while { i: 1, acc: 0 }
+    fn(s) { s.i <= n }
+    fn(s) { { i: s.i + 1, acc: s.acc + s.i } }
+  in result.value.acc
+}
+test "while sum 1 to 5" { sum_to(5) == 15 }
+test "while sum 1 to 10" { sum_to(10) == 55 }
+test "while zero" { sum_to(0) == 0 }
+
+// while with accumulator list
+fn range_list(n) {
+  let result = while { i: 0, acc: [] }
+    fn(s) { s.i < n }
+    fn(s) { { i: s.i + 1, acc: list.concat([s.acc, [s.i]]) } }
+  in result.value.acc
+}
+test "while range" { range_list(5) == [0, 1, 2, 3, 4] }
+test "while range empty" { range_list(0) == [] }

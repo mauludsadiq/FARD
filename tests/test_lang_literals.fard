@@ -1,0 +1,57 @@
+import("std/str") as str
+
+// Phase 1.1 — Syntax and literals
+
+// Integer literals
+test "int positive" { 42 == 42 }
+test "int negative" { -17 == -17 }
+test "int zero" { 0 == 0 }
+test "int large" { 1000000 == 1000000 }
+test "int arithmetic result" { 2 + 2 == 4 }
+
+// Float literals
+test "float basic" { 3.14 == 3.14 }
+test "float negative" { -2.5 == -2.5 }
+test "float zero" { 0.0 == 0.0 }
+test "float scientific" { 1.0e3 == 1000.0 }
+test "float small" { 0.001 == 0.001 }
+
+// Bool literals
+test "bool true" { true == true }
+test "bool false" { false == false }
+test "bool not true" { !true == false }
+test "bool not false" { !false == true }
+
+// Null / unit
+test "null is null" { null == null }
+test "null not int" { null != 0 }
+test "null not false" { null != false }
+test "null not empty string" { null != "" }
+
+// String literals
+test "string basic" { "hello" == "hello" }
+test "string empty" { "" == "" }
+test "string escape newline" { str.len("a
+b") == 3 }
+test "string escape tab" { str.len("a	b") == 3 }
+
+// String interpolation
+let name = "FARD"
+let version = 1
+test "interpolation basic" { "hello ${name}" == "hello FARD" }
+test "interpolation int" { "v${version}" == "v1" }
+test "interpolation expr" { "${1 + 1} items" == "2 items" }
+
+// List literals
+test "list empty" { [] == [] }
+test "list single" { [1] == [1] }
+test "list multi" { [1, 2, 3] == [1, 2, 3] }
+test "list nested" { [[1, 2], [3, 4]] == [[1, 2], [3, 4]] }
+test "list mixed" { [1, "a", true] == [1, "a", true] }
+
+// Record literals
+test "record empty" { {} == {} }
+test "record single" { { x: 1 }.x == 1 }
+test "record multi" { { x: 1, y: 2 }.y == 2 }
+test "record nested" { { a: { b: 3 } }.a.b == 3 }
+test "record string key access" { { name: "Alice" }.name == "Alice" }
