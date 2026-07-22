@@ -1,0 +1,71 @@
+
+import("../packages/semver/main") as semver
+import("../packages/glob/main") as glob
+import("../packages/template/main") as tmpl
+import("../packages/markdown/main") as md
+import("../packages/diff/main") as diff
+import("../packages/stream/main") as stream
+import("std/str") as str
+import("std/list") as list
+import("std/type") as type
+
+// semver - full suite
+test "semver parse" { semver.parse("1.2.3").major == 1 }
+test "semver parse minor" { semver.parse("2.5.0").minor == 5 }
+test "semver gt" { semver.gt("2.0.0", "1.9.9") }
+test "semver lt" { semver.lt("1.0.0", "1.0.1") }
+test "semver eq" { semver.eq("1.2.3", "1.2.3") }
+test "semver bump major" { semver.bump_major("1.2.3") == "2.0.0" }
+test "semver bump minor" { semver.bump_minor("1.2.3") == "1.3.0" }
+test "semver bump patch" { semver.bump_patch("1.2.3") == "1.2.4" }
+test "semver latest" { semver.latest(["1.0.0", "3.0.0", "2.0.0"]) == "3.0.0" }
+test "semver sort" { list.get(semver.sort(["3.0", "1.0", "2.0"]), 0) == "1.0" }
+
+// glob - pattern matching
+test "glob star" { glob.matches("*.fard", "main.fard") }
+test "glob star all" { glob.matches("*", "anything") }
+test "glob no match" { glob.matches("*.fard", "main.rs") == false }
+test "glob prefix star" { glob.matches("test_*", "test_foo") }
+test "glob ext helper" { glob.ext("fard") == "*.fard" }
+
+// template rendering
+test "tmpl basic" { str.contains(tmpl.render("Hello {{name}}", { name: "World" }), "World") }
+test "tmpl int" { str.contains(tmpl.render("v{{n}}", { n: 42 }), "42") }
+test "tmpl multi" { tmpl.render("{{a}}-{{b}}", { a: "x", b: "y" }) == "x-y" }
+test "tmpl no var" { tmpl.render("static", {}) == "static" }
+test "tmpl list" { str.contains(tmpl.render_list("{{item}}", [1, 2, 3], "item"), "1") }
+
+// markdown
+test "md h1" { str.contains(md.to_html("# Title"), "<h1>") }
+test "md h2" { str.contains(md.to_html("## Sub"), "<h2>") }
+test "md para" { str.contains(md.render_line("text"), "<p>") }
+test "md bold" { str.contains(md.render_line("**bold**"), "<strong>") }
+test "md code" { str.contains(md.inline_code("`x`"), "<code>") }
+test "md escape" { str.contains(md.escape_html("<div>"), "&lt;") }
+
+// diff
+let a = "line1
+line2
+line3"
+let b = "line1
+changed
+line3
+new"
+let d = diff.diff_lines(a, b)
+test "diff not empty" { list.len(d) > 0 }
+test "diff changed" { diff.changed_count(d) > 0 }
+test "diff same" { diff.changed_count(diff.diff_lines("x
+y", "x
+y")) == 0 }
+test "diff format" { str.len(diff.format_diff(d)) > 0 }
+test "diff is_equal" { diff.is_equal("abc", "abc") }
+test "diff not_equal" { diff.is_equal("abc", "xyz") == false }
+
+// stream
+let s1 = stream.from_list([1,2,3,4,5,6,7,8,9,10])
+test "stream to_list" { list.len(stream.to_list(s1)) == 10 }
+test "stream take" { list.len(stream.take(s1, 3)) == 3 }
+test "stream filter" { list.len(stream.to_list(stream.filter(s1, fn(x) { x % 2 == 0 }))) == 5 }
+test "stream map" { list.get(stream.to_list(stream.map(s1, fn(x) { x * 2 })), 0) == 2 }
+test "stream fold" { stream.fold(s1, 0, fn(acc, x) { acc + x }) == 55 }
+test "stream range_to" { list.len(stream.to_list(stream.range_to(1, 11))) == 10 }

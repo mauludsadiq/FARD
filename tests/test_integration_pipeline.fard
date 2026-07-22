@@ -1,0 +1,72 @@
+import("std/int") as int_mod
+
+import("../packages/csv-extra/main") as csv
+import("../packages/frame/main") as frame
+import("../packages/stats/main") as stats
+import("../packages/template/main") as tmpl
+import("../packages/json-schema/main") as schema
+import("std/json") as json
+import("std/str") as str
+import("std/list") as list
+import("std/type") as type
+
+// Pipeline 1: CSV -> Frame -> Stats -> Summary
+let raw_csv = "name,age,score
+Alice,30,95
+Bob,25,72
+Carol,35,88
+Dave,28,65
+Eve,32,91"
+let rows = csv.parse_with_headers(raw_csv)
+test "csv parse rows" { csv.count(rows) == 5 }
+
+let df = frame.from_rows(rows)
+test "frame from csv" { frame.nrows(df) == 5 }
+
+let scores_str = csv.column(rows, "score")
+let scores = list.map(scores_str, fn(s) { 
+  let r = int_mod.parse(s) in
+  if r.t == "ok" then r.v else 0
+})
+test "scores parsed" { list.len(scores) == 5 }
+test "sum scores" { stats.sum(scores) == 411 }
+test "mean scores" { stats.mean(scores) == 82 }
+test "min score" { stats.min(scores) == 65 }
+test "max score" { stats.max(scores) == 95 }
+
+// Pipeline 2: JSON roundtrip with schema validation
+let user_schema = schema.schema(
+  ["name", "age"],
+  { name: schema.field("string", true), age: schema.field("integer", true) }
+)
+let user = { name: "Alice", age: 30 }
+let encoded = json.encode(user)
+let decoded = json.decode(encoded)
+test "json roundtrip" { decoded.name == "Alice" && decoded.age == 30 }
+let validation = schema.validate(user, user_schema)
+test "schema valid" { validation.ok }
+let bad_user = { name: "Bob" }
+let bad_validation = schema.validate(bad_user, user_schema)
+test "schema invalid" { bad_validation.ok == false }
+
+// Pipeline 3: Template + data -> report
+let data = [
+  { name: "Alice", score: 95 },
+  { name: "Bob", score: 72 },
+  { name: "Carol", score: 88 }
+]
+let report_rows = list.map(data, fn(r) {
+  tmpl.render("{{name}}: {{score}}", r)
+})
+test "report rows count" { list.len(report_rows) == 3 }
+test "report first row" { str.contains(list.get(report_rows, 0), "Alice") }
+test "report has scores" { str.contains(list.get(report_rows, 0), "95") }
+
+// Pipeline 4: Filter -> transform -> aggregate
+let high_scorers = list.filter(data, fn(r) { r.score >= 88 })
+let names = list.map(high_scorers, fn(r) { r.name })
+test "filter count" { list.len(high_scorers) == 2 }
+test "filter names" { list.any(names, fn(n) { n == "Alice" }) }
+test "filter no bob" { list.all(names, fn(n) { n != "Bob" }) }
+let avg_high = stats.mean(list.map(high_scorers, fn(r) { r.score }))
+test "avg high scorers" { avg_high == 91 }

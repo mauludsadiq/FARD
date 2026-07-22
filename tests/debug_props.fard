@@ -1,0 +1,13 @@
+
+import("std/list") as list
+
+fn eq_test(a, b) { a == b }
+fn rev_rev(xs) { list.reverse(list.reverse(xs)) }
+
+test "direct eq" { [1,2,3] == [1,2,3] }
+test "fn eq int" { eq_test(1, 1) }
+test "fn eq list" { eq_test([1,2,3], [1,2,3]) }
+let rr = rev_rev([1,2,3])
+test "rev_rev result" { rr }
+test "rev_rev eq inline" { rr == [1,2,3] }
+test "fn eq rev_rev" { eq_test(rr, [1,2,3]) }

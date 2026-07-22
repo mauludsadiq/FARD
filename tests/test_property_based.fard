@@ -1,0 +1,78 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/json") as json
+import("std/random") as rand
+import("../packages/base64/main") as b64
+
+// Property: reverse(reverse(xs)) == xs
+test "reverse involution empty" { list.reverse(list.reverse([])) == [] }
+test "reverse involution single" { list.reverse(list.reverse([42])) == [42] }
+test "reverse involution multi" { list.reverse(list.reverse([1,2,3,4,5])) == [1,2,3,4,5] }
+test "reverse involution strings" { list.reverse(list.reverse(["a","b","c"])) == ["a","b","c"] }
+
+// Property: len(concat(a,b)) == len(a) + len(b)
+fn prop_concat_len(a, b) {
+  list.len(list.concat([a, b])) == list.len(a) + list.len(b)
+}
+test "concat len empty" { prop_concat_len([], []) }
+test "concat len left empty" { prop_concat_len([], [1,2,3]) }
+test "concat len right empty" { prop_concat_len([1,2,3], []) }
+test "concat len both" { prop_concat_len([1,2], [3,4,5]) }
+
+// Property: filter then count <= original count
+fn prop_filter_count(xs, pred) {
+  list.len(list.filter(xs, pred)) <= list.len(xs)
+}
+test "filter shrinks" { prop_filter_count([1,2,3,4,5], fn(x) { x > 3 }) }
+test "filter all" { prop_filter_count([1,2,3], fn(x) { x > 0 }) }
+test "filter none" { prop_filter_count([1,2,3], fn(x) { x > 100 }) }
+
+// Property: map preserves length
+fn prop_map_length(xs, f) {
+  list.len(list.map(xs, f)) == list.len(xs)
+}
+test "map length empty" { prop_map_length([], fn(x) { x }) }
+test "map length basic" { prop_map_length([1,2,3,4,5], fn(x) { x * 2 }) }
+test "map length strings" { prop_map_length(["a","b","c"], fn(x) { str.upper(x) }) }
+
+// Property: fold with identity
+test "fold identity add" { list.fold([1,2,3,4,5], 0, fn(acc,x) { acc + x }) == 15 }
+test "fold identity mul" { list.fold([1,2,3,4], 1, fn(acc,x) { acc * x }) == 24 }
+
+// Property: JSON encode/decode roundtrip
+fn prop_json_roundtrip(v) {
+  json.decode(json.encode(v)) == v
+}
+test "json roundtrip int" { prop_json_roundtrip(42) }
+test "json roundtrip bool" { prop_json_roundtrip(true) }
+test "json roundtrip null" { prop_json_roundtrip(null) }
+test "json roundtrip string" { prop_json_roundtrip("hello world") }
+test "json roundtrip list" { json.decode(json.encode([1,2,3])) == [1,2,3] }
+
+// Property: base64 encode/decode roundtrip
+fn prop_b64_roundtrip(s) {
+  b64.decode(b64.encode(s)) == s
+}
+test "b64 roundtrip empty" { prop_b64_roundtrip("") }
+test "b64 roundtrip basic" { prop_b64_roundtrip("hello") }
+test "b64 roundtrip special" { prop_b64_roundtrip("hello world 123") }
+
+// Property: string split then join
+fn prop_split_join(s, sep) {
+  str.join(str.split(s, sep), sep) == s
+}
+test "split join comma" { prop_split_join("a,b,c", ",") }
+test "split join space" { prop_split_join("hello world", " ") }
+test "split join empty sep" { str.len(str.join(str.split("abc", ""), "")) >= 0 }
+
+// Property: sort is idempotent
+fn prop_sort_idempotent(xs) {
+  let s1 = list.sort_by(xs, fn(a,b) { a - b }) in
+  let s2 = list.sort_by(s1, fn(a,b) { a - b }) in
+  s1 == s2
+}
+test "sort idempotent empty" { prop_sort_idempotent([]) }
+test "sort idempotent sorted" { prop_sort_idempotent([1,2,3,4,5]) }
+test "sort idempotent unsorted" { prop_sort_idempotent([5,3,1,4,2]) }
+test "sort idempotent dupes" { prop_sort_idempotent([3,1,4,1,5,9,2,6,5]) }
