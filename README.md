@@ -21,7 +21,7 @@ Installs fardrun to /usr/local/bin. Detects macOS arm64/x86_64 and Linux x86_64 
 
 ## Testing
 
-268 test suites passing across 277 total.
+279 test suites passing across 286 total.
 
     for f in tests/test_*.fard; do fardrun test --program "$f"; done
 
@@ -115,7 +115,7 @@ Full reference: FARD-EBNF.md
 
 ## Packages
 
-199 packages covering the full production spine, scientific computing, media, and developer tooling.
+199 packages covering the full production spine, scientific computing, media, and developer tooling. 70+ packages have verified test suites.
 
 ### Web
 
