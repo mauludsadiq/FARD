@@ -8,8 +8,8 @@ import("std/io")   as io
 import("std/type") as type
 
 fn get_env(key, default) {
-  let val = env.get(key)
-  if val == null then default else val
+  let result = env.get(key) in
+  if rec.has(result, "some") then result.some else default
 }
 
 fn require_env(key) {
@@ -21,9 +21,11 @@ fn require_env(key) {
 }
 
 fn get_int(key, default) {
-  let val = env.get(key)
-  if val == null then default
-  else int.parse(val).v
+  let result = env.get(key) in
+  if rec.has(result, "some") then
+    let parsed = int.parse(result.some) in
+    if parsed.ok then parsed.v else default
+  else default
 }
 
 fn get_bool(key, default) {

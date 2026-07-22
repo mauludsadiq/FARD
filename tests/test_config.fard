@@ -1,0 +1,19 @@
+
+import("../packages/config/main") as cfg
+import("std/type") as type
+
+let schema = {
+  host: { env: "HOST", default: "localhost", required: false },
+  port: { env: "PORT", default: "8080", required: false }
+}
+let result = cfg.from_env(schema)
+test "from_env ok" { result.ok }
+test "config has host" { result.config.host == "localhost" }
+test "config has port" { result.config.port == "8080" }
+
+let a = { x: 1, y: 2 }
+let b = { y: 99, z: 3 }
+let merged = cfg.merge(a, b)
+test "merge overrides" { merged.y == 99 }
+test "merge keeps" { merged.x == 1 }
+test "merge adds" { merged.z == 3 }

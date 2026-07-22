@@ -1,0 +1,13 @@
+
+import("../packages/config/main") as cfg
+import("std/type") as type
+import("std/record") as rec
+
+let schema = {
+  host: { env: "HOST", default: "localhost", required: false }
+}
+let result = cfg.from_env(schema)
+test "ok" { result.ok }
+test "config type" { type.of(result.config) }
+test "config keys" { rec.keys(result.config) }
+test "config host" { rec.get(result.config, "host") }

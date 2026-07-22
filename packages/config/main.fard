@@ -54,7 +54,8 @@ fn from_env(schema) {
     let env_key  = if rec.has(spec, "env") then rec.get(spec, "env") else str.upper(key)
     let required = if rec.has(spec, "required") then rec.get(spec, "required") else false
     let default  = if rec.has(spec, "default") then rec.get(spec, "default") else null
-    let val      = env.get(env_key) in
+    let env_result = env.get(env_key) in
+    let val = if rec.has(env_result, "some") then env_result.some else null in
     if val == null && required then
       { ok: false, config: acc.config, missing: list.concat([acc.missing, [env_key]]) }
     else

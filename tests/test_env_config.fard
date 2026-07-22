@@ -1,0 +1,11 @@
+
+import("../packages/env-config/main") as env
+
+let host = env.get_env("NONEXISTENT_VAR_XYZ", "localhost")
+test "get_env default" { host == "localhost" }
+
+let port = env.get_int("NONEXISTENT_PORT_XYZ", 8080)
+test "get_int default" { port == 8080 }
+
+let debug = env.get_bool("NONEXISTENT_DEBUG_XYZ", false)
+test "get_bool default" { debug == false }
