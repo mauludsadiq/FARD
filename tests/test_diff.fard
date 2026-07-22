@@ -1,0 +1,27 @@
+
+import("../packages/diff/main") as diff
+import("std/list") as list
+import("std/str") as str
+
+let a = "line1
+line2
+line3"
+let b = "line1
+line2 changed
+line3
+line4"
+let d = diff.diff_lines(a, b)
+test "diff not empty" { list.len(d) > 0 }
+test "is_equal same" { diff.is_equal("hello", "hello") }
+test "is_equal diff" { diff.is_equal("hello", "world") == false }
+
+let formatted = diff.format_diff(d)
+test "format not empty" { str.len(formatted) > 0 }
+
+let changed = diff.changed_count(d)
+test "changed count" { changed > 0 }
+
+let same = diff.diff_lines("a
+b", "a
+b")
+test "no diff same" { diff.changed_count(same) == 0 }

@@ -1,0 +1,16 @@
+
+import("../packages/base64/main") as b64
+import("std/str") as str
+
+let encoded = b64.encode("Hello, World!")
+test "encode not empty" { str.len(encoded) > 0 }
+test "encode result" { encoded == "SGVsbG8sIFdvcmxkIQ==" }
+
+let decoded = b64.decode("SGVsbG8sIFdvcmxkIQ==")
+test "decode result" { decoded == "Hello, World!" }
+
+let roundtrip = b64.decode(b64.encode("FARD language"))
+test "roundtrip" { roundtrip == "FARD language" }
+
+let url_encoded = b64.encode_url("Hello+World/Test=")
+test "url encode" { str.len(url_encoded) > 0 }
