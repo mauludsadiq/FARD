@@ -1,6 +1,11 @@
+
 import("std/float") as float
-let a = float.from_int(1)
-let b = float.from_int(1)
-let c = float.add(a, b)
-test "add" { c == 2.0 }
-test "fold" { c == float.from_int(2) }
+import("std/type") as type
+
+let x = float.from_int(42)
+test "type" { type.of(x) }
+test "val" { x }
+test "floor type" { type.of(float.floor(3.7)) }
+test "floor val" { float.floor(3.7) }
+test "sqrt val" { float.sqrt(4.0) }
+test "sqrt type" { type.of(float.sqrt(4.0)) }

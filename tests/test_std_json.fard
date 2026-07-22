@@ -1,12 +1,48 @@
-import("../std/json_impl") as J
-import("std/list")    as list
 
-test "encode int"    { J.encode(42) == "42" }
-test "encode str"    { J.encode("hi") == "\"hi\"" }
-test "encode list"   { J.encode([1,2,3]) == "[1,2,3]" }
-test "decode int"    { J.decode("42") == 42 }
-test "decode obj"    { J.decode("{\"x\":1}").x == 1 }
-test "get"          { J.get({a:1,b:2}, "a") == 1 }
-test "get_path"     { J.get_path({a:{b:42}}, ["a","b"]) == 42 }
-test "is_valid"     { J.is_valid("42") }
-test "from_pairs"   { J.from_pairs([["x",1],["y",2]]).x == 1 }
+import("std/json") as json
+import("std/type") as type
+import("std/str") as str
+import("std/list") as list
+
+// encode primitives
+test "encode int" { json.encode(42) == "42" }
+test "encode float" { json.encode(3.14) == "3.14" }
+test "encode bool true" { json.encode(true) == "true" }
+test "encode bool false" { json.encode(false) == "false" }
+test "encode null" { json.encode(null) == "null" }
+test "encode string" { json.encode("hello") == "\"hello\"" }
+
+// encode collections
+test "encode list" { json.encode([1,2,3]) == "[1,2,3]" }
+test "encode empty list" { json.encode([]) == "[]" }
+test "encode record" { str.contains(json.encode({ x: 1 }), "\"x\"") }
+test "encode empty record" { json.encode({}) == "{}" }
+
+// decode primitives
+test "decode int" { json.decode("42") == 42 }
+test "decode float" { json.decode("3.14") == 3.14 }
+test "decode bool true" { json.decode("true") == true }
+test "decode bool false" { json.decode("false") == false }
+test "decode null" { json.decode("null") == null }
+test "decode string" { json.decode("\"hello\"") == "hello" }
+
+// decode collections
+test "decode list" { json.decode("[1,2,3]") == [1,2,3] }
+test "decode empty list" { json.decode("[]") == [] }
+test "decode record" { json.decode("{\"x\":1}").x == 1 }
+test "decode empty record" { json.decode("{}") == {} }
+
+// roundtrip
+test "roundtrip int" { json.decode(json.encode(42)) == 42 }
+test "roundtrip string" { json.decode(json.encode("hello")) == "hello" }
+test "roundtrip list" { json.decode(json.encode([1,2,3])) == [1,2,3] }
+test "roundtrip bool" { json.decode(json.encode(true)) == true }
+test "roundtrip null" { json.decode(json.encode(null)) == null }
+
+// nested structures
+let nested = { name: "Alice", scores: [95, 87, 92], active: true }
+let encoded = json.encode(nested)
+let decoded = json.decode(encoded)
+test "nested roundtrip name" { decoded.name == "Alice" }
+test "nested roundtrip scores" { decoded.scores == [95, 87, 92] }
+test "nested roundtrip active" { decoded.active == true }

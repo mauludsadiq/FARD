@@ -1,0 +1,54 @@
+
+import("std/math") as math
+import("std/type") as type
+
+// Native float literals work correctly
+test "float lit type" { type.of(3.14) == "float" }
+test "float add" { 1.5 + 2.5 == 4.0 }
+test "float sub" { 5.0 - 1.5 == 3.5 }
+test "float mul" { 2.0 * 3.0 == 6.0 }
+test "float div" { 10.0 / 4.0 == 2.5 }
+test "float neg" { -3.14 < 0.0 }
+test "float eq" { 1.0 == 1.0 }
+test "float ne" { 1.0 != 2.0 }
+test "float lt" { 1.0 < 2.0 }
+test "float gt" { 2.0 > 1.0 }
+test "float mixed" { 1 + 0.5 == 1.5 }
+test "float precision" { 0.1 + 0.2 > 0.29 }
+
+// math module
+test "pi type" { type.of(math.pi) == "float" }
+test "pi value" { math.pi > 3.14 && math.pi < 3.15 }
+test "e value" { math.e > 2.71 && math.e < 2.72 }
+test "tau value" { math.pi * 2.0 > 6.28 && math.pi * 2.0 < 6.29 }
+
+// trig
+test "sin 0" { math.sin(0.0) == 0.0 }
+test "cos 0" { math.cos(0.0) == 1.0 }
+test "sin pi" { math.sin(math.pi) < 0.0001 && math.sin(math.pi) > -0.0001 }
+
+// exp / log
+test "exp 0" { math.exp(0.0) == 1.0 }
+test "exp 1" { math.exp(1.0) > 2.71 && math.exp(1.0) < 2.72 }
+test "log 1" { math.log(1.0) == 0.0 }
+test "log e" { math.log(math.e) > 0.99 && math.log(math.e) < 1.01 }
+
+// sqrt via math
+test "sqrt 4" { math.sqrt(4.0) == 2.0 }
+test "sqrt 9" { math.sqrt(9.0) == 3.0 }
+test "sqrt 2" { math.sqrt(2.0) > 1.41 && math.sqrt(2.0) < 1.42 }
+
+// pow via math
+test "pow 2 10" { math.pow(2.0, 10.0) == 1024.0 }
+test "pow 3 3" { math.pow(3.0, 3.0) == 27.0 }
+
+// abs via math
+test "abs pos" { math.abs(3.14) == 3.14 }
+test "abs neg" { math.abs(-3.14) == 3.14 }
+test "abs zero" { math.abs(0.0) == 0.0 }
+
+// floor / ceil via math
+test "floor" { math.floor(3.7) == 3.0 }
+test "ceil" { math.ceil(3.2) == 4.0 }
+test "floor neg" { math.floor(-3.2) == -4.0 }
+test "ceil neg" { math.ceil(-3.7) == -3.0 }

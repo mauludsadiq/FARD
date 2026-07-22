@@ -1,0 +1,45 @@
+import("std/str") as str
+
+import("std/int") as int
+import("std/type") as type
+
+// parse
+test "parse valid" { int.parse("42").t == "ok" }
+test "parse value" { int.parse("42").v == 42 }
+test "parse negative" { int.parse("-17").v == -17 }
+test "parse zero" { int.parse("0").v == 0 }
+test "parse invalid" { int.parse("abc").t == "err" }
+test "parse empty" { int.parse("").t == "err" }
+test "parse float str" { int.parse("3.14").t == "err" }
+
+// abs
+test "abs positive" { int.abs(5) == 5 }
+test "abs negative" { int.abs(-5) == 5 }
+test "abs zero" { int.abs(0) == 0 }
+
+// min / max
+test "min" { int.min(3, 7) == 3 }
+test "min equal" { int.min(5, 5) == 5 }
+test "min neg" { int.min(-3, -7) == -7 }
+test "max" { int.max(3, 7) == 7 }
+test "max equal" { int.max(5, 5) == 5 }
+
+// pow
+test "pow basic" { int.pow(2, 10) == 1024 }
+test "pow zero exp" { int.pow(5, 0) == 1 }
+test "pow one" { int.pow(7, 1) == 7 }
+test "pow zero base" { int.pow(0, 5) == 0 }
+
+// clamp
+test "clamp in range" { int.clamp(5, 0, 10) == 5 }
+test "clamp below" { int.clamp(-5, 0, 10) == 0 }
+test "clamp above" { int.clamp(15, 0, 10) == 10 }
+test "clamp at min" { int.clamp(0, 0, 10) == 0 }
+test "clamp at max" { int.clamp(10, 0, 10) == 10 }
+
+// to_str
+test "to_str" { str.from_int(42) == "42" }
+test "to_str neg" { str.from_int(-5) == "-5" }
+test "to_str zero" { str.from_int(0) == "0" }
+
+
