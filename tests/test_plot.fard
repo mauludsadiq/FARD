@@ -1,0 +1,18 @@
+
+import("../packages/plot/main") as plot
+import("std/str") as str
+
+let data = [10, 25, 15, 30, 20]
+let bar = plot.bar_chart({ data: data, labels: ["a","b","c","d","e"], title: "Bars", width: 400, height: 300 })
+test "bar chart svg" { str.contains(bar, "<svg") }
+test "bar chart has rect" { str.contains(bar, "rect") }
+test "bar chart has title" { str.contains(bar, "Bars") }
+
+let palette = plot.palette_color(0)
+test "palette color" { str.len(palette) > 0 }
+
+let mn = plot.data_min([1, 5, 3])
+test "data min" { mn == 1 }
+
+let mx = plot.data_max([1, 5, 3])
+test "data max" { mx == 5 }

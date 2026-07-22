@@ -1,0 +1,28 @@
+
+import("../packages/parse/main") as p
+import("std/list") as list
+import("std/type") as type
+
+let digit_p = p.digit()
+let r1 = digit_p("123rest")
+test "digit ok" { r1.ok }
+test "digit value" { r1.value == "1" }
+test "digit rest" { r1.rest == "23rest" }
+
+let r2 = digit_p("abc")
+test "digit fail" { r2.ok == false }
+
+let alpha_p = p.alpha()
+let r3 = alpha_p("hello")
+test "alpha ok" { r3.ok }
+test "alpha value" { r3.value == "h" }
+
+let int_p = p.integer()
+let r4 = int_p("42rest")
+test "integer ok" { r4.ok }
+test "integer value" { r4.value == 42 }
+
+let lit_p = p.literal("fn")
+let r5 = lit_p("fn foo")
+test "literal ok" { r5.ok }
+test "literal rest" { r5.rest == " foo" }
