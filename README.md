@@ -4,517 +4,291 @@ FARD is a deterministic, content-addressed scripting language. Every execution p
 
 Traceability is not a feature. It is an invariant of execution.
 
-**Version:** v1.7.0 — [Releases](https://github.com/mauludsadiq/FARD/releases)
+**Version:** v1.7.0
 
-```bash
-curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
-```
+---
 
-Installs `fardrun` to `/usr/local/bin`. Detects macOS arm64/x86_64 and Linux x86_64 automatically. Or build from source:
+## Install
 
-```bash
-git clone https://github.com/mauludsadiq/FARD.git && cd FARD
-cargo build --release --bin fardrun
-```
+    curl -sf https://raw.githubusercontent.com/mauludsadiq/FARD/main/install.sh | sh
 
------
+Installs fardrun to /usr/local/bin. Detects macOS arm64/x86_64 and Linux x86_64 automatically. Or build from source:
 
-## Stage 8 — Pure FARD Evaluation
+    git clone https://github.com/mauludsadiq/FARD.git && cd FARD
+    cargo build --release --bin fardrun
 
-FARD now includes a Stage 8 pure-FARD evaluation path. In `--fard-eval` mode, `fardrun` routes source through the FARD lexer, parser, and evaluator instead of relying only on the Rust evaluator path.
+---
 
-```bash
-cargo build --release --bin fardrun
-PATH="$PWD/target/release:$PATH" tests/run_stage8_equivalence.sh
-```
+## Testing
 
-Expected output:
+268 test suites passing across 277 total.
 
-```text
-stage8 equivalence passed
-```
+    for f in tests/test_*.fard; do fardrun test --program "$f"; done
 
-The equivalence harness runs the generated kitchen-sink programs through both execution paths and diffs `result.json` outputs. Current coverage includes records, strings, lists, `int.parse`, `int.pow`, result propagation with `?`, `result.ok`, `result.err`, `result.andThen`, `result.unwrap_ok`, and record-pattern matching in `match` expressions.
-
-This makes the self-hosting path concrete: lexer -> parser -> evaluator can execute the same language fixtures as the normal runtime for the Stage 8 covered surface.
-
------
-
-## Built with FARD
-
-**Qasim** — cryptographically verifiable financial state engine. Ingests signed fills, instruments, corporate actions, and multi-source price feeds. Computes recency-weighted consensus prices, Greeks, Monte Carlo risk, and unified NAV across public, private, and derivatives books. Every output is traceable:
-
-```
-curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
-curl state_at/ACCT-123/1775710735 -> sha256:6f73405b...
-```
-
-120 files. 4,930 lines. 135 tests. Pure FARD. https://github.com/mauludsadiq/Qasim-in-FARD
-
------
+---
 
 ## Language
 
 ### Values
 
-```fard
-42               // Int   (64-bit signed)
-3.14             // Float (64-bit IEEE 754)
-true             // Bool
-null             // Unit
-"hello"          // Text
-"hello ${name}"  // Interpolated string
-[1, 2, 3]        // List
-{ x: 1, y: 2 }  // Record
-```
+    42               // Int (64-bit signed)
+    3.14             // Float (64-bit IEEE 754)
+    true             // Bool
+    null             // Unit
+    "hello"          // Text
+    "hello ${name}"  // Interpolated string
+    [1, 2, 3]        // List
+    { x: 1, y: 2 }  // Record
 
 ### Functions
 
-```fard
-fn add(a, b) { a + b }
-let double = fn(x) { x * 2 }
-fn make_adder(n) { fn(x) { x + n } }
+    fn add(a, b) { a + b }
+    let double = fn(x) { x * 2 }
+    fn make_adder(n) { fn(x) { x + n } }
 
-// Named arguments
-greet(name: "Alice", greeting: "Hello")
-
-// Lambdas
-list.map(xs, x => x * 2)
-list.fold(xs, 0, fn(acc, x) { acc + x })
-```
+    list.map(xs, fn(x) { x * 2 })
+    list.fold(xs, 0, fn(acc, x) { acc + x })
 
 ### Bindings and Control Flow
 
-```fard
-let x = 42
-let result = let x = 10 in let y = 20 in x + y
+    let x = 42 in x + 1
 
-if x > 0 then "positive" else "non-positive"
+    if x > 0 then "positive" else "non-positive"
 
-match type.of(x) {
-  "int"  => str.from(x),
-  "text" => x,
-  _      => "other"
-}
-```
-
-### Collections
-
-```fard
-// Pipe operator
-list.range(1, 11)
-  |> list.filter(fn(x) { x % 2 == 0 })
-  |> list.map(fn(x) { x * x })
-
-// Record spread and computed keys
-let updated = { ...defaults, color: "red", [dynamic_key]: value }
-
-// Destructuring
-let { name, age } = user
-let [first, ...rest] = items in first
-```
+    match type.of(x) {
+      "int"  => str.from(x),
+      "text" => x,
+      _      => "other"
+    }
 
 ### While — Hash-Chained Iteration
 
-`while` produces a cryptographic certificate of the entire computation. Every state transition is hashed into a chain.
+while produces a cryptographic certificate of the entire computation.
 
-```fard
-let result = while { n: 0, acc: 0 }
-  fn(s) { s.n < 10 }
-  fn(s) { { n: s.n + 1, acc: s.acc + s.n } }
+    let result = while { n: 0, acc: 0 }
+      fn(s) { s.n < 10 }
+      fn(s) { { n: s.n + 1, acc: s.acc + s.n } }
 
-result.value      // { n: 10, acc: 45 }
-result.chain_hex  // sha256 of full computation history
-result.steps      // 10
-```
-
-### Ergonomics
-
-```fard
-// Safe navigation and null-coalescing
-let host = config?.db?.host ?? "localhost"
-
-// Result unwrap with propagation
-let value = int.parse("42")?   // -> 42
-
-// String concatenation
-str.concat(["Hello, ", name, "!"])
-```
+    result.value      // { n: 10, acc: 45 }
+    result.chain_hex  // sha256 of full computation history
+    result.steps      // 10
 
 ### Imports
 
-```fard
-import("std/math")               as math
-import("./mylib")                as mylib
-import("packages/web-core/app")  as app
-```
+    import("std/math")               as math
+    import("./mylib")                as mylib
+    import("packages/web-core/app")  as app
 
------
+---
 
 ## Standard Library
 
 65 modules. All verified against fardrun v1.7.0.
 
-**Data** — `str`, `list`, `rec`, `map`, `set`, `option`, `result`
+**Data** — str, list, rec, map, set, option, result
 
-**Numbers** — `math`, `float`, `int`, `bigint`, `bits`, `linalg`
+**Numbers** — math, float, int, bigint, bits, linalg
 
-**Encoding** — `json`, `csv`, `bytes`, `base64`, `codec`, `re`
+**Encoding** — json, csv, bytes, base64, codec, re
 
-**Crypto** — `hash` (SHA-256), `crypto` (HMAC, AES, Ed25519), `uuid`
+**Crypto** — hash (SHA-256), crypto (HMAC, AES, Ed25519), uuid
 
-**I/O** — `io`, `fs`, `path`, `env`, `process`
+**I/O** — io, fs, path, env, process
 
-**Network** — `net` (TCP), `http`, `ws` (WebSocket)
+**Network** — net (TCP), http, ws (WebSocket)
 
-**Concurrency** — `promise`, `chan`, `mutex`, `cell`
+**Concurrency** — promise, chan, mutex, cell
 
-**Storage** — `sqlite`
+**Storage** — sqlite
 
-**Time** — `datetime`, `time`
+**Time** — datetime, time
 
-**Metaprogramming** — `eval`, `ast`
+**Metaprogramming** — eval, ast
 
-**Observability** — `trace`, `witness`, `artifact`
+**Observability** — trace, witness, artifact
 
-**Interop** — `ffi` (dynamic libraries), `compress`, `wasm`
+**Interop** — ffi (dynamic libraries), compress, wasm
 
-Full reference: `FARD-EBNF.md`
+Full reference: FARD-EBNF.md
 
------
+---
 
-## Application Packages
+## Packages
 
-21 pure-FARD packages covering the full production spine and developer tooling. Import by relative path.
+199 packages covering the full production spine, scientific computing, media, and developer tooling.
 
-| Package | Contents |
-|---|---|
-| `packages/web-core/` | HTTP routing, middleware, request/response, app builder |
-| `packages/auth-core/` | JWT (HS256), password hashing, sessions, RBAC |
-| `packages/orm-core/` | Schema definitions, query builder, SQLite model layer |
-| `packages/test-core/` | Assertions, suite runner, property testing |
-| `packages/error-core/` | Rich errors, HTTP status mapping, result chaining |
-| `packages/cli-core/` | Argument parsing, subcommands, help text |
-| `packages/log-core/` | Structured JSON logging, levels, trace IDs |
-| `packages/config-core/` | Env config loading, validation, typed getters, profiles |
-| `packages/metrics-core/` | Counters, gauges, histograms, Prometheus export |
-| `packages/dataframe-core/` | Columnar data, filter, group, aggregate, sort |
-| `packages/template-core/` | HTML/text templating with escaping and layouts |
-| `packages/queue-core/` | Durable jobs, retry, dead-letter queue |
-| `packages/deploy-core/` | Dockerfile/compose generation, deployment manifests |
-| `packages/cache-core/` | LRU cache, TTL, get_or_set, prefix invalidation |
-| `packages/email-core/` | MIME construction, multipart, attachments, templates |
-| `packages/migration-core/` | SQLite migrations, version table, checksum, rollback |
-| `packages/secret-core/` | Env secret loading, redaction, sealing, safe_dump |
-| `packages/bench-core/` | Deterministic benchmarks, timing envelopes, comparison |
-| `packages/docsite-core/` | Package doc extraction, markdown/HTML generation |
-| `packages/debug-core/` | Snapshots, step traces, diffs, breakpoints, watch |
-| `packages/lsp-core/` | JSON-RPC, diagnostics, completions, hover, capabilities |
+### Web
+
+    packages/fard-web/      HTTP routing, middleware, request/response, OpenAPI spec generation
+    packages/web-core/      Core HTTP primitives
+    packages/web-router/    Path parameter matching, grouped routers
+    packages/http-client/   Sync and async HTTP client
+    packages/http-server/   Sync and async HTTP server
+    packages/websocket/     WebSocket client and server
+
+### Auth and Security
+
+    packages/auth-core/     JWT (HS256), password hashing, sessions, RBAC
+    packages/oauth2/        OAuth2 client flows — auth code, client credentials, token refresh
+    packages/hmac-sign/     HMAC request signing, webhook verification, timestamped signatures
+    packages/crypto-extra/  Random tokens, password hashing, Merkle trees, AES encrypt/decrypt
+    packages/jwt/           JWT encode, verify, expiry checking
+
+### Data
+
+    packages/frame/         Typed columnar DataFrame — filter, group, join, sort, aggregate
+    packages/csv-extra/     CSV parse with headers, filter, select, column, group
+    packages/csv-stream/    Lazy CSV streaming — map, filter, fold, column
+    packages/diff/          Line diff, format, patch, change count
+    packages/xml/           XML element construction, rendering, attribute handling
+    packages/json-schema/   Schema definition and validation
+    packages/toml/          TOML parse and encode
+    packages/yaml/          YAML parse and encode
+
+### Scientific
+
+    packages/tensor/        N-dimensional arrays — zeros, ones, eye, reshape, index
+    packages/tensor-core/   Matrix ops, autograd, neural network layers, SGD
+    packages/stats/         Sum, mean, min, max, variance, std dev, median
+    packages/plot/          SVG chart generation — line, bar, scatter, histogram
+
+### Storage
+
+    packages/sqlite/        SQLite key-value store
+    packages/kv/            JSON-backed persistent key-value store
+    packages/cache/         LRU cache with TTL eviction
+    packages/queue/         Persistent FIFO queue with dequeue and peek
+
+### Messaging
+
+    packages/pubsub/        In-process pub/sub with history and subscriber tracking
+    packages/smtp/          Email composition, RFC 2822 formatting, curl/sendmail send
+
+### Utilities
+
+    packages/semver/        Parse, compare, bump, sort, latest semantic versions
+    packages/glob/          Glob pattern matching, directory filtering
+    packages/regex-extra/   Pure FARD regex — glob, email, IP, URL, JSON validators
+    packages/markdown/      Markdown to HTML — headings, bold, inline code, paragraphs
+    packages/template/      Mustache-style template rendering
+    packages/base64/        Base64 encode/decode including URL-safe variant
+    packages/uuid/          UUID v4 generation, nil, is_nil, short_id, stamped
+    packages/diff/          Line diff, format, patch, change count
+    packages/rate-limiter/  Token bucket rate limiting, per-key limiting
+    packages/stream/        Lazy sequences — map, filter, fold, take, drop, range
+    packages/shell/         Shell command execution, capture, file existence
+    packages/parse/         Parser combinator library — digit, alpha, literal, many, choice
+
+### Developer Tooling
+
+    packages/fard-web/      Full web framework
+    packages/fard-bench/    Deterministic benchmarks
+    packages/fard-check/    Type checker
+    packages/fard-ci/       CI pipeline definitions
+    packages/fard-lint/     Linter
+    packages/fard-test/     Test runner and assertions
+    packages/fard-deploy/   Deployment manifests
+    packages/fard-watch/    File watcher
+    packages/fard-notebook/ Interactive notebook
 
 ### Full-Stack Example
 
-```fard
-import("packages/web-core/app")       as app
-import("packages/web-core/response")  as res
-import("packages/auth-core/jwt")      as jwt
-import("packages/config-core/config") as cfg
+    import("packages/fard-web/main") as app
+    import("packages/auth-core/jwt") as jwt
 
-let config = cfg.from_env(cfg.new({ port: 8080 }), [
-  { key: "port", env_var: "PORT", default: 8080 }
-])
+    let server = app.get(app.new(), "/hello/:name", fn(req) {
+      app.json_ok({ hello: req.params.name })
+    })
 
-let server =
-  app.get(app.new(), "/hello/:name", fn(req) {
-    res.json_ok({ hello: req.params.name })
-  })
+    app.run(server, 8080)
 
-app.run(server, cfg.get_int(config, "port", 8080))
-```
-
-### Application Path
-
-```
-CLI (cli-core) -> config (config-core) -> web routes (web-core)
-  -> auth (auth-core) -> database (orm-core) -> migration (migration-core)
-  -> templates (template-core) -> jobs (queue-core) -> email (email-core)
-  -> cache (cache-core) -> metrics (metrics-core) -> secrets (secret-core) -> deploy (deploy-core)
-```
-
------
-
-## Media Stack
-
-A complete pure-FARD media pipeline. Every encoder, decoder, and transform is written in FARD with no native dependencies. Every export emits a cryptographic receipt.
-
-### Image
-
-```fard
-import("packages/image-core/src/draw")      as draw
-import("packages/image-core/src/export")    as image_export
-import("packages/image-core/src/transform") as transform
-
-let raster  = draw.gradient(256, 256)
-image_export.write_png("out/gradient.png", "gradient", raster)
-let gray = transform.grayscale(transform.resize(raster, 128, 128))
-```
-
-**Encode:** PPM, PNG (pure-FARD CRC-32, Adler-32, zlib, IHDR/IDAT/IEND)
-**Decode:** PPM, PNG (filter types 0, 1, 2)
-**Transform:** `resize`, `crop`, `flip_h`, `flip_v`, `composite`, `brightness`, `grayscale`
-
-### Audio
-
-```fard
-import("packages/audio-core/src/synth")  as synth
-import("packages/audio-core/src/export") as audio_export
-
-let samples = synth.sine(440.0, 2.0, 44100)
-audio_export.write_wav("out/tone.wav", "tone", 44100, 1, samples)
-```
-
-**Encode:** WAV (PCM S16LE)  **Decode:** WAV (PCM S16LE, 8-bit)
-**Transform:** `gain`, `trim`, `mix`, `fade_in`, `fade_out`, `mono_to_stereo`, `stereo_to_mono`
-
-### Video
-
-Native format: `FARDVID1` — deterministic binary container (8-byte magic + u32le header + packed RGB frames). Transcode contracts describe downstream conversion to MP4 or WebM via ffmpeg.
-
-**Modules:** `frame`, `rawvid`, `rawvid_decode`, `timeline`, `mux`, `avbundle`, `mp4_manifest`, `webm_manifest`, `transcode_contract`, `transcode_pipeline`, `gifbridge`
-
-### PDF
-
-Pure-FARD PDF-1.4 generation and annotation. `write_pdf` builds complete documents. `patch_pdf` injects overlay content streams into existing PDFs.
-
------
-
-## Integration Packages
-
-| Package | What it does |
-|---|---|
-| `postgres-core` | PostgreSQL wire protocol v3 — connect, exec, query, row parsing |
-| `ws-core` | WebSocket client — RFC 6455 framing, handshake, send/recv |
-| `xlsx-core` | Excel workbook writer — OOXML with ZIP container |
-| `avro-core` | Apache Avro OCF encoder/decoder with schema inference |
-| `parquet-core` | Apache Parquet writer with Thrift compact metadata |
-| `duckdb-core` | In-memory analytical query engine — filter, project, group, join |
-| `wasm-core` | WASM binary decoder and stack machine interpreter |
-| `watch-core` | Poll-based filesystem watcher |
-
------
+---
 
 ## Self-Hosting
 
-Stage 8 is underway: FARD v0.5 is now connected to FARD Prim. A FARD source program compiles end-to-end to a native MH_EXECUTE binary via fardlex -> fardparse -> fard_lower -> fard_ir_to_ocir -> OCIR -> OMIR -> x86-64 -> binary. Verified: add(10,32)=42.
+FARD now evaluates itself. The menv bootstrap loads eval.fard through the native runtime, producing a self-hosted evaluator that correctly interprets all core language constructs.
 
- 15 stdlib modules in pure FARD, plus `fard_eval.fard` — a 436-line pure FARD evaluator. Run any program through the pure FARD pipeline with `--fard-eval`. Verified: `list.map(nums, factorial) = [1,2,6,24,120]` matches Rust eval exactly.
+Verified:
 
-### Pipeline
+    lit_int, lit_bool, call_builtin int.add    pass
+    var lookup, if_node, match_expr wildcard   pass
+    let binding, call with user fn             pass
+    fib(10) = 55 via self-hosted eval          pass
+    Level-2: eval evaluates eval evaluates     pass
 
-```
-source -> fardlex -> fardparse -> fard_lower -> fard_codegen -> fard_elf -> native ELF
-fard_obj (relocatable objects) + fard_link (linker) -> single monolithic ELF
-```
+### menv Bootstrap
 
-### Roadmap
+The bootstrap seeds a shared mutable environment with stdlib modules, then loads all definitions from eval.fard into it. Because all closures share the same Arc-backed MutEnv, forward references resolve correctly at call time.
 
-| Stage | Description | Status |
-|---|---|---|
-| 0 | Lexer, parser, evaluator, toolchain | complete |
-| 1 | IR + lowering + IR interpreter | complete |
-| 2 | Bytecode + emitter + interpreter | complete |
-| 3 | Seed VM in x86_64 assembly (1068 lines, no libc) | complete |
-| 4 | Self-hosting compiler driver | complete |
-| 5 | Native x86_64 ELF backend | complete |
-| 6 | All pipeline components compile to native ELF | complete |
-| 7 | Native linker — cross-module calls resolved | **complete** — math.add(10,32)=42 via linked ELF |
-| 8 | FARD stdlib + FARD evaluator + native pipeline | **complete** — fard_eval: 231 test suites; native MH_EXECUTE pipeline: add=42, max=42, fact=120, fib=55, xs[0]=10, r.a=42, s[0]=104, adder(10)(32)=42 (closures with captures) |
- add(10,32)=42    arithmetic
- max(10,42)=42    if/else, CmpI64
- fact(5)=120      recursion
- fib(10)=55       double recursion
- xs[0]=10         list indexing (make_list + get_index)
- xs[2]=30         list indexing offset
- r.a=42           record field access (make_rec + get_field)
- r.b=7            record second field
- s[0]=104         string char 'h' from "hello"
- s[4]=111         string char 'o' from "hello"
- adder(10)(32)=42 closure with captured variable x
+### eval_fir
 
-heap: __DATA bump allocator, fard_alloc stub
-closures: MakeClosure + StoreFnPtr (AbsReloc) + CallIndirect
-captures: fard_lower free-variable analysis, __env__ param ABI
-next: fard_eval native, delete Rust eval loop, FPGA phase via source→lex→parse→lower→OCIR→OMIR→x86-64 |
+Direct FIR Val interpreter added to the Rust runtime. Evaluates FARD FIR records without converting to Expr first, eliminating the memory explosion that occurred with deeply nested FIR trees. Closures store __closure_env__ as an Arc reference — no copying.
 
+### value.eq / value.ne
 
-### menv Bootstrap — Self-Hosting Evaluator Verified
+The parser now emits value.eq and value.ne for == and != operators. These use val_eq which handles Int, Float, Bool, Text, List, and Record equality. Previously, == was lowered to int.eq causing failures on non-integer comparisons.
 
-The self-hosted evaluator (packages/fard_eval/eval.fard) now runs correctly inside itself via the menv bootstrap. A shared mutable environment (Val::MutEnv) is seeded with stdlib modules, then all defs from eval.fard are loaded into it. Because all closures share the same Arc-backed map, forward references resolve correctly at call time.
+### Compiler Pipeline
 
-Verified passing:
+    source -> fardlex -> fardparse -> fard_lower -> fard_codegen -> fard_elf -> native ELF
 
-| Test | Result |
-|------|--------|
-| lit_int | 42 |
-| lit_bool | true |
-| call_builtin int.add | 7 |
-| var lookup | 99 |
-| if_node | correct branch |
-| match_expr with wildcard | zero/one/many |
-| let binding | 15 |
-| call with user-defined fn | double(21)=42 |
-| fib(10) via self-hosted eval | 55 |
-| Level-2 self-hosting (eval evaluates eval) | lit_int=42, add=42 |
+Stage 8 is complete. The entire pipeline — lexer, parser, lowerer, code generator, ELF writer, linker — is implemented in pure FARD and compiles to native x86-64 ELF. Verified:
 
-Key fixes to reach this point:
+    add(10, 32) = 42        full pipeline: lex->parse->IR->codegen->ELF
+    fib(10) = 55            native ELF, no VM
+    adder(10)(32) = 42      closures with captures
+    fib(35) = 9227465       seed VM, 29M calls, ~3x speedup over tree walker
 
-- Val::MutEnv: shared mutable environment backed by Arc<Mutex<HashMap>> so closures defined before their dependencies still see them at call time
-- fir_val_to_expr: converts FIR Val::Record nodes to Rust Expr for native evaluation, covering all FIR node types including match_expr, let chains, get_field patterns (bool.not style), and call_builtin arithmetic mapping
-- VM forward-reference fix: functions whose free vars are Val::Unit at compile time fall back to tree-walker instead of producing silent Unit calls
-- Record closure dispatch: Val::Record closures with t=closure are callable at all four Rust dispatch sites (call, eval_tco, vm_dispatch_call, named call)
-- apply_fn_with_eval split: self-binding for MutEnv closures uses menv.set (side effect, returns env) rather than rec.set (returns new record), fixing the env corruption that produced Val::Unit callees
+### Seed VM
 
+A zero-heap frame allocator in x86-64 assembly. All frame scratch memory — locals, vstack, args — allocated from a BSS stack. Heap used only for closures and the const pool. Verified fib(35) = 9227465.
 
-### eval_fir — Direct FIR Evaluator
-
-Added `eval_fir` — a direct FIR Val interpreter in Rust that evaluates FARD FIR records without converting to `Expr` first. This eliminates the memory explosion from `fir_val_to_expr` on deeply nested FIR trees.
-
-Key properties:
-- Handles all FIR node types: lit_int, lit_bool, lit_text, lit_null, var, get_field, index, if_node, let, call, call_builtin, match_expr, lit_list, lit_record, node_fn, def_fn, err
-- Lazy closure env: closures store `__closure_env__` as an Arc reference, not a copy of the full env
-- Var lookup checks local env first, then falls back to `__closure_env__` MutEnv
-- Let bindings are iterative — no extra Rust stack frames per binding
-
-### value.eq / value.ne — Generic Equality
-
-The FARD parser previously lowered `==` and `!=` to `int.eq` / `int.ne`, causing failures when comparing strings, booleans, or other types through the self-hosted evaluator. Fixed:
-
-- `packages/fard_parse/parse.fard` now emits `value.eq` and `value.ne`
-- `eval_fir` handles `value.eq` / `value.ne` via `val_eq` (already used by the native evaluator)
-- `packages/fard_eval/eval.fard` `apply_builtin` handles `value.eq` and `value.ne`
-
-### Self-Hosted Parser Verified
-
-The native `parse.fard` module (loaded via native Rust import) now correctly emits `value.eq`/`value.ne` and is verified to work:
-
-| Test | Result |
-|------|--------|
-| `==` lowered to `value.eq` | ✓ |
-| `!=` lowered to `value.ne` | ✓ |
-| String `==` uses `value.eq` | ✓ |
-
-### Compiler Components
-
-| File | Description |
-|---|---|
-| `apps/fardlex.fard` | Lexer (26 fns, 66KB native ELF) |
-| `apps/fardparse.fard` | Recursive descent parser (43 fns, 148KB native ELF) |
-| `apps/fard_lower.fard` | AST to IR lowering (67 fns, 88KB native ELF) |
-| `apps/fard_codegen.fard` | IR to x86_64 code generator (85 fns, 282KB native ELF) |
-| `apps/fard_elf.fard` | Linux ELF writer (40 fns, 52KB native ELF) |
-| `apps/fard_obj.fard` | Relocatable object format |
-| `apps/fard_link.fard` | Native linker — resolves cross-module calls |
-| `std/list_impl.fard` | 30 list fns (pure FARD, used via relative import) |
-| `std/str_impl.fard` | 14 string fns (pure FARD) |
-| `std/rec_impl.fard` | 16 record fns (pure FARD) |
-| `std/math_impl.fard` | 17 math fns — gcd, lcm, factorial, trig wrappers |
-| `std/type_impl.fard` | 13 type predicates — is_int, is_list, is_truthy etc. |
-| `std/json.fard` | JSON encode/decode + get_path, from_pairs |
-| `std/option.fard` | Option monad — map, and_then, filter, to_result |
-| `std/result.fard` | Result monad — map, and_then, collect, map_err |
-| `std/bytes.fard` | Byte ops — from_hex, to_hex_upper, empty |
-| `std/crypto.fard` | Crypto wrappers + hmac_hex, constant_time_eq |
-| `std/datetime.fard` | Time helpers — seconds/minutes/hours/days, iso, date |
-| `std/hash.fard` | Hash wrappers + short, verify, content_id |
-| `std/uuid.fard` | UUID helpers — nil, is_nil, short |
-| `std/env.fard` | Env helpers — get_or, require, get_int, get_bool |
-| `std/path.fard` | Path helpers — stem, with_ext, parts |
-| `apps/fard_eval.fard` | Pure FARD evaluator — full language coverage: while, try, imports, spread, return, let_pat, named_call, str_interp |
-| `FARD Prim/fard_ir_to_ocir.fard` | Bridge: v0.5 IR -> OCIR for FARD Prim native backend |
-
-### Verified Native Results
-
-| Program | Result | Notes |
-|---|---|---|
-| `1 + 2` | `3` | Full pipeline: lex->parse->IR->codegen->ELF |
-| `fib(10)` | `55` | Native ELF, no VM |
-| `list.fold([1,2,3,4], 0, add)` | `10` | Native ELF, closures |
-| `str.len(str.slice(s, 6, 11))` | `5` | Native stdlib |
-| `list.len(list.build(5, fn(i){i*2}))` | `5` | Native list.build |
-| `math.add(10, 32)` | `42` | **Two linked objects**, no Rust at runtime |
-
------
+---
 
 ## Cryptographic Witnessing
 
 Every run produces a receipt. Receipts chain. Chains verify.
 
-```fard
-import("std/witness") as w
-w.self_digest()   // -> "sha256:e60cb9e82ac28f..."
+    import("std/witness") as w
+    w.self_digest()   // -> "sha256:e60cb9e82ac28f..."
 
-// Bind a prior verified run by digest
-artifact step1 = "sha256:689dede5..."
-step1.output
-```
+    // Bind a prior verified run by digest
+    artifact step1 = "sha256:689dede5..."
+    step1.output
 
-Oracle boundaries — `http`, `datetime.now`, `io.read_stdin`, `uuid.v4`, `ffi.call` — are explicitly recorded in the trace so runs remain auditable even when interacting with the outside world.
+Oracle boundaries — http, datetime.now, io.read_stdin, uuid.v4, ffi.call — are explicitly recorded in the trace so runs remain auditable even when interacting with the outside world.
 
------
+---
 
 ## Toolchain
 
-| Binary | Purpose |
-|---|---|
-| `fardrun` | Runtime: run, test, repl, new, install, search, publish |
-| `fardfmt` | Canonical formatter |
-| `fardcheck` | Type checker |
-| `fardverify` | Trace, chain, and proof verification |
-| `fardregistry` | Receipt registry server |
-| `fardlock` | Lockfile generation and enforcement |
-| `fardbundle` | Bundle build, verify, and run |
-| `fard-build` | Verifiable build system |
-| `fard-lsp` | Language Server Protocol |
-| `fardc` | Compiler frontend |
-| `farddoc` | Documentation generator |
+    fardrun       Runtime: run, test, repl, new, install, search, publish
+    fardfmt       Canonical formatter
+    fardcheck     Type checker
+    fardverify    Trace, chain, and proof verification
+    fardregistry  Receipt registry server
+    fardlock      Lockfile generation and enforcement
+    fardbundle    Bundle build, verify, and run
+    fard-build    Verifiable build system
+    fard-lsp      Language Server Protocol
+    fardc         Compiler frontend
+    farddoc       Documentation generator
 
-```bash
-fardrun run --program main.fard --out ./out   # produces result.json, trace.ndjson, digests.json
-fardverify trace --out ./out
-fardverify prove --out ./out --spec spec.json
-fardrun run --program main.fard --out ./out --fard-eval  # pure FARD eval: fardlex->fardparse->fard_eval
-```
+    fardrun run --program main.fard --out ./out
+    fardverify trace --out ./out
+    fardrun run --program main.fard --out ./out --fard-eval
 
-VS Code: `code --install-extension editors/vscode/fard-language-0.1.0.vsix`
+VS Code: code --install-extension editors/vscode/fard-language-0.1.0.vsix
 
-Syntax highlighting, dot-completion, hover docs, go-to-definition, find-all-references.
-
------
-
-## Package Registry
-
-All 21 packages are imported by relative path — no registry required:
-
------
-
-## Testing
-
-**231 test suites passing** across core language, stdlib, and application packages.
-
-```bash
-for f in tests/test_*.fard; do fardrun test --program "$f"; done
-```
-
------
+---
 
 ## Specifications
 
-| Document | Contents |
-|---|---|
-| `FARD-EBNF.md` | Full grammar and stdlib reference, verified against v1.7.0 |
-| `spec/fard_spec_stack_v0_final.md` | Trust stack specification (frozen) |
-| `SPEC.md` | Stdlib surface spec (generated) |
+    FARD-EBNF.md                         Full grammar and stdlib reference
+    spec/fard_spec_stack_v0_final.md     Trust stack specification (frozen)
+    SPEC.md                              Stdlib surface spec (generated)
 
------
+---
 
 ## License
 
