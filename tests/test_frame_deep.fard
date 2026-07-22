@@ -1,0 +1,68 @@
+
+import("../packages/frame/main") as frame
+import("../packages/stats/main") as stats
+import("std/list") as list
+import("std/type") as type
+
+let rows = [
+  { name: "Alice", age: 30, score: 95.0, dept: "eng" },
+  { name: "Bob",   age: 25, score: 72.0, dept: "mkt" },
+  { name: "Carol", age: 35, score: 88.0, dept: "eng" },
+  { name: "Dave",  age: 28, score: 65.0, dept: "mkt" },
+  { name: "Eve",   age: 32, score: 91.0, dept: "eng" }
+]
+let df = frame.from_rows(rows)
+
+// Basic properties
+test "nrows" { frame.nrows(df) == 5 }
+test "ncols" { frame.ncols(df) == 4 }
+test "has_col name" { frame.has_col(df, "name") }
+test "has_col missing" { frame.has_col(df, "salary") == false }
+test "columns count" { list.len(frame.columns(df)) == 4 }
+
+// col access
+let ages = frame.col(df, "age")
+test "col ages len" { list.len(ages) == 5 }
+test "col ages first" { list.get(ages, 0) == 30 }
+
+let scores = frame.col(df, "score")
+test "col scores len" { list.len(scores) == 5 }
+
+// filter
+let eng = frame.filter(df, fn(r) { r.dept == "eng" })
+test "filter eng count" { frame.nrows(eng) == 3 }
+
+let high_score = frame.filter(df, fn(r) { r.score >= 88.0 })
+test "filter high score" { frame.nrows(high_score) == 3 }
+
+// select
+let name_score = frame.select(df, ["name", "score"])
+test "select ncols" { frame.ncols(name_score) == 2 }
+test "select has name" { frame.has_col(name_score, "name") }
+test "select no age" { frame.has_col(name_score, "age") == false }
+
+// sort_by
+let sorted = frame.sort_by(df, "age")
+let sorted_ages = frame.col(sorted, "age")
+test "sort first" { list.get(sorted_ages, 0) == 25 }
+test "sort last" { list.get(sorted_ages, 4) == 35 }
+
+let sorted_desc = frame.sort_by_desc(df, "score")
+let sorted_scores = frame.col(sorted_desc, "score")
+test "sort_desc first" { list.get(sorted_scores, 0) >= 88.0 }
+
+// head / tail
+let h = frame.head(df, 3)
+test "head count" { frame.nrows(h) == 3 }
+let t = frame.tail(df, 2)
+test "tail count" { frame.nrows(t) == 2 }
+
+// group_by
+let by_dept = frame.group_by(df, "dept")
+test "group_by count" { list.len(by_dept) == 2 }
+
+// stats on frame data
+test "mean age" { stats.mean(ages) == 30 }
+test "min score" { stats.min(scores) == 65.0 }
+test "max score" { stats.max(scores) == 95.0 }
+test "sum scores" { stats.sum(scores) == 411.0 }

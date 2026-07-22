@@ -1,0 +1,66 @@
+
+import("../packages/tensor-core/src/tensor") as tensor
+import("../packages/tensor-core/src/ops") as ops
+import("../packages/tensor-core/src/nn") as nn
+import("../packages/tensor-core/src/autograd") as ag
+import("std/list") as list
+import("std/type") as type
+
+// Tensor creation
+let t1 = tensor.zeros([3, 4])
+test "zeros shape" { t1.shape == [3, 4] }
+test "zeros numel" { tensor.numel(t1) == 12 }
+test "zeros data len" { list.len(t1.data) == 12 }
+test "zeros requires_grad" { t1.requires_grad == false }
+
+let t2 = tensor.ones([2, 3])
+test "ones shape" { t2.shape == [2, 3] }
+test "ones val" { list.get(t2.data, 0) == 1.0 }
+
+// require_grad
+let t3 = tensor.require_grad(tensor.zeros([3]))
+test "require_grad" { t3.requires_grad }
+
+// matmul correctness
+let a = tensor.from_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+let b = tensor.from_list([5.0, 6.0, 7.0, 8.0], [2, 2])
+let c = ops.matmul(a, b)
+test "matmul shape" { c.out.shape == [2, 2] }
+test "matmul [0,0]" { list.get(c.out.data, 0) == 19.0 }
+test "matmul [1,1]" { list.get(c.out.data, 3) == 50.0 }
+
+// relu
+let r = ops.relu(tensor.from_list([-1.0, 0.0, 1.0, 2.0], [4]))
+let rl = r.out
+test "relu shape" { rl.shape == [4] }
+test "relu neg clamped" { list.get(rl.data, 0) == 0.0 }
+test "relu zero" { list.get(rl.data, 1) == 0.0 }
+test "relu pos kept" { list.get(rl.data, 2) == 1.0 }
+
+// add_bias
+let bias = tensor.from_list([0.5, 1.0], [2])
+let vec = tensor.from_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+let biased = ops.add_bias(vec, bias)
+test "add_bias shape" { biased.out.shape == [2, 2] }
+test "add_bias val" { list.get(biased.out.data, 0) == 1.5 }
+test "add_bias val2" { list.get(biased.out.data, 1) == 3.0 }
+
+// linear layer
+let layer = nn.linear(3, 2, 0.1)
+test "linear w shape" { layer.w.shape == [2, 3] }
+test "linear b shape" { layer.b.shape == [2] }
+test "linear w requires_grad" { layer.w.requires_grad }
+test "linear b requires_grad" { layer.b.requires_grad }
+
+// forward pass
+let x = tensor.from_list([1.0, 0.5, -1.0], [1, 3])
+let out = nn.linear_forward(layer, x)
+test "linear forward shape" { out.out.shape == [1, 2] }
+test "linear forward len" { list.len(out.out.data) == 2 }
+
+// sgd step
+let param = tensor.require_grad(tensor.from_list([1.0, 2.0, 3.0], [3]))
+let param_with_grad = { data: param.data, shape: param.shape, grad: [0.1, 0.2, 0.3], requires_grad: true }
+let updated = nn.sgd_step(param_with_grad, 0.1)
+test "sgd updates" { list.get(updated.data, 0) < 1.0 }
+test "sgd shape" { updated.shape == [3] }
