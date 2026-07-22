@@ -1,0 +1,24 @@
+
+import("../packages/stream/main") as stream
+import("std/list") as list
+
+let s = stream.from_list([1, 2, 3, 4, 5])
+test "to_list" { stream.to_list(s) == [1, 2, 3, 4, 5] }
+
+let evens = stream.filter(s, fn(x) { x % 2 == 0 })
+test "filter evens" { stream.to_list(evens) == [2, 4] }
+
+let doubled = stream.map(s, fn(x) { x * 2 })
+test "map double" { stream.to_list(doubled) == [2, 4, 6, 8, 10] }
+
+let total = stream.fold(s, 0, fn(acc, x) { acc + x })
+test "fold sum" { total == 15 }
+
+let taken = stream.take(s, 3)
+test "take 3" { list.len(taken) == 3 }
+
+let dropped = stream.drop(s, 2)
+test "drop 2" { list.len(stream.to_list(dropped)) == 3 }
+
+let range = stream.range_to(1, 6)
+test "range_to" { list.len(stream.to_list(range)) == 5 }

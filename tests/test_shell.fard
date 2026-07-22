@@ -1,0 +1,17 @@
+
+import("../packages/shell/main") as sh
+import("std/str") as str
+
+let result = sh.sh("echo hello")
+test "sh ok" { result.ok }
+test "sh output" { str.contains(result.stdout, "hello") }
+
+let captured = sh.sh_capture("echo world")
+test "capture not empty" { str.len(captured) > 0 }
+test "capture output" { str.contains(captured, "world") }
+
+let exists = sh.exists("/tmp")
+test "exists tmp" { exists }
+
+let missing = sh.exists("/nonexistent_path_xyz")
+test "not exists" { missing == false }
