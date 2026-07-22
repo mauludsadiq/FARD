@@ -1,0 +1,19 @@
+
+import("../packages/async/main") as async
+import("std/list") as list
+import("std/type") as type
+
+let val = async.await(async.spawn(fn() { 42 }))
+test "spawn and await" { val == 42 }
+
+let val2 = async.await(async.spawn(fn() { "hello" }))
+test "await string" { val2 == "hello" }
+
+let promises = [async.spawn(fn() { 1 }), async.spawn(fn() { 2 }), async.spawn(fn() { 3 })]
+let results = async.all(promises)
+test "all type" { type.of(results) == "list" }
+test "all count" { list.len(results) == 3 }
+
+let doubled = async.map_parallel([1, 2, 3, 4], fn(x) { x * 2 })
+test "map_parallel count" { list.len(doubled) == 4 }
+test "map_parallel val" { doubled[0] == 2 }

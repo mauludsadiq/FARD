@@ -1,0 +1,28 @@
+
+import("../packages/fard-web/main") as web
+import("std/str") as str
+import("std/type") as type
+
+let ok_res = web.ok({ message: "hello" })
+test "ok status" { ok_res.status == 200 }
+test "ok body" { str.contains(ok_res.body, "message") }
+
+let created = web.created({ id: 1 })
+test "created status" { created.status == 201 }
+
+let not_found = web.not_found("missing")
+test "not_found status" { not_found.status == 404 }
+
+let bad = web.bad_request("invalid")
+test "bad_request status" { bad.status == 400 }
+
+let routes = [
+  web.get("/hello", fn(req) { web.ok({ msg: "hi" }) }),
+  web.post("/data", fn(req) { web.created({ ok: true }) })
+]
+let handler = web.router(routes)
+test "router type" { type.of(handler) == "func" }
+
+let req = { method: "GET", path: "/hello", body: "", headers: {} }
+let response = handler(req)
+test "route dispatch" { response.status == 200 }
