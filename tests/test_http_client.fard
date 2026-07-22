@@ -1,0 +1,22 @@
+
+import("../packages/http-client/main") as http
+import("std/str") as str
+import("std/type") as type
+
+let req = http.get_request("https://example.com/api")
+test "request type" { type.of(req) == "record" }
+test "request url" { req.url == "https://example.com/api" }
+test "request method" { req.method == "GET" }
+
+let post_req = http.post_request("https://example.com/api", "body data")
+test "post method" { post_req.method == "POST" }
+test "post body" { post_req.body == "body data" }
+
+let with_hdr = http.with_header(req, "Authorization", "Bearer tok")
+test "with_header url" { with_hdr.url == req.url }
+
+let cfg = http.default_config()
+test "default config" { type.of(cfg) == "record" }
+
+let c = http.client("https://api.example.com", { "Content-Type": "application/json" })
+test "client type" { type.of(c) == "record" }

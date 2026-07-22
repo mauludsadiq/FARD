@@ -1,0 +1,20 @@
+
+import("../packages/websocket/main") as ws
+import("std/str") as str
+import("std/type") as type
+
+let msg = ws.text_message("hello world")
+test "text msg type" { type.of(msg) == "record" }
+test "text msg data" { str.contains(msg.data, "hello") }
+
+let json_msg = ws.json_message({ key: "value" })
+test "json msg" { type.of(json_msg) == "record" }
+
+let close = ws.close_message()
+test "close msg" { type.of(close) == "record" }
+
+let ping = ws.ping_frame("")
+test "ping frame" { type.of(ping) == "record" }
+
+let key = ws.accept_key("dGhlIHNhbXBsZSBub25jZQ==")
+test "accept key" { str.len(key) > 0 }
