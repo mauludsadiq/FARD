@@ -1,6 +1,17 @@
-import("../std/env_impl") as E
 
-test "get_or default" { E.get_or("NONEXISTENT_VAR_XYZ", "default") == "default" }
-test "get_int default" { E.get_int("NONEXISTENT_INT_XYZ", 42) == 42 }
-test "get_bool default" { E.get_bool("NONEXISTENT_BOOL_XYZ", true) == true }
-test "require missing" { !E.require("NONEXISTENT_VAR_XYZ").ok }
+import("std/env") as env
+import("std/type") as type
+import("std/rec") as rec
+
+let path = env.get("PATH")
+test "PATH exists" { rec.has(path, "some") }
+test "PATH not empty" { path.some != "" }
+
+let missing = env.get("FARD_TEST_NONEXISTENT_XYZ_12345")
+test "missing is none" { rec.has(missing, "none") }
+
+let home = env.get("HOME")
+test "HOME type" { type.of(home) == "record" }
+
+let args = env.args()
+test "args type" { type.of(args) == "list" }

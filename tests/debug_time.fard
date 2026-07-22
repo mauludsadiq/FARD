@@ -1,0 +1,10 @@
+
+import("std/time") as time
+import("std/type") as type
+import("std/record") as rec
+
+let t = time.now()
+test "now type" { type.of(t) }
+test "now keys" { rec.keys(t) }
+test "parse type" { type.of(time.parse("2024-01-15T10:30:00Z")) }
+test "parse keys" { rec.keys(time.parse("2024-01-15T10:30:00Z")) }

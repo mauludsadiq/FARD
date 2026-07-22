@@ -1,0 +1,23 @@
+
+import("std/time") as time
+import("std/type") as type
+import("std/str") as str
+
+let ts = time.now()
+test "now type" { type.of(ts) == "int" }
+test "now positive" { ts > 0 }
+test "now reasonable" { ts > 1700000000 }
+
+let ts2 = time.now()
+test "now monotonic" { ts2 >= ts }
+
+let parsed = time.parse("2024-01-15T10:30:00Z")
+test "parse type" { type.of(parsed) == "int" }
+test "parse positive" { parsed > 0 }
+test "parse value" { parsed > 1700000000 }
+
+let formatted = time.format(ts)
+test "format type" { type.of(formatted) == "text" }
+test "format not empty" { str.len(formatted) > 0 }
+
+

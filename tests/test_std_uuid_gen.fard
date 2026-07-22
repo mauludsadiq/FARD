@@ -1,0 +1,18 @@
+import("std/list") as list
+
+import("std/uuid") as uuid
+import("std/str") as str
+import("std/type") as type
+
+let id1 = uuid.v4()
+let id2 = uuid.v4()
+test "v4 type" { type.of(id1) == "text" }
+test "v4 length" { str.len(id1) == 36 }
+test "v4 unique" { id1 != id2 }
+test "v4 has dashes" { str.contains(id1, "-") }
+test "v4 dashes count" { list.len(str.split(id1, "-")) == 5 }
+
+test "is_valid v4" { uuid.validate(id1) }
+test "is_valid invalid" { uuid.validate("not-a-uuid") == false }
+test "eq same" { id1 == id1 }
+test "eq diff" { id1 != id2 }

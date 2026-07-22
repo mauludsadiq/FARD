@@ -1,9 +1,26 @@
-import("../std/bytes_impl") as B
+
+import("std/bytes") as bytes
+import("std/type") as type
 import("std/str") as str
 
-test "of_str len"    { B.len(B.of_str("hello")) == 5 }
-test "to_hex"        { str.starts_with(B.to_hex(B.of_str("A")), "41") }
-test "is_empty"      { B.is_empty(B.empty()) }
-test "not empty"     { !B.is_empty(B.of_str("x")) }
-test "from_hex"      { B.len(B.from_hex("4142")) == 2 }
-test "roundtrip"     { B.to_hex(B.from_hex("deadbeef")) == "deadbeef" }
+let b = bytes.from_string("hello")
+test "from_string type" { type.of(b) == "bytes" }
+test "len basic" { bytes.len(b) == 5 }
+test "len empty" { bytes.len(bytes.from_string("")) == 0 }
+
+let b1 = bytes.from_string("hello")
+let b2 = bytes.from_string(" world")
+let b3 = bytes.concat(b1, b2)
+test "concat len" { bytes.len(b3) == 11 }
+
+let b4 = bytes.from_string("AB")
+let hex = bytes.to_hex(b4)
+test "hex type" { type.of(hex) == "text" }
+test "hex len" { str.len(hex) == 4 }
+
+let back = bytes.from_hex(hex)
+test "hex roundtrip len" { bytes.len(back) == 2 }
+
+let b64 = bytes.from_base64("aGVsbG8")
+test "base64 type" { type.of(b64) == "bytes" }
+test "base64 len" { bytes.len(b64) == 5 }
