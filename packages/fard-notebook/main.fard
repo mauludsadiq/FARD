@@ -88,17 +88,16 @@ fn render_cell_html(cell) {
   else
     let output_html = if cell.output != null then
       str.concat("<div class=\"output\">", str.concat(json.encode(cell.output), "</div>"))
-    else ""
+    else "" in
     str.concat(
       str.concat("<div class=\"code-cell\"><pre><code>", str.concat(cell.source, "</code></pre>")),
       str.concat(output_html, "</div>"))
 }
 
 fn to_html(nb) {
-  let cells_html = str.join(list.map(nb.cells, fn(c) { render_cell_html(c) }), "\n")
-  str.concat(str.concat(str.concat(str.concat(
-    "<!DOCTYPE html><html><head><title>", nb.title),
-    "</title></head><body><h1>"),
+  let cells_html = str.join(list.map(nb.cells, fn(c) { render_cell_html(c) }), "\n") in
+  str.concat(
+    str.concat("<!DOCTYPE html><html><head><title>", str.concat(nb.title, "</title></head><body><h1>")),
     str.concat(nb.title, str.concat("</h1>\n", str.concat(cells_html, "\n</body></html>"))))
 }
 

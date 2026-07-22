@@ -24,8 +24,8 @@ fn pad_center(s, width, char) {
   let n = width - str.len(s)
   if n <= 0 then s
   else
-    let left  = n / 2
-    let right = n - left
+    let left  = n / 2 in
+    let right = n - left in
     str.concat(str.concat(str.repeat(char, left), s), str.repeat(char, right))
 }
 

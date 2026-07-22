@@ -1,0 +1,23 @@
+
+import("../packages/http-server/main") as srv
+import("std/str") as str
+import("std/type") as type
+
+let r = srv.ok("hello world")
+test "ok status" { r.status == 200 }
+test "ok body" { r.body == "hello world" }
+
+let rj = srv.ok_json({ message: "hi" })
+test "ok_json status" { rj.status == 200 }
+test "ok_json body" { str.contains(rj.body, "message") }
+
+let created = srv.created({ id: 1 })
+test "created status" { created.status == 201 }
+
+let bad = srv.bad_request("invalid input")
+test "bad_request status" { bad.status == 400 }
+
+let not_found = srv.not_found("missing")
+test "not_found status" { not_found.status == 404 }
+
+

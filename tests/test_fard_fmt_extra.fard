@@ -1,0 +1,10 @@
+
+import("../packages/fard-fmt-extra/main") as fmt
+import("std/str") as str
+
+test "pad_left" { fmt.pad_left("hi", 5, " ") == "   hi" }
+test "pad_right" { fmt.pad_right("hi", 5, " ") == "hi   " }
+test "pad_center" { str.len(fmt.pad_center("hi", 6, " ")) == 6 }
+test "fmt_int" { fmt.fmt_int(42, 6) == "    42" }
+test "fmt_float" { str.contains(fmt.fmt_float(3.14159, 2), "3.14") }
+test "fmt_int zero" { fmt.fmt_int(0, 4) == "   0" }

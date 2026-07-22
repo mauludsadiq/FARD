@@ -1,0 +1,19 @@
+
+import("../packages/fard-notebook/main") as nb
+import("std/list") as list
+import("std/type") as type
+
+let n = nb.new("My Notebook")
+test "new title" { n.title == "My Notebook" }
+test "new cells empty" { list.len(n.cells) == 0 }
+
+let n2 = nb.add_md(n, "# Hello World")
+test "add_md cells" { list.len(n2.cells) == 1 }
+test "md cell type" { n2.cells[0].kind == "markdown" }
+
+let n3 = nb.add_code(n2, "1 + 1")
+test "add_code cells" { list.len(n3.cells) == 2 }
+test "code cell type" { n3.cells[1].kind == "code" }
+
+let exported = nb.to_json(n3)
+test "to_json type" { type.of(exported) == "text" }
