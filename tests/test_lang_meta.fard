@@ -1,0 +1,69 @@
+import("std/list") as list
+import("std/record") as rec_mod
+import("std/type") as type_mod
+
+import("../packages/fard_eval/eval") as ev
+import("../packages/fard_parse/parse") as parse
+import("std/type") as type
+import("std/menv") as menv
+import("std/rec") as rec
+import("std/str") as str
+import("std/io") as io
+
+// Parse FARD source to FIR
+let src = "fn double(x) { x + x }"
+let defs = parse.parse_program(src)
+test "parse returns list" { type.of(defs) == "list" }
+test "parse one def" { list.len(defs) == 1 }
+test "parse def t" { defs[0].t == "def_fn" }
+test "parse def name" { defs[0].name == "double" }
+test "parse def params" { defs[0].params == ["x"] }
+test "parse body t" { defs[0].body.t == "call_builtin" }
+
+// Eval FIR to value
+let env = ev.env_empty()
+let closure = ev.eval(defs[0], env)
+test "eval to closure" { closure.t == "closure" }
+test "closure name" { closure.name == "double" }
+test "closure params" { closure.params == ["x"] }
+
+// Apply closure
+let result = ev.apply_fn(closure, [21])
+test "apply closure" { result == 42 }
+
+// FIR node construction
+let lit_node = { t: "lit_int", v: 99 }
+let lit_result = ev.eval(lit_node, env)
+test "eval lit_int" { lit_result == 99 }
+
+let add_node = { t: "call_builtin", name: "int.add", args: [{ t: "lit_int", v: 10 }, { t: "lit_int", v: 32 }] }
+let add_result = ev.eval(add_node, env)
+test "eval call_builtin" { add_result == 42 }
+
+// Level-1 self-hosting
+let eval_src = io.read_file("packages/fard_eval/eval.fard").ok
+let eval_defs = parse.parse_program(eval_src)
+let e = menv.new()
+menv.set(e, "list", list)
+menv.set(e, "rec", rec_mod)
+menv.set(e, "type", type_mod)
+menv.set(e, "menv", menv)
+menv.set(e, "str", str)
+let dummy = list.fold(eval_defs, null, fn(acc, d) {
+  if d.t == "def_fn" then menv.set(e, d.name, ev.eval(d, e)) else null
+})
+let self_eval = menv.get(e, "eval")
+test "self_eval loaded" { self_eval != null }
+test "self_eval is closure" { self_eval.t == "closure" }
+
+let sh_result = ev.apply_fn(self_eval, [{ t: "lit_int", v: 55 }, e])
+test "self_eval lit_int" { sh_result == 55 }
+
+let fib_src = "fn fib(n) { if n <= 1 then n else fib(n-1) + fib(n-2) }"
+let fib_defs = parse.parse_program(fib_src)
+let user_env = menv.new()
+let fib_cl = ev.apply_fn(self_eval, [fib_defs[0], user_env])
+menv.set(user_env, "fib", fib_cl)
+let fib_call = { t: "call", fn: { t: "var", name: "fib" }, args: [{ t: "lit_int", v: 10 }] }
+let fib_result = ev.apply_fn(self_eval, [fib_call, user_env])
+test "self_eval fib(10)" { fib_result == 55 }

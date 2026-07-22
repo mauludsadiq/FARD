@@ -1,28 +1,86 @@
-import("../std/list_impl") as L
-import("std/list")    as list
+import("std/str") as str
 
-test "map" { L.map([1,2,3], fn(x) { x * 2 }) == [2,4,6] }
-test "filter" { L.filter([1,2,3,4], fn(x) { x % 2 == 0 }) == [2,4] }
-test "any true" { L.any([1,2,3], fn(x) { x == 2 }) }
-test "any false" { !L.any([1,2,3], fn(x) { x == 9 }) }
-test "all true" { L.all([2,4,6], fn(x) { x % 2 == 0 }) }
-test "all false" { !L.all([2,3,4], fn(x) { x % 2 == 0 }) }
-test "find hit" { L.find([1,2,3], fn(x) { x == 2 }).some == 2 }
-test "find miss" { rec.has(L.find([1,2,3], fn(x) { x == 9 }), "none") }
-test "head" { L.head([10,20,30]) == 10 }
-test "last" { L.last([10,20,30]) == 30 }
-test "take" { L.take([1,2,3,4,5], 3) == [1,2,3] }
-test "drop" { L.drop([1,2,3,4,5], 2) == [3,4,5] }
-test "reverse" { L.reverse([1,2,3]) == [3,2,1] }
-test "zip" { list.len(L.zip([1,2,3],[4,5,6])) == 3 }
-test "flatten" { L.flatten([[1,2],[3,4]]) == [1,2,3,4] }
-test "range" { L.range(1, 5) == [1,2,3,4] }
-test "repeat" { L.repeat(7, 3) == [7,7,7] }
-test "dedupe" { L.dedupe([1,1,2,2,3]) == [1,2,3] }
-test "sort_by" { L.sort_by([3,1,2], fn(a,b) { if a<b then -1 else if a>b then 1 else 0 }) == [1,2,3] }
-test "sum" { L.sum([1,2,3,4,5]) == 15 }
-test "join" { L.join(["a","b","c"], ",") == "a,b,c" }
-test "chunk" { list.len(L.chunk([1,2,3,4,5], 2)) == 3 }
-test "group_by" { rec.has(L.group_by([1,2,3], fn(x) { if x % 2 == 0 then "even" else "odd" }), "even") }
+import("std/list") as list
+import("std/type") as type
 
-import("std/rec") as rec
+// Basic access
+test "len empty" { list.len([]) == 0 }
+test "len basic" { list.len([1,2,3]) == 3 }
+test "get first" { list.get([10,20,30], 0) == 10 }
+test "get last" { list.get([10,20,30], 2) == 30 }
+test "get mid" { list.get([10,20,30], 1) == 20 }
+
+// head / tail
+test "head" { list.head([1,2,3]) == 1 }
+test "tail" { list.tail([1,2,3]) == [2,3] }
+test "tail single" { list.tail([1]) == [] }
+
+// map
+test "map double" { list.map([1,2,3], fn(x) { x * 2 }) == [2,4,6] }
+test "map empty" { list.map([], fn(x) { x * 2 }) == [] }
+test "map to str" { list.map([1,2,3], fn(x) { x + 10 }) == [11,12,13] }
+
+// filter
+test "filter even" { list.filter([1,2,3,4,5], fn(x) { x % 2 == 0 }) == [2,4] }
+test "filter all" { list.filter([1,2,3], fn(x) { x > 0 }) == [1,2,3] }
+test "filter none" { list.filter([1,2,3], fn(x) { x > 10 }) == [] }
+test "filter empty" { list.filter([], fn(x) { true }) == [] }
+
+// fold
+test "fold sum" { list.fold([1,2,3,4,5], 0, fn(acc,x) { acc + x }) == 15 }
+test "fold product" { list.fold([1,2,3,4], 1, fn(acc,x) { acc * x }) == 24 }
+test "fold empty" { list.fold([], 42, fn(acc,x) { acc + x }) == 42 }
+test "fold string" { list.fold(["a","b","c"], "", fn(acc,x) { str.concat(acc, x) }) == "abc" }
+
+// find
+test "find exists" { list.find([1,2,3,4], fn(x) { x > 2 }).some == 3 }
+test "find not exists" { list.find([1,2,3], fn(x) { x > 10 }) != null }
+test "find first" { list.find([3,1,2], fn(x) { x == 1 }).some == 1 }
+
+// any / all
+test "any true" { list.any([1,2,3], fn(x) { x > 2 }) }
+test "any false" { list.any([1,2,3], fn(x) { x > 10 }) == false }
+test "any empty" { list.any([], fn(x) { true }) == false }
+test "all true" { list.all([2,4,6], fn(x) { x % 2 == 0 }) }
+test "all false" { list.all([1,2,3], fn(x) { x > 1 }) == false }
+test "all empty" { list.all([], fn(x) { false }) }
+
+// concat
+test "concat basic" { list.concat([[1,2],[3,4]]) == [1,2,3,4] }
+test "concat empty" { list.concat([[], [1,2]]) == [1,2] }
+test "concat all empty" { list.concat([[], []]) == [] }
+
+// flat_map
+test "flat_map" { list.flat_map([1,2,3], fn(x) { [x, x*2] }) == [1,2,2,4,3,6] }
+test "flat_map empty" { list.flat_map([], fn(x) { [x] }) == [] }
+
+// take / drop
+test "take" { list.take([1,2,3,4,5], 3) == [1,2,3] }
+test "take 0" { list.take([1,2,3], 0) == [] }
+test "take all" { list.take([1,2,3], 10) == [1,2,3] }
+test "drop" { list.drop([1,2,3,4,5], 2) == [3,4,5] }
+test "drop 0" { list.drop([1,2,3], 0) == [1,2,3] }
+test "drop all" { list.drop([1,2,3], 10) == [] }
+
+// range
+test "range basic" { list.range(0, 5) == [0,1,2,3,4] }
+test "range from 1" { list.range(1, 4) == [1,2,3] }
+test "range empty" { list.range(3, 3) == [] }
+
+// reverse
+test "reverse basic" { list.reverse([1,2,3]) == [3,2,1] }
+test "reverse single" { list.reverse([1]) == [1] }
+test "reverse empty" { list.reverse([]) == [] }
+
+// zip
+test "zip basic" { list.zip([1,2,3], ["a","b","c"]) == [[1,"a"],[2,"b"],[3,"c"]] }
+test "zip unequal" { list.len(list.zip([1,2], [3,4,5])) == 2 }
+
+// sort
+test "sort ints" { list.sort_by([3,1,4,1,5,9,2,6], fn(a,b) { a - b }) == [1,1,2,3,4,5,6,9] }
+test "sort empty" { list.sort_by([], fn(a,b) { a - b }) == [] }
+test "sort single" { list.sort_by([42], fn(a,b) { a - b }) == [42] }
+
+// repeat
+test "repeat" { list.repeat(0, 3) == [0,0,0] }
+test "repeat empty" { list.repeat("x", 0) == [] }

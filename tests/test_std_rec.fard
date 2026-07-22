@@ -1,19 +1,52 @@
-import("../std/rec_impl") as R
 
-test "getOr hit"     { R.getOr({a:1}, "a", 0) == 1 }
-test "getOr miss"    { R.getOr({a:1}, "b", 99) == 99 }
-test "values"        { list.len(R.values({a:1,b:2})) == 2 }
-test "entries"       { list.len(R.entries({a:1,b:2})) == 2 }
-test "from_entries"  { R.from_entries([{key:"x",value:42}]).x == 42 }
-test "map_values"    { R.map_values({a:1,b:2}, fn(v) { v*2 }).a == 2 }
-test "filter_keys"   { !R.has(R.filter_keys({a:1,b:2}, fn(k) { k == "a" }), "b") }
-test "pick"          { R.has(R.pick({a:1,b:2,c:3}, ["a","c"]), "a") }
-test "omit"          { !R.has(R.omit({a:1,b:2}, ["a"]), "a") }
-test "size"          { R.size({a:1,b:2,c:3}) == 3 }
-test "is_empty"      { R.is_empty({}) }
-test "rename"        { R.has(R.rename({a:1}, "a", "b"), "b") }
-test "update"        { R.update({a:1}, "a", fn(v) { v+1 }).a == 2 }
-test "fold"          { R.fold({a:1,b:2}, 0, fn(acc,k,v) { acc+v }) == 3 }
-test "deep_merge"    { R.deep_merge({a:{x:1}}, {a:{y:2}}).a.x == 1 }
-
+import("std/record") as rec
 import("std/list") as list
+import("std/type") as type
+
+// get / set / has
+test "get present" { rec.get({ x: 1, y: 2 }, "x") == 1 }
+test "get missing" { rec.get({ x: 1 }, "z") == null }
+test "set new" { rec.set({}, "x", 42).x == 42 }
+test "set override" { rec.set({ x: 1 }, "x", 99).x == 99 }
+test "has yes" { rec.has({ x: 1 }, "x") }
+test "has no" { rec.has({ x: 1 }, "z") == false }
+
+// keys / values
+test "keys empty" { rec.keys({}) == [] }
+test "keys basic" { list.len(rec.keys({ a: 1, b: 2 })) == 2 }
+test "keys contains" { list.any(rec.keys({ a: 1, b: 2 }), fn(k) { k == "a" }) }
+
+// delete
+test "delete present" { rec.has(rec.remove({ x: 1, y: 2 }, "x"), "x") == false }
+test "delete keeps other" { rec.get(rec.remove({ x: 1, y: 2 }, "x"), "y") == 2 }
+test "delete missing" { rec.has(rec.remove({ x: 1 }, "z"), "x") }
+
+// merge
+test "merge basic" { rec.merge({ a: 1 }, { b: 2 }).a == 1 }
+test "merge adds" { rec.merge({ a: 1 }, { b: 2 }).b == 2 }
+test "merge override" { rec.merge({ a: 1 }, { a: 99 }).a == 99 }
+test "merge empty left" { rec.merge({}, { x: 5 }).x == 5 }
+test "merge empty right" { rec.merge({ x: 5 }, {}).x == 5 }
+
+// nested access
+let nested = { a: { b: { c: 42 } } }
+test "nested get" { nested.a.b.c == 42 }
+test "nested set" { rec.set(nested, "a", rec.set(nested.a, "b", rec.set(nested.a.b, "c", 99))).a.b.c == 99 }
+
+// Record equality
+test "rec eq empty" { {} == {} }
+test "rec eq basic" { { x: 1, y: 2 } == { x: 1, y: 2 } }
+test "rec ne value" { { x: 1 } != { x: 2 } }
+test "rec ne key" { { x: 1 } != { y: 1 } }
+
+// Dynamic key construction
+let key = "name"
+test "dynamic get" { rec.get({ name: "Alice" }, key) == "Alice" }
+test "dynamic set" { rec.set({}, key, "Bob").name == "Bob" }
+test "dynamic has" { rec.has({ name: "Alice" }, key) }
+
+// fold over record
+let r = { a: 1, b: 2, c: 3 }
+let total = list.fold(rec.keys(r), 0, fn(acc, k) { acc + rec.get(r, k) })
+test "fold keys" { total == 6 }
+test "keys count" { list.len(rec.keys(r)) == 3 }

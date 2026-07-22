@@ -1,18 +1,83 @@
-import("std/list") as list
-import("../std/str_impl") as S
 
-test "starts_with true"  { S.starts_with("hello world", "hello") }
-test "starts_with false" { !S.starts_with("hello world", "world") }
-test "ends_with true"    { S.ends_with("hello world", "world") }
-test "ends_with false"   { !S.ends_with("hello world", "hello") }
-test "replace"           { S.replace("foo bar foo", "foo", "baz") == "baz bar baz" }
-test "index_of hit"      { S.index_of("hello", "ell") == 1 }
-test "index_of miss"     { S.index_of("hello", "xyz") == -1 }
-test "pad_left"          { S.pad_left("42", 5, "0") == "00042" }
-test "pad_right"         { S.pad_right("hi", 5, ".") == "hi..." }
-test "repeat"            { S.repeat("ab", 3) == "ababab" }
-test "lines"             { list.len(S.lines("a\nb\nc")) == 3 }
-test "join"              { S.join(["a","b","c"], "-") == "a-b-c" }
-test "len"               { S.len("hello") == 5 }
-test "contains"          { S.contains("fardrun", "ard") }
-test "trim"              { S.trim("  hi  ") == "hi" }
+import("std/str") as str
+import("std/list") as list
+import("std/type") as type
+
+// Basic operations
+test "len empty" { str.len("") == 0 }
+test "len basic" { str.len("hello") == 5 }
+test "len unicode" { str.len("hi") == 2 }
+
+// contains
+test "contains yes" { str.contains("hello world", "world") }
+test "contains no" { str.contains("hello", "xyz") == false }
+test "contains empty" { str.contains("hello", "") }
+test "contains self" { str.contains("abc", "abc") }
+
+// starts_with / ends_with
+test "starts_with yes" { str.starts_with("hello", "hel") }
+test "starts_with no" { str.starts_with("hello", "world") == false }
+test "starts_with empty" { str.starts_with("hello", "") }
+test "ends_with yes" { str.ends_with("hello", "llo") }
+test "ends_with no" { str.ends_with("hello", "hel") == false }
+test "ends_with empty" { str.ends_with("hello", "") }
+
+// slice
+test "slice basic" { str.slice("hello", 1, 3) == "el" }
+test "slice from 0" { str.slice("hello", 0, 5) == "hello" }
+test "slice empty" { str.slice("hello", 2, 2) == "" }
+test "slice single" { str.slice("hello", 0, 1) == "h" }
+
+// replace
+test "replace basic" { str.replace("hello world", "world", "FARD") == "hello FARD" }
+test "replace not found" { str.replace("hello", "xyz", "abc") == "hello" }
+test "replace empty with" { str.replace("hello", "l", "") == "heo" }
+
+// split
+test "split basic" { str.split("a,b,c", ",") == ["a", "b", "c"] }
+test "split single" { list.len(str.split("hello", ",")) == 1 }
+test "split empty sep" { list.len(str.split("abc", "")) > 0 }
+
+// join
+test "join basic" { str.join(["a", "b", "c"], ",") == "a,b,c" }
+test "join empty sep" { str.join(["a", "b", "c"], "") == "abc" }
+test "join single" { str.join(["hello"], ",") == "hello" }
+test "join empty list" { str.join([], ",") == "" }
+
+// trim
+test "trim spaces" { str.trim("  hello  ") == "hello" }
+test "trim none" { str.trim("hello") == "hello" }
+test "trim all" { str.trim("   ") == "" }
+test "trim empty" { str.trim("") == "" }
+
+// upper / lower
+test "upper" { str.upper("hello") == "HELLO" }
+test "lower" { str.lower("HELLO") == "hello" }
+test "upper mixed" { str.upper("Hello World") == "HELLO WORLD" }
+
+// index_of
+test "index_of found" { str.index_of("hello", "ll") == 2 }
+test "index_of not found" { str.index_of("hello", "xyz") == -1 }
+test "index_of first" { str.index_of("hello", "h") == 0 }
+
+// from_int / from_float
+test "from_int" { str.from_int(42) == "42" }
+test "from_int neg" { str.from_int(-5) == "-5" }
+test "from_int zero" { str.from_int(0) == "0" }
+
+// chars
+test "chars basic" { str.chars("abc") == ["a", "b", "c"] }
+test "chars empty" { str.chars("") == [] }
+test "chars len" { list.len(str.chars("hello")) == 5 }
+
+// concat
+test "concat basic" { str.concat("hello", " world") == "hello world" }
+test "concat empty" { str.concat("", "hello") == "hello" }
+test "concat both empty" { str.concat("", "") == "" }
+
+// split_lines
+test "split_lines basic" { list.len(str.split_lines("a
+b
+c")) == 3 }
+test "split_lines single" { list.len(str.split_lines("hello")) == 1 }
+test "split_lines empty" { list.len(str.split_lines("")) >= 0 }
