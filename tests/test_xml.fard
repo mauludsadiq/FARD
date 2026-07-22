@@ -1,0 +1,17 @@
+
+import("../packages/xml/main") as xml
+import("std/str") as str
+
+let doc = xml.elem("root", [
+  xml.elem_attrs("child", { id: "1" }, []),
+  xml.text_node("greeting", "Hello World")
+])
+let rendered = xml.render(doc)
+test "render root" { str.contains(rendered, "<root>") }
+test "render child" { str.contains(rendered, "<child") }
+test "render attr" { str.contains(rendered, "id=") }
+test "render text" { str.contains(rendered, "Hello World") }
+
+let escaped = xml.escape("<div class=\"test\">")
+test "escape lt" { str.contains(escaped, "&lt;") }
+test "escape gt" { str.contains(escaped, "&gt;") }

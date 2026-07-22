@@ -1,0 +1,20 @@
+
+import("../packages/json-schema/main") as schema
+import("std/list") as list
+
+let s = schema.schema(["name", "age"], {
+  name: schema.field("string", true),
+  age: schema.field("integer", true)
+})
+test "schema has fields" { list.len(s.field_names) == 2 }
+
+let r1 = schema.validate({ name: "Alice", age: 30 }, s)
+test "valid record" { r1.ok }
+
+let r2 = schema.validate({ name: "Bob" }, s)
+test "missing age fails" { r2.ok == false }
+test "missing age error" { list.len(r2.errors) > 0 }
+
+let f = schema.field("string", true)
+test "field type" { f.type == "string" }
+test "field required" { f.required }

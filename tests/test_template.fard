@@ -1,0 +1,12 @@
+
+import("../packages/template/main") as tmpl
+import("std/str") as str
+import("std/list") as list
+
+let rendered = tmpl.render("Hello, {{name}}! You are {{age}} years old.", { name: "Alice", age: 30 })
+test "render name" { str.contains(rendered, "Alice") }
+test "render age" { str.contains(rendered, "30") }
+test "render static" { str.contains(rendered, "Hello,") }
+
+let r2 = tmpl.render("{{a}} + {{b}}", { a: "one", b: "two" })
+test "render multi vars" { str.contains(r2, "one") }
