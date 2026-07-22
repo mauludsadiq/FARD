@@ -1,0 +1,25 @@
+
+import("../packages/http-middleware/main") as mw
+import("std/str") as str
+import("std/type") as type
+
+let req = { method: "GET", path: "/api/data", headers: {}, body: "" }
+
+let logger = mw.logger()
+test "logger type" { type.of(logger) == "func" }
+
+let cors = mw.cors(["https://example.com"])
+test "cors type" { type.of(cors) == "func" }
+
+let handler = fn(r) { { status: 200, body: "ok", headers: {} } }
+let with_cors = mw.wrap(handler, [cors])
+test "wrap type" { type.of(with_cors) == "func" }
+
+let res = with_cors(req)
+test "cors response" { res.status == 200 }
+
+let rate = mw.rate_limit(100, 60)
+test "rate_limit type" { type.of(rate) == "func" }
+
+let auth = mw.bearer_auth(fn(tok) { tok == "valid" })
+test "bearer_auth type" { type.of(auth) == "func" }

@@ -1,0 +1,21 @@
+
+import("../packages/fard-test/main") as ft
+import("std/type") as type
+
+let p = ft.pass("addition")
+test "pass type" { type.of(p) == "record" }
+test "pass ok" { p.ok }
+test "pass label" { p.label == "addition" }
+
+let f = ft.fail("subtraction", "expected 2 got 3")
+test "fail ok" { f.ok == false }
+test "fail error" { f.error == "expected 2 got 3" }
+
+let eq = ft.assert_eq("test eq", 42, 42)
+test "assert_eq pass" { eq.ok }
+
+let ne_fail = ft.assert_eq("test ne", 1, 2)
+test "assert_eq fail" { ne_fail.ok == false }
+
+let assert_ne = ft.assert_ne("ne", 1, 2)
+test "assert_ne pass" { assert_ne.ok }
