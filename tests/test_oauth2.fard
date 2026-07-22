@@ -1,0 +1,21 @@
+
+import("../packages/oauth2/main") as oa
+import("std/str") as str
+import("std/type") as type
+
+let c = oa.client_full(
+  "client123", "secret456",
+  "https://auth.example.com/token",
+  "https://auth.example.com/authorize"
+)
+test "client_id" { c.client_id == "client123" }
+test "auth_url field" { str.contains(c.auth_url, "authorize") }
+
+let token_resp = { access_token: "mytoken123", token_type: "bearer" }
+let header = oa.bearer_header(token_resp)
+test "bearer header" { str.contains(header, "Bearer") }
+test "bearer token" { str.contains(header, "mytoken123") }
+
+let url = oa.auth_url(c, "https://app.example.com/cb", "read", "state1")
+test "auth url not empty" { str.len(url) > 0 }
+test "auth url has client" { str.contains(url, "client123") }

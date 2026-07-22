@@ -13,7 +13,7 @@ import("std/time")  as time
 fn encode_char(c) {
   if c == " " then "+"
   else if c == "!" then "%21" else if c == "#" then "%23"
-  else if c == "$" then "%24" else if c == "&" then "%26"
+  else if c == "$" then "%24" else if c == str.from_int(38) then "%26"
   else if c == "'" then "%27" else if c == "(" then "%28"
   else if c == ")" then "%29" else if c == "*" then "%2A"
   else if c == "+" then "%2B" else if c == "," then "%2C"
@@ -24,7 +24,7 @@ fn encode_char(c) {
   else if c == "{" then "%7B" else if c == "}" then "%7D"
   else if c == "|" then "%7C" else if c == "^" then "%5E"
   else if c == "<" then "%3C" else if c == ">" then "%3E"
-  else if c == """ then "%22" else if c == "%" then "%25"
+  else if c == str.from_int(34) then "%22" else if c == "%" then "%25"
   else c
 }
 
@@ -37,7 +37,7 @@ fn form_encode(params) {
   let pairs = list.map(keys, fn(k) {
     str.concat(url_encode(k), str.concat("=", url_encode(rec.get(params, k))))
   })
-  str.join(pairs, "&")
+  str.join(pairs, str.from_int(38))
 }
 
 // Create an OAuth2 client config
@@ -53,7 +53,7 @@ fn client_full(client_id, client_secret, token_url, auth_url) {
 // Parse token response
 fn parse_token_response(resp) {
   if resp.status >= 200 && resp.status < 300 then
-    let data = json.decode(resp.body)
+    let data = json.decode(resp.body) in
     {
       ok:            true,
       access_token:  if rec.has(data, "access_token")  then rec.get(data, "access_token")  else null,
@@ -174,4 +174,17 @@ fn authenticated_post(token_resp, url, body) {
   authenticated_get:   authenticated_get,
   authenticated_post:  authenticated_post,
   parse_token_response: parse_token_response
+}fn url_encode(c) {
+  let s1 = str.replace(c, " ", "+") in
+  let s2 = str.replace(s1, "!", "%21") in
+  let s3 = str.replace(s2, "#", "%23") in
+  let s4 = str.replace(s3, "$", "%24") in
+  let s5 = str.replace(s4, str.from_int(38), "%26") in
+  let s6 = str.replace(s5, "'", "%27") in
+  let s7 = str.replace(s6, "/", "%2F") in
+  let s8 = str.replace(s7, ":", "%3A") in
+  let s9 = str.replace(s8, "=", "%3D") in
+  let s10 = str.replace(s9, "?", "%3F") in
+  let s11 = str.replace(s10, "@", "%40") in
+  str.replace(s11, "%", "%25")
 }

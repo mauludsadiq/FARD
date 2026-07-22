@@ -25,10 +25,10 @@ fn from_text(src) {
     step:    fn(s) {
       if s.i >= list.len(s.lines) then null
       else
-        let fields = parse_line(list.get(s.lines, s.i))
+        let fields = parse_line(list.get(s.lines, s.i)) in
         let row    = list.fold(list.range(0, list.len(s.headers)), {}, fn(acc, j) {
           rec.set(acc, list.get(s.headers, j), if j < list.len(fields) then list.get(fields, j) else null)
-        })
+        }) in
         { value: row, next: { lines: s.lines, i: s.i + 1, headers: s.headers } }
     },
     limit: list.len(non_empty)
@@ -125,8 +125,8 @@ fn sum_column(stream, col_name) {
   fold(stream, 0, fn(acc, row) {
     if rec.has(row, col_name) == false then acc
     else
-      let v = rec.get(row, col_name)
-      let t = type.of(v)
+      let v = rec.get(row, col_name) in
+      let t = type.of(v) in
       if t == "int" then acc + v
       else acc
   })
@@ -136,8 +136,8 @@ fn sum_column(stream, col_name) {
 fn group_by(stream, col_name) {
   fold(stream, {}, fn(acc, row) {
     let key = if rec.has(row, col_name) then
-      let v = rec.get(row, col_name)
-      let t = type.of(v)
+      let v = rec.get(row, col_name) in
+      let t = type.of(v) in
       if t == "text" then v else str.from_int(0)
     else "null"
     let existing = if rec.has(acc, key) then rec.get(acc, key) else []
@@ -147,20 +147,20 @@ fn group_by(stream, col_name) {
 
 // Write stream to CSV text
 fn to_csv(stream) {
-  let rows    = to_list(stream)
-  let headers = stream.headers
+  let rows    = to_list(stream) in
+  let headers = stream.headers in
   if list.len(rows) == 0 then str.join(headers, ",")
   else
-    let hdr = str.join(headers, ",")
+    let hdr = str.join(headers, ",") in
     let data = list.map(rows, fn(row) {
       str.join(list.map(headers, fn(h) {
-        let v = if rec.has(row, h) then rec.get(row, h) else ""
-        let t = type.of(v)
+        let v = if rec.has(row, h) then rec.get(row, h) else "" in
+        let t = type.of(v) in
         if t == "text" then v
         else if t == "int" then str.from_int(v)
         else ""
       }), ",")
-    })
+    }) in
     str.join(list.concat([[hdr], data]), "\n")
 }
 

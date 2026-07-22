@@ -1,0 +1,28 @@
+
+import("../packages/csv-stream/main") as csv
+import("std/list") as list
+
+let data = "name,age,city
+Alice,30,NYC
+Bob,25,LA
+Carol,35,NYC"
+let stream = csv.from_text(data)
+test "stream not null" { stream.limit == 3 }
+
+let rows = csv.to_list(stream)
+test "row count" { list.len(rows) == 3 }
+test "first name" { rows[0].name == "Alice" }
+
+let nyc = csv.filter(stream, fn(r) { r.city == "NYC" })
+let nyc_rows = csv.to_list(nyc)
+test "filter NYC" { list.len(nyc_rows) == 2 }
+
+let names = csv.column(stream, "name")
+test "column names" { list.len(names) == 3 }
+test "first name col" { names[0] == "Alice" }
+
+let count = csv.count(stream)
+test "count" { count == 3 }
+
+let nyc_count = csv.count_where(stream, fn(r) { r.city == "NYC" })
+test "count where NYC" { nyc_count == 2 }
