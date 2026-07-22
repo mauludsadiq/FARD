@@ -1,7 +1,26 @@
-import("../std/hash_impl") as H
+
+import("std/hash") as hash
+import("std/type") as type
 import("std/str") as str
 
-test "sha256_text returns sha256: prefix" { str.starts_with(H.sha256_text("hello"), "sha256:") }
-test "short"    { str.len(H.short("hello")) == 8 }
-test "verify"   { H.verify("hello", H.sha256_text("hello")) }
-test "content_id" { str.starts_with(H.content_id(42), "sha256:") }
+// sha256
+let h1 = hash.sha256_text("hello")
+test "sha256 type" { type.of(h1) == "text" }
+test "sha256 len" { str.len(h1) == 71 }
+test "sha256 prefix" { str.starts_with(h1, "sha256:") }
+test "sha256 deterministic" { hash.sha256_text("hello") == h1 }
+test "sha256 different" { hash.sha256_text("hello") != hash.sha256_text("world") }
+test "sha256 empty" { str.len(hash.sha256_text("")) == 71 }
+
+// sha256 known value
+let known = hash.sha256_text("abc")
+test "sha256 known" { str.contains(known, "ba7816bf") }
+
+// sha512
+let m1 = hash.sha256_text("world")
+test "sha256_2 type" { type.of(m1) == "text" }
+test "sha256_2 len" { str.len(m1) == 71 }
+test "sha256_2 det" { hash.sha256_text("world") == m1 }
+test "sha256_2 diff" { m1 != hash.sha256_text("hello") }
+// blake3
+

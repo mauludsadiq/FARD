@@ -1,0 +1,27 @@
+
+import("std/bigint") as big
+import("std/str") as str
+
+let a = big.from_int(42)
+test "from_str roundtrip" { big.from_str("42") != null }
+test "to_str int" { str.len(big.to_str(big.from_int(42))) > 0 }
+test "to_str val" { big.to_str(big.from_int(42)) == "42" }
+
+let x = big.from_int(100)
+let y = big.from_int(200)
+let added = big.add(x, y)
+test "add to_str" { big.to_str(added) == "300" }
+test "sub to_str" { big.to_str(big.sub(y, x)) == "100" }
+test "mul to_str" { big.to_str(big.mul(x, y)) == "20000" }
+test "div to_str" { big.to_str(big.div(y, x)) == "2" }
+
+test "eq true" { big.eq(x, big.from_int(100)) }
+test "eq false" { big.eq(x, y) == false }
+test "lt true" { big.lt(x, y) }
+test "gt true" { big.gt(y, x) }
+test "mod" { big.to_str(big.mod(y, x)) == "0" }
+
+let large = big.from_str("999999999999999999999999999999")
+test "large to_str" { big.to_str(large) == "999999999999999999999999999999" }
+let doubled = big.add(large, large)
+test "large add digits" { str.len(big.to_str(doubled)) >= 30 }

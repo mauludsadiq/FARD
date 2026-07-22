@@ -1,0 +1,10 @@
+
+import("std/linalg") as la
+import("std/type") as type
+
+let v = la.zeros(3)
+let d = la.dot(v, v)
+test "dot type" { type.of(d) }
+test "dot val" { d }
+let s = la.vec_sum(v)
+test "sum type" { type.of(s) }

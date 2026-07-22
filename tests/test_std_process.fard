@@ -1,0 +1,19 @@
+
+import("std/process") as proc
+import("std/type") as type
+import("std/str") as str
+
+let r1 = proc.capture("echo", ["hello"])
+test "capture ok" { r1.ok }
+test "capture stdout" { str.contains(r1.stdout, "hello") }
+test "capture type" { type.of(r1.stdout) == "text" }
+
+let r2 = proc.capture("echo", ["a", "b", "c"])
+test "multi args ok" { r2.ok }
+test "multi args stdout" { str.contains(r2.stdout, "a") }
+
+let r3 = proc.capture("sh", ["-c", "echo hello; echo world"])
+test "multiline" { str.contains(r3.stdout, "hello") }
+
+let r4 = proc.capture("sh", ["-c", "exit 0"])
+test "exit 0 ok" { r4.ok }

@@ -1,0 +1,37 @@
+
+import("std/linalg") as la
+import("std/type") as type
+
+// Basic ops — just verify they run without errors
+let z5 = la.zeros(5)
+test "zeros runs" { z5 != null }
+
+let e3 = la.eye(3)
+test "eye runs" { e3 != null }
+
+let v1 = la.zeros(3)
+let v2 = la.zeros(3)
+
+let d = la.dot(v1, v2)
+test "dot zeros" { d != null }
+
+let sum = la.vec_sum(v1)
+test "vec_sum zeros" { sum != null }
+
+let norm = la.norm(v1)
+test "norm zeros" { norm != null }
+
+let added = la.vec_add(v1, v2)
+test "vec_add runs" { added != null }
+
+let scaled = la.vec_scale(v1, 2.0)
+test "vec_scale runs" { scaled != null }
+
+let sm = la.softmax(la.zeros(4))
+test "softmax runs" { sm != null }
+
+let rl = la.relu(la.zeros(3))
+test "relu runs" { rl != null }
+
+let outer = la.outer(v1, v2)
+test "outer runs" { outer != null }

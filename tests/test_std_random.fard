@@ -1,0 +1,32 @@
+
+import("std/random") as rand
+import("std/type") as type
+import("std/list") as list
+
+// random int
+let r1 = rand.int(1, 100)
+test "int type" { type.of(r1) == "int" }
+test "int range" { r1 >= 1 && r1 <= 100 }
+
+let r2 = rand.int(1, 100)
+test "int type 2" { type.of(r2) == "int" }
+
+// random float
+let f1 = rand.float()
+test "float type" { type.of(f1) == "float" }
+test "float range" { f1 >= 0.0 && f1 < 1.0 }
+
+// random bytes
+let b = rand.bytes(16)
+test "bytes type" { type.of(b) == "bytes" }
+
+// shuffle
+let xs = [1, 2, 3, 4, 5]
+let shuffled = rand.shuffle(xs)
+test "shuffle len" { list.len(shuffled) == 5 }
+test "shuffle has all" { list.all(xs, fn(x) { list.any(shuffled, fn(y) { x == y }) }) }
+
+// choice
+let choice = rand.choice([10, 20, 30, 40])
+test "choice type" { type.of(choice) == "int" }
+test "choice in list" { choice == 10 || choice == 20 || choice == 30 || choice == 40 }
