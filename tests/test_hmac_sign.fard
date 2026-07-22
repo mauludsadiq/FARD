@@ -1,0 +1,17 @@
+
+import("../packages/hmac-sign/main") as hs
+import("std/record") as rec
+import("std/str") as str
+
+let secret = "my-webhook-secret"
+let payload = "hello world"
+
+let sig = hs.sign(payload, secret)
+test "sign not empty" { str.len(sig) > 0 }
+test "verify correct" { hs.verify(payload, secret, sig) }
+test "verify wrong secret" { hs.verify(payload, "wrong", sig) == false }
+test "verify tampered" { hs.verify("tampered", secret, sig) == false }
+
+let webhook = hs.sign_webhook(payload, secret)
+test "webhook has sig" { str.len(webhook) > 0 }
+test "verify webhook" { hs.verify_webhook(payload, secret, webhook) }

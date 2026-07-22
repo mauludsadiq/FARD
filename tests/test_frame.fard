@@ -1,0 +1,26 @@
+
+import("../packages/frame/main") as frame
+import("std/list") as list
+
+let rows = [
+  { name: "Alice", age: 30, score: 95.0 },
+  { name: "Bob",   age: 25, score: 87.0 },
+  { name: "Carol", age: 35, score: 92.0 }
+]
+let df = frame.from_rows(rows)
+test "nrows" { frame.nrows(df) == 3 }
+test "ncols" { frame.ncols(df) == 3 }
+test "has col" { frame.has_col(df, "name") }
+test "no col" { frame.has_col(df, "missing") == false }
+
+let ages = frame.col(df, "age")
+test "col values" { list.len(ages) == 3 }
+
+let filtered = frame.filter(df, fn(r) { r.age > 27 })
+test "filter age" { frame.nrows(filtered) == 2 }
+
+let selected = frame.select(df, ["name", "score"])
+test "select ncols" { frame.ncols(selected) == 2 }
+
+let sorted = frame.sort_by(df, "age")
+test "sort first" { list.get(frame.col(sorted, "age"), 0) == 25 }

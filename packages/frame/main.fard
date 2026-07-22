@@ -7,7 +7,7 @@ import("std/rec")   as rec
 import("std/str")   as str
 import("std/type")  as type
 import("std/float") as float
-import("pkg:stats@1.6.0") as stats
+import("../stats/main") as stats
 
 fn col_map_len(col_map, keys) {
   if list.len(keys) == 0 then 0
