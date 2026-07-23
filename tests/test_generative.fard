@@ -1,0 +1,73 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/random") as rand
+import("std/type") as type
+
+// Generative testing patterns
+
+// Property: length is always non-negative
+fn prop_len_nonneg(xs) { list.len(xs) >= 0 }
+test "len nonneg empty" { prop_len_nonneg([]) }
+test "len nonneg single" { prop_len_nonneg([1]) }
+test "len nonneg multi" { prop_len_nonneg([1,2,3,4,5]) }
+
+// Property: map preserves length
+fn prop_map_len(xs, f) { list.len(list.map(xs, f)) == list.len(xs) }
+test "map len int" { prop_map_len([1,2,3], fn(x) { x * 2 }) }
+test "map len str" { prop_map_len(["a","b","c"], fn(x) { str.upper(x) }) }
+test "map len empty" { prop_map_len([], fn(x) { x }) }
+
+// Property: filter result is subset
+fn prop_filter_subset(xs, pred) {
+  let filtered = list.filter(xs, pred) in
+  list.all(filtered, pred)
+}
+test "filter subset evens" { prop_filter_subset([1,2,3,4,5,6], fn(x) { x % 2 == 0 }) }
+test "filter subset gt" { prop_filter_subset([1,2,3,4,5], fn(x) { x > 3 }) }
+test "filter subset empty" { prop_filter_subset([], fn(x) { true }) }
+
+// Property: fold with 0 identity for addition
+fn sum(xs) { list.fold(xs, 0, fn(acc, x) { acc + x }) }
+test "fold identity add" { sum([]) == 0 }
+test "fold commutativity" { sum([1,2,3]) == sum([3,2,1]) }
+test "fold associativity" { sum([1,2,3,4,5]) == sum([1,2]) + sum([3,4,5]) }
+
+// Property: reverse twice = identity (now works with vm_val_eq fix)
+fn rev2(xs) { list.reverse(list.reverse(xs)) }
+test "rev2 empty" { rev2([]) == [] }
+test "rev2 single" { rev2([42]) == [42] }
+test "rev2 multi" { rev2([1,2,3,4,5]) == [1,2,3,4,5] }
+test "rev2 strings" { rev2(["a","b","c"]) == ["a","b","c"] }
+
+// Property: concat length
+fn prop_concat_len(a, b) {
+  list.len(list.concat([a, b])) == list.len(a) + list.len(b)
+}
+test "concat len 0+0" { prop_concat_len([], []) }
+test "concat len 0+n" { prop_concat_len([], [1,2,3]) }
+test "concat len n+0" { prop_concat_len([1,2,3], []) }
+test "concat len n+m" { prop_concat_len([1,2], [3,4,5]) }
+
+// Property: sort is idempotent (already sorted stays sorted)
+fn sorted(xs) { list.sort_by(xs, fn(a,b) { a - b }) }
+fn is_sorted(xs) {
+  if list.len(xs) <= 1 then true
+  else list.all(list.range(0, list.len(xs) - 1), fn(i) {
+    list.get(xs, i) <= list.get(xs, i + 1)
+  })
+}
+test "sort is sorted" { is_sorted(sorted([5,3,1,4,2])) }
+test "sort idempotent" { sorted(sorted([5,3,1,4,2])) == sorted([5,3,1,4,2]) }
+test "empty is sorted" { is_sorted([]) }
+test "single is sorted" { is_sorted([42]) }
+
+// Random value generation tests
+let r1 = rand.int(0, 100)
+let r2 = rand.int(0, 100)
+test "random in range" { r1 >= 0 && r1 <= 100 }
+test "random type" { type.of(r1) == "int" }
+
+let rf = rand.float()
+test "random float range" { rf >= 0.0 && rf < 1.0 }
+test "random float type" { type.of(rf) == "float" }
