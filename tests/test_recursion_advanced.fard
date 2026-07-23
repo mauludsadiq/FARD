@@ -1,0 +1,96 @@
+import("std/record") as rec
+import("std/str") as str
+import("std/type") as type
+import("std/list") as list
+import("std/math") as math
+
+// Advanced recursion patterns
+
+// Mutual recursion - even/odd tree traversal
+fn count_even_nodes(tree) {
+  if tree == null then 0
+  else if tree.value % 2 == 0 then 1 + count_even_nodes(tree.left) + count_even_nodes(tree.right)
+  else count_odd_nodes(tree.left) + count_odd_nodes(tree.right)
+}
+fn count_odd_nodes(tree) {
+  if tree == null then 0
+  else if tree.value % 2 != 0 then 1 + count_odd_nodes(tree.left) + count_odd_nodes(tree.right)
+  else count_even_nodes(tree.left) + count_even_nodes(tree.right)
+}
+
+fn node(v, l, r) { { value: v, left: l, right: r } }
+fn leaf(v) { { value: v, left: null, right: null } }
+let t = node(1, node(2, leaf(4), leaf(5)), node(3, leaf(6), leaf(7)))
+test "even count" { count_even_nodes(t) == 3 }
+test "odd count" { count_odd_nodes(t) == 4 }
+
+// Accumulator recursion
+fn reverse_acc(xs, acc) {
+  if list.len(xs) == 0 then acc
+  else reverse_acc(list.tail(xs), list.concat([[list.head(xs)], acc]))
+}
+fn my_reverse(xs) { reverse_acc(xs, []) }
+test "reverse acc" { my_reverse([1,2,3,4,5]) == [5,4,3,2,1] }
+test "reverse acc empty" { my_reverse([]) == [] }
+test "reverse acc single" { my_reverse([42]) == [42] }
+
+// Structural recursion on records
+fn flatten_record(r, prefix) {
+  list.flat_map(rec.keys(r), fn(k) {
+    let v = rec.get(r, k) in
+    let full_key = if prefix == "" then k else str.concat(prefix, str.concat(".", k)) in
+    if type.of(v) == "record" then flatten_record(v, full_key)
+    else [{ key: full_key, value: v }]
+  })
+}
+
+let nested = { a: { b: 1, c: { d: 2 } }, e: 3 }
+let flat = flatten_record(nested, "")
+test "flatten count" { list.len(flat) == 3 }
+test "flatten e" { list.any(flat, fn(p) { p.key == "e" && p.value == 3 }) }
+test "flatten a.b" { list.any(flat, fn(p) { p.key == "a.b" && p.value == 1 }) }
+test "flatten a.c.d" { list.any(flat, fn(p) { p.key == "a.c.d" && p.value == 2 }) }
+
+// Recursive memoization via list
+fn tribonacci(n) {
+  if n <= 1 then 0
+  else if n == 2 then 1
+  else
+    let seq = list.fold(list.range(3, n+1), [0, 0, 1], fn(acc, _) {
+      let len = list.len(acc) in
+      let a = list.get(acc, len-3) in
+      let b = list.get(acc, len-2) in
+      let c = list.get(acc, len-1) in
+      list.concat([acc, [a + b + c]])
+    }) in
+    list.get(seq, n)
+}
+test "trib 0" { tribonacci(0) == 0 }
+test "trib 1" { tribonacci(1) == 0 }
+test "trib 2" { tribonacci(2) == 1 }
+test "trib 5" { tribonacci(5) == 4 }
+test "trib 10" { tribonacci(10) == 81 }
+
+// Recursive tree operations
+fn bst_insert(tree, v) {
+  if tree == null then leaf(v)
+  else if v < tree.value then node(tree.value, bst_insert(tree.left, v), tree.right)
+  else if v > tree.value then node(tree.value, tree.left, bst_insert(tree.right, v))
+  else tree
+}
+fn bst_has(tree, v) {
+  if tree == null then false
+  else if v == tree.value then true
+  else if v < tree.value then bst_has(tree.left, v)
+  else bst_has(tree.right, v)
+}
+fn bst_inorder(tree) {
+  if tree == null then []
+  else list.concat([bst_inorder(tree.left), [tree.value], bst_inorder(tree.right)])
+}
+
+let bst = list.fold([5,3,7,1,4,6,8], null, fn(t, v) { bst_insert(t, v) })
+test "bst has 5" { bst_has(bst, 5) }
+test "bst has 1" { bst_has(bst, 1) }
+test "bst no 9" { bst_has(bst, 9) == false }
+test "bst inorder" { bst_inorder(bst) == [1,3,4,5,6,7,8] }

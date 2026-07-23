@@ -1,0 +1,84 @@
+import("std/list") as list
+import("std/str") as str
+import("std/record") as rec
+import("std/math") as math
+
+// Domain modeling patterns
+
+// Banking domain
+fn make_account(id, owner, balance) { { id: id, owner: owner, balance: balance, transactions: [] } }
+fn deposit(acc, amount) {
+  { id: acc.id, owner: acc.owner,
+    balance: acc.balance + amount,
+    transactions: list.concat([acc.transactions, [{ type: "deposit", amount: amount }]]) }
+}
+fn withdraw(acc, amount) {
+  if amount > acc.balance then { ok: false, account: acc, error: "insufficient funds" }
+  else { ok: true, account: {
+    id: acc.id, owner: acc.owner,
+    balance: acc.balance - amount,
+    transactions: list.concat([acc.transactions, [{ type: "withdrawal", amount: amount }]])
+  }, error: null }
+}
+fn transfer(from, to, amount) {
+  let result = withdraw(from, amount) in
+  if result.ok then { from: result.account, to: deposit(to, amount), ok: true }
+  else { from: from, to: to, ok: false }
+}
+
+let acc1 = make_account(1, "Alice", 1000)
+let acc2 = make_account(2, "Bob", 500)
+let acc1d = deposit(acc1, 200)
+test "deposit balance" { acc1d.balance == 1200 }
+test "deposit tx" { list.len(acc1d.transactions) == 1 }
+let wd = withdraw(acc1d, 300)
+test "withdraw ok" { wd.ok }
+test "withdraw balance" { wd.account.balance == 900 }
+let wd2 = withdraw(acc1, 2000)
+test "withdraw fail" { wd2.ok == false }
+test "withdraw error" { wd2.error == "insufficient funds" }
+let t = transfer(acc1d, acc2, 100)
+test "transfer ok" { t.ok }
+test "transfer from" { t.from.balance == 1100 }
+test "transfer to" { t.to.balance == 600 }
+
+// Inventory management
+fn make_item(sku, name, qty, price) { { sku: sku, name: name, qty: qty, price: price } }
+fn restock(item, qty) { rec.set(item, "qty", item.qty + qty) }
+fn sell(item, qty) {
+  if qty > item.qty then { ok: false, item: item, error: "out of stock" }
+  else { ok: true, item: rec.set(item, "qty", item.qty - qty), revenue: qty * item.price }
+}
+
+let laptop = make_item("L001", "Laptop", 10, 999)
+let book = make_item("B001", "Book", 100, 29)
+
+let restocked = restock(laptop, 5)
+test "restock qty" { restocked.qty == 15 }
+let sold = sell(laptop, 3)
+test "sell ok" { sold.ok }
+test "sell qty" { sold.item.qty == 7 }
+test "sell revenue" { sold.revenue == 2997 }
+let oversell = sell(book, 200)
+test "oversell fail" { oversell.ok == false }
+
+// Order management
+fn make_order(id, customer) { { id: id, customer: customer, items: [], status: "draft" } }
+fn add_item_to_order(order, item, qty) {
+  let line = { item: item, qty: qty, subtotal: item.price * qty } in
+  rec.set(order, "items", list.concat([order.items, [line]]))
+}
+fn order_total(order) {
+  list.fold(order.items, 0, fn(acc, line) { acc + line.subtotal })
+}
+fn submit_order(order) { rec.set(order, "status", "submitted") }
+fn fulfill_order(order) { rec.set(order, "status", "fulfilled") }
+
+let order = submit_order(add_item_to_order(add_item_to_order(
+  make_order(1001, "Alice"), laptop, 1), book, 2))
+test "order items" { list.len(order.items) == 2 }
+test "order total" { order_total(order) == 999 + 58 }
+test "order status" { order.status == "submitted" }
+let fulfilled = fulfill_order(order)
+test "fulfilled status" { fulfilled.status == "fulfilled" }
+test "original status" { order.status == "submitted" }
