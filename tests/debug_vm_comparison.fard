@@ -1,0 +1,43 @@
+
+import("std/list") as list
+import("std/float") as float
+
+// Test all comparison operators in VM (inside functions)
+fn lt(a, b) { a < b }
+fn gt(a, b) { a > b }
+fn le(a, b) { a <= b }
+fn ge(a, b) { a >= b }
+fn eq(a, b) { a == b }
+fn ne(a, b) { a != b }
+
+// Int comparisons in functions
+test "int lt" { lt(1, 2) }
+test "int gt" { gt(2, 1) }
+test "int le eq" { le(2, 2) }
+test "int ge eq" { ge(2, 2) }
+test "int eq" { eq(42, 42) }
+test "int ne" { ne(1, 2) }
+
+// Float comparisons in functions
+test "float lt" { lt(1.0, 2.0) }
+test "float gt" { gt(2.0, 1.0) }
+test "float eq" { eq(3.14, 3.14) }
+
+// Mixed int/float in functions
+fn add(a, b) { a + b }
+fn sub(a, b) { a - b }
+fn mul(a, b) { a * b }
+fn div(a, b) { a / b }
+
+test "int+float" { add(1, 0.5) == 1.5 }
+test "float+int" { add(1.5, 1) == 2.5 }
+test "int-float" { sub(5, 1.5) == 3.5 }
+test "int*float" { mul(2, 3.14) > 6.0 }
+test "float/int" { div(10.0, 4) == 2.5 }
+test "int/float" { div(10, 4.0) == 2.5 }
+
+// Chained arithmetic
+fn quadratic(a, b, c, x) { a * x * x + b * x + c }
+test "quadratic int" { quadratic(1, 0, 0, 3) == 9 }
+test "quadratic float" { quadratic(1.0, -2.0, 1.0, 3.0) == 4.0 }
+test "quadratic mixed" { quadratic(1, -2.0, 1, 3) == 4.0 }

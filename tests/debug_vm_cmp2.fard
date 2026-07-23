@@ -1,0 +1,13 @@
+
+// Test mixed int/float comparisons in VM
+fn lt(a, b) { a < b }
+fn gt(a, b) { a > b }
+fn le(a, b) { a <= b }
+fn ge(a, b) { a >= b }
+
+test "int lt float" { lt(1, 2.0) }
+test "float lt int" { lt(1.0, 2) }
+test "int gt float" { gt(2, 1.0) }
+test "float gt int" { gt(2.0, 1) }
+test "int le float" { le(2, 2.0) }
+test "float ge int" { ge(2.0, 2) }

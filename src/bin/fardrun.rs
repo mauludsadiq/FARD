@@ -6307,6 +6307,8 @@ fn vm_val_eq(a: &Val, b: &Val) -> bool {
         (Val::Bool(x), Val::Bool(y))   => x == y,
         (Val::Text(x), Val::Text(y))   => x == y,
         (Val::Unit, Val::Unit)         => true,
+        (Val::Int(x), Val::Float(y))   => (*x as f64) == *y,
+        (Val::Float(x), Val::Int(y))   => *x == (*y as f64),
         (Val::List(xs), Val::List(ys)) => {
             xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(x, y)| vm_val_eq(x, y))
         }
@@ -6321,6 +6323,8 @@ fn vm_val_lt(a: &Val, b: &Val) -> Result<bool> {
     match (a, b) {
         (Val::Int(x), Val::Int(y))     => Ok(x < y),
         (Val::Float(x), Val::Float(y)) => Ok(x < y),
+        (Val::Int(x), Val::Float(y))   => Ok((*x as f64) < *y),
+        (Val::Float(x), Val::Int(y))   => Ok(*x < (*y as f64)),
         (Val::Text(x), Val::Text(y))   => Ok(x < y),
         (a, b) => bail!("Type error in <\n  left:  {}\n  right: {}", vm_type_name(&a), vm_type_name(&b)),
     }
