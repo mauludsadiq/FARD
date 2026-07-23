@@ -1,0 +1,94 @@
+import("std/record") as rec
+
+import("std/list") as list
+import("std/str") as str
+
+// Traffic light state machine
+fn traffic_next(state) {
+  match state {
+    "red"    => "green",
+    "green"  => "yellow",
+    "yellow" => "red",
+    _        => "red"
+  }
+}
+fn traffic_cycle(n) {
+  list.fold(list.range(0, n), "red", fn(s, _) { traffic_next(s) })
+}
+test "traffic red->green" { traffic_next("red") == "green" }
+test "traffic green->yellow" { traffic_next("green") == "yellow" }
+test "traffic yellow->red" { traffic_next("yellow") == "red" }
+test "traffic 3 cycle" { traffic_cycle(3) == "red" }
+test "traffic 1 cycle" { traffic_cycle(1) == "green" }
+
+// Parser state machine
+fn parse_csv_field(s) {
+  let result = while { chars: str.chars(s), i: 0, field: "", in_quote: false, done: false }
+    fn(st) { st.i < list.len(st.chars) && st.done == false }
+    fn(st) {
+      let c = list.get(st.chars, st.i) in
+      if c == "," && st.in_quote == false then
+        { chars: st.chars, i: st.i, field: st.field, in_quote: false, done: true }
+      else if c == "\"" then
+        { chars: st.chars, i: st.i + 1, field: st.field, in_quote: st.in_quote == false, done: false }
+      else
+        { chars: st.chars, i: st.i + 1, field: str.concat(st.field, c), in_quote: st.in_quote, done: false }
+    }
+  in result.value.field
+}
+test "parse simple" { parse_csv_field("hello,world") == "hello" }
+test "parse quoted" { parse_csv_field("hello") == "hello" }
+
+// Counter state machine
+fn make_fsm(initial) {
+  { state: initial, history: [initial] }
+}
+fn fsm_transition(fsm, event, transitions) {
+  let key = str.concat(fsm.state, str.concat(":", event)) in
+  let next = if rec.has(transitions, key) 
+    then rec.get(transitions, key)
+    else fsm.state in
+  { state: next, history: list.concat([fsm.history, [next]]) }
+}
+
+let transitions = {
+  "idle:start":    "running",
+  "running:pause": "paused",
+  "paused:resume": "running",
+  "running:stop":  "done"
+}
+let fsm0 = make_fsm("idle")
+let fsm1 = fsm_transition(fsm0, "start", transitions)
+let fsm2 = fsm_transition(fsm1, "pause", transitions)
+let fsm3 = fsm_transition(fsm2, "resume", transitions)
+let fsm4 = fsm_transition(fsm3, "stop", transitions)
+test "fsm start" { fsm1.state == "running" }
+test "fsm pause" { fsm2.state == "paused" }
+test "fsm resume" { fsm3.state == "running" }
+test "fsm stop" { fsm4.state == "done" }
+test "fsm history len" { list.len(fsm4.history) == 5 }
+test "fsm history first" { list.get(fsm4.history, 0) == "idle" }
+
+// Tokenizer state machine
+fn tokenize_simple(s) {
+  let result = while { chars: str.chars(s), i: 0, tokens: [], current: "" }
+    fn(st) { st.i < list.len(st.chars) }
+    fn(st) {
+      let c = list.get(st.chars, st.i) in
+      if c == " " then
+        if str.len(st.current) > 0 then
+          { chars: st.chars, i: st.i + 1, tokens: list.concat([st.tokens, [st.current]]), current: "" }
+        else
+          { chars: st.chars, i: st.i + 1, tokens: st.tokens, current: "" }
+      else
+        { chars: st.chars, i: st.i + 1, tokens: st.tokens, current: str.concat(st.current, c) }
+    }
+  in
+  let final = result.value in
+  if str.len(final.current) > 0 then list.concat([final.tokens, [final.current]])
+  else final.tokens
+}
+let tokens = tokenize_simple("hello world foo")
+test "tokenize count" { list.len(tokens) == 3 }
+test "tokenize first" { list.get(tokens, 0) == "hello" }
+test "tokenize last" { list.get(tokens, 2) == "foo" }

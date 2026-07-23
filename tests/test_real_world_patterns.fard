@@ -1,0 +1,107 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/record") as rec
+import("std/type") as type
+import("std/json") as json
+import("std/int") as int
+
+// HTTP-like request handling
+fn make_request(method, path, body, headers) {
+  { method: method, path: path, body: body, headers: headers }
+}
+fn make_response(status, body) { { status: status, body: body } }
+
+fn route(req, routes) {
+  let matched = list.find(routes, fn(r) {
+    r.method == req.method && str.starts_with(req.path, r.prefix)
+  }) in
+  if matched != null && rec.has(matched, "some")
+  then matched.some.handler(req)
+  else make_response(404, "not found")
+}
+
+let routes = [
+  { method: "GET", prefix: "/users", handler: fn(req) { make_response(200, "user list") } },
+  { method: "POST", prefix: "/users", handler: fn(req) { make_response(201, "created") } },
+  { method: "GET", prefix: "/health", handler: fn(req) { make_response(200, "ok") } }
+]
+
+let r1 = route(make_request("GET", "/users", "", {}), routes)
+test "GET /users" { r1.status == 200 }
+test "GET /users body" { r1.body == "user list" }
+
+let r2 = route(make_request("POST", "/users", "{}", {}), routes)
+test "POST /users" { r2.status == 201 }
+
+let r3 = route(make_request("GET", "/missing", "", {}), routes)
+test "404" { r3.status == 404 }
+
+let r4 = route(make_request("GET", "/health", "", {}), routes)
+test "health check" { r4.status == 200 }
+
+// Config management
+fn default_config() {
+  { host: "localhost", port: 8080, debug: false, workers: 4 }
+}
+fn override_config(base, overrides) {
+  rec.merge(base, overrides)
+}
+fn get_config(cfg, key, default) {
+  if rec.has(cfg, key) then rec.get(cfg, key) else default
+}
+
+let cfg = override_config(default_config(), { port: 3000, debug: true })
+test "config host" { get_config(cfg, "host", "unknown") == "localhost" }
+test "config port" { get_config(cfg, "port", 0) == 3000 }
+test "config debug" { get_config(cfg, "debug", false) == true }
+test "config workers" { get_config(cfg, "workers", 0) == 4 }
+test "config missing" { get_config(cfg, "timeout", 30) == 30 }
+
+// Event system
+fn make_event(name, data) { { name: name, data: data, timestamp: 0 } }
+fn dispatch(event, handlers) {
+  list.filter(
+    list.map(handlers, fn(h) {
+      if h.event == event.name then h.handler(event) else null
+    }),
+    fn(r) { r != null }
+  )
+}
+
+let handlers = [
+  { event: "login", handler: fn(e) { str.concat("logged in: ", e.data.user) } },
+  { event: "logout", handler: fn(e) { str.concat("logged out: ", e.data.user) } },
+  { event: "login", handler: fn(e) { "audit: login recorded" } }
+]
+
+let results = dispatch(make_event("login", { user: "alice" }), handlers)
+test "dispatch count" { list.len(results) == 2 }
+test "dispatch first" { list.get(results, 0) == "logged in: alice" }
+test "dispatch second" { list.get(results, 1) == "audit: login recorded" }
+
+let logout_results = dispatch(make_event("logout", { user: "alice" }), handlers)
+test "logout dispatch" { list.len(logout_results) == 1 }
+
+// Data transformation pipeline
+fn parse_record(line) {
+  let parts = str.split(line, "|") in
+  if list.len(parts) >= 3 then
+    let age_r = int.parse(str.trim(list.get(parts, 1))) in
+    { ok: true, value: {
+        name: str.trim(list.get(parts, 0)),
+        age: if age_r.t == "ok" then age_r.v else 0,
+        city: str.trim(list.get(parts, 2))
+    }}
+  else { ok: false, value: null }
+}
+
+let records = list.map(
+  ["Alice | 30 | NYC", "Bob | 25 | LA", "Carol | bad | NYC"],
+  parse_record
+)
+let valid = list.filter(records, fn(r) { r.ok && r.value.age > 0 })
+test "parse records" { list.len(records) == 3 }
+test "valid records" { list.len(valid) == 2 }
+test "first name" { list.get(valid, 0).value.name == "Alice" }
+test "second city" { list.get(valid, 1).value.city == "LA" }
