@@ -1,0 +1,24 @@
+
+import("std/math") as math
+import("std/int") as int
+
+fn ok(v) { { ok: true, value: v } }
+fn err(e) { { ok: false, error: e } }
+fn bind(r, f) { if r.ok then f(r.value) else r }
+
+fn parse_int(s) {
+  let r = int.parse(s) in
+  if r.t == "ok" then ok(r.v) else err("bad")
+}
+fn safe_sqrt(n) {
+  if n < 0 then err("neg") else ok(math.sqrt(n + 0.0))
+}
+
+let r1 = parse_int("4")
+test "parse ok" { r1.ok }
+test "parse val" { r1.value == 4 }
+let r2 = safe_sqrt(r1.value)
+test "sqrt ok" { r2.ok }
+test "sqrt val" { r2.value == 2.0 }
+let r3 = bind(r1, fn(n) { safe_sqrt(n) })
+test "bind sqrt ok" { r3.ok }

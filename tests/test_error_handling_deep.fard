@@ -1,0 +1,71 @@
+import("std/math") as math
+
+import("std/list") as list
+import("std/str") as str
+import("std/int") as int
+import("std/type") as type
+import("std/record") as rec
+
+// Result monad pattern
+fn ok(v) { { ok: true, value: v, error: null } }
+fn err(e) { { ok: false, value: null, error: e } }
+fn bind(result, f) {
+  if result.ok then f(result.value) else result
+}
+fn map_result(result, f) {
+  if result.ok then ok(f(result.value)) else result
+}
+
+test "ok value" { ok(42).value == 42 }
+test "err error" { err("oops").error == "oops" }
+test "bind ok" { bind(ok(10), fn(x) { ok(x * 2) }).value == 20 }
+test "bind err" { bind(err("fail"), fn(x) { ok(x * 2) }).ok == false }
+test "map ok" { map_result(ok(5), fn(x) { x + 1 }).value == 6 }
+test "map err" { map_result(err("e"), fn(x) { x + 1 }).ok == false }
+
+// Chaining
+fn parse_int(s) {
+  let r = int.parse(s) in
+  if r.t == "ok" then ok(r.v) else err(str.concat("not a number: ", s))
+}
+fn safe_sqrt(n) {
+  if n < 0 then err("negative number") else ok(math.sqrt(n + 0.0))
+}
+fn pipeline(s) {
+  bind(parse_int(s), fn(n) {
+    bind(safe_sqrt(n), fn(root) {
+      ok(root)
+    })
+  })
+}
+test "pipeline ok" { pipeline("4").ok }
+test "pipeline val" { pipeline("4").value == 2.0 }
+test "pipeline parse fail" { pipeline("abc").ok == false }
+test "pipeline sqrt fail" { pipeline("-1").ok == false }
+
+// Error accumulation
+fn validate_age(age) { if age >= 0 && age <= 150 then ok(age) else err("invalid age") }
+fn validate_name(name) { if str.len(name) > 0 then ok(name) else err("empty name") }
+fn validate_user(user) {
+  let name_r = validate_name(user.name) in
+  let age_r = validate_age(user.age) in
+  if name_r.ok && age_r.ok
+  then ok({ name: name_r.value, age: age_r.value })
+  else err(if name_r.ok == false then name_r.error else age_r.error)
+}
+test "valid user" { validate_user({ name: "Alice", age: 30 }).ok }
+test "invalid name" { validate_user({ name: "", age: 30 }).ok == false }
+test "invalid age" { validate_user({ name: "Bob", age: -1 }).ok == false }
+test "invalid age msg" { validate_user({ name: "Bob", age: 999 }).error == "invalid age" }
+
+// Null safety patterns
+fn safe_get_r(r, key) {
+  if rec.has(r, key) then ok(rec.get(r, key)) else err("key not found")
+}
+fn safe_index(xs, i) {
+  if i >= 0 && i < list.len(xs) then ok(list.get(xs, i)) else err("index out of bounds")
+}
+test "safe_get ok" { rec.has({ x: 1 }, "x") }
+test "safe_index ok" { safe_index([1,2,3], 1).value == 2 }
+test "safe_index oob" { safe_index([1,2,3], 10).ok == false }
+test "safe_index neg" { safe_index([1,2,3], -1).ok == false }

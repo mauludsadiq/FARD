@@ -1,0 +1,38 @@
+
+import("../packages/async/main") as async
+import("std/list") as list
+import("std/type") as type
+
+// Basic async patterns
+test "spawn int" { async.await(async.spawn(fn() { 42 })) == 42 }
+test "spawn str" { async.await(async.spawn(fn() { "hello" })) == "hello" }
+test "spawn list" { async.await(async.spawn(fn() { [1,2,3] })) == [1,2,3] }
+test "spawn bool" { async.await(async.spawn(fn() { true })) }
+test "spawn calc" { async.await(async.spawn(fn() { 2 + 2 })) == 4 }
+
+// Parallel map
+let doubled = async.map_parallel([1,2,3,4,5], fn(x) { x * 2 })
+test "parallel map len" { list.len(doubled) == 5 }
+test "parallel map first" { list.get(doubled, 0) == 2 }
+test "parallel map last" { list.get(doubled, 4) == 10 }
+
+let computed = async.map_parallel([1,2,3,4,5,6,7,8,9,10], fn(x) { x * x })
+test "parallel squares len" { list.len(computed) == 10 }
+test "parallel squares first" { list.get(computed, 0) == 1 }
+test "parallel squares last" { list.get(computed, 9) == 100 }
+
+// All combinator
+let promises = [
+  async.spawn(fn() { 1 }),
+  async.spawn(fn() { 2 }),
+  async.spawn(fn() { 3 })
+]
+let results = async.all(promises)
+test "all len" { list.len(results) == 3 }
+test "all sum" { list.fold(results, 0, fn(acc, x) { acc + x }) == 6 }
+
+// Parallel with filter
+let evens = async.map_parallel(list.range(1, 11), fn(x) { x })
+let even_only = list.filter(evens, fn(x) { x % 2 == 0 })
+test "parallel filter len" { list.len(even_only) == 5 }
+test "parallel filter sum" { list.fold(even_only, 0, fn(acc, x) { acc + x }) == 30 }

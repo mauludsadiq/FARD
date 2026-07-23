@@ -6250,6 +6250,8 @@ fn vm_arith_add(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
         (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_add(y))),
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x + y)),
+        (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 + y)),
+        (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x + y as f64)),
         (Val::Text(x), Val::Text(y))   => Ok(Val::Text(x + &y)),
         (a, b) => bail!("Type error in +\n  left:  {} \n  right: {}{}",
             vm_type_name(&a), vm_type_name(&b), vm_type_hint("+", vm_type_name(&a), vm_type_name(&b))),
@@ -6261,6 +6263,8 @@ fn vm_arith_sub(a: Val, b: Val) -> Result<Val> {
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x - y)),
         (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 - y)),
         (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x - y as f64)),
+        (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 - y)),
+        (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x - y as f64)),
         (a, b) => bail!("Type error in -\n  left:  {}\n  right: {}{}",
             vm_type_name(&a), vm_type_name(&b), vm_type_hint("-", vm_type_name(&a), vm_type_name(&b))),
     }
@@ -6269,6 +6273,8 @@ fn vm_arith_mul(a: Val, b: Val) -> Result<Val> {
     match (a, b) {
         (Val::Int(x), Val::Int(y))     => Ok(Val::Int(x.wrapping_mul(y))),
         (Val::Float(x), Val::Float(y)) => Ok(Val::Float(x * y)),
+        (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 * y)),
+        (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x * y as f64)),
         (Val::Int(x), Val::Float(y))   => Ok(Val::Float(x as f64 * y)),
         (Val::Float(x), Val::Int(y))   => Ok(Val::Float(x * y as f64)),
         (a, b) => bail!("Type error in *\n  left:  {}\n  right: {}{}",
