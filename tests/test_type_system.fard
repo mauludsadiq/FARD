@@ -1,0 +1,76 @@
+
+import("std/type") as type
+import("std/list") as list
+import("std/record") as rec
+import("std/str") as str
+import("std/int") as int
+import("std/float") as float
+
+// Runtime type dispatch
+fn describe(v) {
+  match type.of(v) {
+    "int"    => str.concat("int: ", str.from_int(v)),
+    "float"  => "float",
+    "bool"   => if v then "bool: true" else "bool: false",
+    "text"   => str.concat("text: ", v),
+    "list"   => str.concat("list[", str.concat(str.from_int(list.len(v)), "]")),
+    "record" => str.concat("record{", str.concat(str.from_int(list.len(rec.keys(v))), "}")),
+    "null"   => "null",
+    "unit"   => "null",
+    "unit"   => "unit",
+    _        => "unknown"
+  }
+}
+test "describe int" { describe(42) == "int: 42" }
+test "describe bool t" { describe(true) == "bool: true" }
+test "describe bool f" { describe(false) == "bool: false" }
+test "describe text" { describe("hi") == "text: hi" }
+test "describe list" { describe([1,2,3]) == "list[3]" }
+test "describe record" { describe({x:1, y:2}) == "record{2}" }
+test "describe null" { describe(null) == "null" || describe(null) == "unit" }
+
+// Type guards
+fn is_num(v) { type.of(v) == "int" || type.of(v) == "float" }
+fn is_str(v) { type.of(v) == "text" }
+fn is_list(v) { type.of(v) == "list" }
+fn is_rec(v) { type.of(v) == "record" }
+fn is_null(v) { type.of(v) == "null" || type.of(v) == "unit" }
+
+test "is_num int" { is_num(42) }
+test "is_num float" { is_num(3.14) }
+test "is_num str" { is_num("hi") == false }
+test "is_str yes" { is_str("hello") }
+test "is_str no" { is_str(42) == false }
+test "is_list yes" { is_list([1,2,3]) }
+test "is_rec yes" { is_rec({x:1}) }
+test "is_null null" { is_null(null) }
+
+// Type coercion
+fn to_str(v) {
+  match type.of(v) {
+    "int"   => str.from_int(v),
+    "float" => "float",
+    "bool"  => if v then "true" else "false",
+    "text"  => v,
+    "null"  => "null",
+    _       => "?"
+  }
+}
+test "to_str int" { to_str(42) == "42" }
+test "to_str bool" { to_str(true) == "true" }
+test "to_str text" { to_str("hi") == "hi" }
+test "to_str null" { to_str(null) == "null" || to_str(null) == "?" }
+
+// Polymorphic functions
+fn identity(x) { x }
+test "identity int" { identity(42) == 42 }
+test "identity str" { identity("hi") == "hi" }
+test "identity list" { identity([1,2,3]) == [1,2,3] }
+test "identity null" { identity(null) == null }
+
+fn const_fn(x) { fn(_) { x } }
+let always_42 = const_fn(42)
+let always_hi = const_fn("hi")
+test "const int" { always_42("ignored") == 42 }
+test "const str" { always_hi(999) == "hi" }
+test "const list" { const_fn([1,2,3])(null) == [1,2,3] }
