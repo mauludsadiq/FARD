@@ -1,0 +1,60 @@
+import("std/type") as type
+import("std/record") as rec
+
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+
+// Y combinator (fixed point)
+fn Y(f) {
+  let g = fn(x) { f(fn(n) { x(x)(n) }) } in
+  g(g)
+}
+let fact = Y(fn(self) { fn(n) { if n <= 1 then 1 else n * self(n-1) } })
+let fib = Y(fn(self) { fn(n) { if n <= 1 then n else self(n-1) + self(n-2) } })
+test "Y fact 5" { fact(5) == 120 }
+test "Y fact 0" { fact(0) == 1 }
+test "Y fib 10" { fib(10) == 55 }
+test "Y fib 0" { fib(0) == 0 }
+
+// Continuation passing style
+fn fib_cps(n, k) {
+  if n <= 1 then k(n)
+  else fib_cps(n-1, fn(a) { fib_cps(n-2, fn(b) { k(a+b) }) })
+}
+test "cps fib 0" { fib_cps(0, fn(x) { x }) == 0 }
+test "cps fib 1" { fib_cps(1, fn(x) { x }) == 1 }
+test "cps fib 5" { fib_cps(5, fn(x) { x }) == 5 }
+test "cps fib 8" { fib_cps(8, fn(x) { x }) == 21 }
+
+// Lazy evaluation via closures
+fn lazy(thunk) { thunk }
+fn force(lazy_val) { lazy_val() }
+fn lazy_range(lo, hi) {
+  if lo >= hi then []
+  else [lo, fn() { lazy_range(lo+1, hi) }]
+}
+fn take_lazy(n, xs) {
+  if n == 0 || list.len(xs) == 0 then []
+  else
+    let head = list.get(xs, 0) in
+    let tail_fn = list.get(xs, 1) in
+    list.concat([[head], take_lazy(n-1, tail_fn())])
+}
+let naturals_from_1 = lazy_range(1, 100)
+test "lazy take 5" { take_lazy(5, naturals_from_1) == [1,2,3,4,5] }
+test "lazy take 3" { take_lazy(3, naturals_from_1) == [1,2,3] }
+
+// Reader monad pattern
+fn reader(f) { f }
+fn run_reader(r, env) { r(env) }
+fn ask() { fn(env) { env } }
+fn local(f, r) { fn(env) { r(f(env)) } }
+fn bind_reader(r, f) { fn(env) { f(r(env))(env) } }
+
+let get_host = bind_reader(ask(), fn(cfg) { reader(fn(_) { cfg.host }) })
+let get_port = bind_reader(ask(), fn(cfg) { reader(fn(_) { cfg.port }) })
+let config = { host: "localhost", port: 8080 }
+test "reader ask" { run_reader(ask(), config) == config }
+test "reader host" { run_reader(get_host, config) == "localhost" }
+test "reader port" { run_reader(get_port, config) == 8080 }

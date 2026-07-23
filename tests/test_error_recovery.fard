@@ -1,0 +1,76 @@
+import("std/math") as math
+
+import("std/list") as list
+import("std/str") as str
+import("std/int") as int
+import("std/float") as float
+import("std/type") as type
+import("std/record") as rec
+
+// Result type helpers
+fn ok(v) { { ok: true, value: v, error: null } }
+fn err(e) { { ok: false, value: null, error: e } }
+fn is_ok(r) { r.ok == true }
+fn unwrap(r) { r.value }
+fn unwrap_or(r, default) { if r.ok then r.value else default }
+
+// Safe operations
+fn safe_parse_int(s) {
+  let r = int.parse(str.trim(s)) in
+  if r.t == "ok" then ok(r.v) else err(str.concat("cannot parse: ", s))
+}
+fn safe_div(a, b) {
+  if b == 0 then err("division by zero") else ok(a / b)
+}
+fn safe_sqrt(n) {
+  if n < 0.0 then err("negative sqrt") else ok(math.sqrt(n))
+}
+fn safe_head(xs) {
+  if list.len(xs) == 0 then err("empty list") else ok(list.head(xs))
+}
+
+test "parse ok" { is_ok(safe_parse_int("42")) }
+test "parse val" { unwrap(safe_parse_int("42")) == 42 }
+test "parse err" { is_ok(safe_parse_int("abc")) == false }
+test "parse err msg" { str.contains(safe_parse_int("abc").error, "cannot parse") }
+test "div ok" { unwrap(safe_div(10, 2)) == 5 }
+test "div zero" { is_ok(safe_div(10, 0)) == false }
+test "div zero msg" { safe_div(10, 0).error == "division by zero" }
+test "sqrt ok" { is_ok(safe_sqrt(4.0)) }
+test "sqrt ok val" { unwrap(safe_sqrt(4.0)) == 2.0 }
+test "sqrt neg" { is_ok(safe_sqrt(-1.0)) == false }
+test "head ok" { unwrap(safe_head([1,2,3])) == 1 }
+test "head empty" { is_ok(safe_head([])) == false }
+
+// Error recovery
+test "unwrap_or ok" { unwrap_or(safe_parse_int("5"), 0) == 5 }
+test "unwrap_or err" { unwrap_or(safe_parse_int("bad"), 0) == 0 }
+
+// Chain with error propagation
+fn chain(r, f) { if r.ok then f(r.value) else r }
+let pipeline = chain(
+  chain(safe_parse_int("16"), fn(n) { safe_sqrt(n + 0.0) }),
+  fn(x) { ok(x * 2.0) }
+)
+test "chain ok" { is_ok(pipeline) }
+test "chain val" { unwrap(pipeline) == 8.0 }
+
+let bad_pipeline = chain(
+  chain(safe_parse_int("bad"), fn(n) { safe_sqrt(n + 0.0) }),
+  fn(x) { ok(x * 2.0) }
+)
+test "chain err propagates" { is_ok(bad_pipeline) == false }
+
+// Collect results
+fn collect(results) {
+  list.fold(results, ok([]), fn(acc, r) {
+    if acc.ok == false then acc
+    else if r.ok then ok(list.concat([acc.value, [r.value]]))
+    else r
+  })
+}
+let all_ok = collect([ok(1), ok(2), ok(3)])
+test "collect all ok" { is_ok(all_ok) }
+test "collect values" { unwrap(all_ok) == [1,2,3] }
+let has_err = collect([ok(1), err("bad"), ok(3)])
+test "collect with err" { is_ok(has_err) == false }
