@@ -1,3 +1,4 @@
+import("std/float") as float
 
 import("std/math") as math
 import("std/type") as type
@@ -52,3 +53,11 @@ test "floor" { math.floor(3.7) == 3.0 }
 test "ceil" { math.ceil(3.2) == 4.0 }
 test "floor neg" { math.floor(-3.2) == -4.0 }
 test "ceil neg" { math.ceil(-3.7) == -3.0 }
+
+// float module now returns proper floats
+test "float floor" { float.floor(3.7) == 3.0 }
+test "float ceil" { float.ceil(3.2) == 4.0 }
+test "float round" { float.round(3.5) == 4.0 }
+test "float sqrt" { float.sqrt(9.0) == 3.0 }
+test "float from_int" { float.from_int(42) == 42.0 }
+test "float abs" { float.abs(-2.5) == 2.5 }

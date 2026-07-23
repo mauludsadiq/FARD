@@ -1,0 +1,43 @@
+
+import("std/list") as list
+
+// List equality in all contexts
+fn eq(a, b) { a == b }
+fn neq(a, b) { a != b }
+
+// In functions
+test "list eq in fn" { eq([1,2,3], [1,2,3]) }
+test "list neq in fn" { neq([1,2,3], [1,2,4]) }
+test "list empty eq" { eq([], []) }
+test "list nested eq" { eq([[1,2],[3,4]], [[1,2],[3,4]]) }
+test "list nested neq" { neq([[1,2],[3,4]], [[1,2],[3,5]]) }
+
+// Record equality in functions
+test "rec eq in fn" { eq({x:1, y:2}, {x:1, y:2}) }
+test "rec neq in fn" { neq({x:1}, {x:2}) }
+test "rec empty eq" { eq({}, {}) }
+test "rec nested eq" { eq({a:{b:1}}, {a:{b:1}}) }
+
+// Mixed in higher order
+fn all_eq(xs, val) { list.all(xs, fn(x) { x == val }) }
+test "all_eq true" { all_eq([2,2,2], 2) }
+test "all_eq false" { all_eq([2,2,3], 2) == false }
+
+fn find_eq(xs, val) { list.find(xs, fn(x) { x == val }) }
+test "find_eq found" { find_eq([1,2,3], 2).some == 2 }
+test "find_eq list found" { find_eq([[1,2],[3,4]], [3,4]).some == [3,4] }
+test "find_eq not found" { find_eq([1,2,3], 99) != null }
+
+// Sort with equality check
+fn has_dupe(xs) {
+  list.any(list.range(0, list.len(xs) - 1), fn(i) {
+    list.get(xs, i) == list.get(xs, i + 1)
+  })
+}
+test "has_dupe yes" { has_dupe([1,2,2,3]) }
+test "has_dupe no" { has_dupe([1,2,3,4]) == false }
+
+// filter with equality
+fn remove_all(xs, val) { list.filter(xs, fn(x) { x != val }) }
+test "remove_all" { remove_all([1,2,1,3,1], 1) == [2,3] }
+test "remove_all list" { remove_all([[1,2],[3,4],[1,2]], [1,2]) == [[3,4]] }

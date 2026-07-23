@@ -1,8 +1,15 @@
+
 import("std/float") as float
 import("std/type") as type
-let a = float.from_int(1)
-test "a type" { type.of(a) }
-test "a val" { a }
-let c = float.add(a, a)
-test "c type" { type.of(c) }
-test "c val" { c }
+
+test "from_int type" { type.of(float.from_int(5)) == "float" }
+test "from_int val" { float.from_int(5) == 5.0 }
+test "floor type" { type.of(float.floor(3.7)) == "float" }
+test "floor val" { float.floor(3.7) == 3.0 }
+test "ceil type" { type.of(float.ceil(3.2)) == "float" }
+test "ceil val" { float.ceil(3.2) == 4.0 }
+test "round val" { float.round(3.5) == 4.0 }
+test "sqrt val" { float.sqrt(4.0) == 2.0 }
+test "abs val" { float.abs(-3.14) == 3.14 }
+test "floor neg" { float.floor(-3.2) == -4.0 }
+test "ceil neg" { float.ceil(-3.7) == -3.0 }

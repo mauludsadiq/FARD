@@ -10729,7 +10729,7 @@ fn call_builtin(
         }
         Builtin::FloatFromInt => {
             match args.first() {
-                Some(Val::Int(n)) => Ok(Val::Bytes((*n as f64).to_le_bytes().to_vec())),
+                Some(Val::Int(n)) => Ok(Val::Float(*n as f64)),
                 _ => bail!("ERROR_BADARG float.from_int"),
             }
         }
@@ -10756,12 +10756,12 @@ fn call_builtin(
         Builtin::FloatDiv => { let (a,b) = fb64_2(&args)?; Ok(fv(a/b)) }
         Builtin::FloatExp  => { let a = fb64_1(&args)?; Ok(fv(a.exp())) }
         Builtin::FloatLn   => { let a = fb64_1(&args)?; Ok(fv(a.ln())) }
-        Builtin::FloatSqrt => { let a = fb64_1(&args)?; Ok(fv(a.sqrt())) }
-        Builtin::FloatAbs  => { let a = fb64_1(&args)?; Ok(fv(a.abs())) }
+        Builtin::FloatSqrt => { let a = fb64_1(&args)?; Ok(Val::Float(a.sqrt())) }
+        Builtin::FloatAbs  => { let a = fb64_1(&args)?; Ok(Val::Float(a.abs())) }
         Builtin::FloatNeg  => { let a = fb64_1(&args)?; Ok(fv(-a)) }
-        Builtin::FloatFloor=> { let a = fb64_1(&args)?; Ok(fv(a.floor())) }
-        Builtin::FloatCeil => { let a = fb64_1(&args)?; Ok(fv(a.ceil())) }
-        Builtin::FloatRound=> { let a = fb64_1(&args)?; Ok(fv(a.round())) }
+        Builtin::FloatFloor=> { let a = fb64_1(&args)?; Ok(Val::Float(a.floor())) }
+        Builtin::FloatCeil => { let a = fb64_1(&args)?; Ok(Val::Float(a.ceil())) }
+        Builtin::FloatRound=> { let a = fb64_1(&args)?; Ok(Val::Float(a.round())) }
         Builtin::FloatPow  => { let (a,b) = fb64_2(&args)?; Ok(fv(a.powf(b))) }
         Builtin::FloatLt   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a<b)) }
         Builtin::FloatGt   => { let (a,b) = fb64_2(&args)?; Ok(Val::Bool(a>b)) }
