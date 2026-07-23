@@ -1,0 +1,36 @@
+
+import("std/str") as str
+import("std/list") as list
+
+// Test ?? in functions
+fn coalesce(a, b) { a ?? b }
+test "coalesce null" { coalesce(null, 42) == 42 }
+test "coalesce non-null" { coalesce(10, 42) == 10 }
+test "coalesce zero" { coalesce(0, 42) == 0 }
+test "coalesce false" { coalesce(false, true) == false }
+
+// Test ?. in functions  
+fn safe_field(r, default) { r?.x ?? default }
+test "safe field present" { safe_field({ x: 42 }, 0) == 42 }
+test "safe field null" { safe_field(null, 0) == 0 }
+
+// String ops in functions
+fn upper_fn(s) { str.upper(s) }
+fn concat_fn(a, b) { str.concat(a, b) }
+fn len_fn(s) { str.len(s) }
+test "str upper fn" { upper_fn("hello") == "HELLO" }
+test "str concat fn" { concat_fn("hello", " world") == "hello world" }
+test "str len fn" { len_fn("hello") == 5 }
+
+// Negation in functions
+fn negate_int(x) { -x }
+fn negate_bool(b) { !b }
+test "negate int" { negate_int(5) == -5 }
+test "negate bool" { negate_bool(true) == false }
+test "negate bool f" { negate_bool(false) }
+
+// Modulo in functions
+fn mod_fn(a, b) { a % b }
+test "mod basic" { mod_fn(10, 3) == 1 }
+test "mod zero" { mod_fn(10, 5) == 0 }
+test "mod large" { mod_fn(100, 7) == 2 }
