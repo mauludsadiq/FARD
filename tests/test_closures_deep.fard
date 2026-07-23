@@ -1,0 +1,81 @@
+
+import("std/list") as list
+import("std/str") as str
+
+// Closure capture correctness (now that vm_val_eq is fixed)
+fn make_counter(start, step) {
+  let n = start in
+  fn() { n + step }
+}
+let c1 = make_counter(0, 1)
+let c2 = make_counter(10, 5)
+test "counter 1" { c1() == 1 }
+test "counter 2" { c2() == 15 }
+test "counters independent" { c1() != c2() }
+
+// Closure over list
+fn make_appender(xs) {
+  fn(x) { list.concat([xs, [x]]) }
+}
+let append_to_123 = make_appender([1,2,3])
+test "appender basic" { append_to_123(4) == [1,2,3,4] }
+test "appender again" { append_to_123(99) == [1,2,3,99] }
+
+// Closure returning closure
+fn adder_factory(base) {
+  fn(n) { fn(x) { base + n + x } }
+}
+let add_10 = adder_factory(10)
+let add_10_5 = add_10(5)
+test "closure chain" { add_10_5(3) == 18 }
+test "closure chain 2" { adder_factory(1)(2)(3) == 6 }
+
+// Memoization pattern
+fn memoize(f) {
+  fn(x) { f(x) }
+}
+let memo_double = memoize(fn(x) { x * 2 })
+test "memoize" { memo_double(5) == 10 }
+test "memoize 2" { memo_double(21) == 42 }
+
+// Accumulator via fold + closure
+fn make_accumulator(init) {
+  fn(xs) { list.fold(xs, init, fn(acc, x) { acc + x }) }
+}
+let sum_from_10 = make_accumulator(10)
+test "accumulator empty" { sum_from_10([]) == 10 }
+test "accumulator basic" { sum_from_10([1,2,3]) == 16 }
+
+// Function composition
+fn compose(f, g) { fn(x) { f(g(x)) } }
+fn pipe3(f, g, h) { compose(h, compose(g, f)) }
+let process = pipe3(
+  fn(x) { x * 2 },
+  fn(x) { x + 1 },
+  fn(x) { x * x }
+)
+test "pipe3" { process(3) == 49 }
+
+// Closure equality via list
+fn make_tag(tag) { fn(x) { { tag: tag, value: x } } }
+let tag_a = make_tag("A")
+let tag_b = make_tag("B")
+test "closure diff output" { tag_a(1).tag != tag_b(1).tag }
+test "closure same output" { tag_a(1).tag == tag_a(2).tag }
+
+// Partial application
+fn partial(f, a) { fn(b) { f(a, b) } }
+let add = fn(a, b) { a + b }
+let add5 = partial(add, 5)
+let mul = fn(a, b) { a * b }
+let double = partial(mul, 2)
+test "partial add" { add5(3) == 8 }
+test "partial mul" { double(7) == 14 }
+test "partial chain" { double(add5(3)) == 16 }
+
+// Closure list operations
+let transforms = [fn(x) { x + 1 }, fn(x) { x * 2 }, fn(x) { x - 3 }]
+let results = list.map(transforms, fn(f) { f(10) })
+test "closure list map" { results == [11, 20, 7] }
+let composed = list.fold(transforms, fn(x) { x }, fn(acc, f) { compose(f, acc) })
+test "closure list fold compose" { composed(5) == 9 }

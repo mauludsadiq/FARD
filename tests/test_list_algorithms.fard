@@ -1,0 +1,86 @@
+
+import("std/list") as list
+import("std/str") as str
+
+// Map/filter/fold depth
+fn squares(n) { list.map(list.range(1, n+1), fn(x) { x * x }) }
+test "squares 5" { squares(5) == [1,4,9,16,25] }
+
+fn running_total(xs) {
+  list.fold(xs, { acc: 0, result: [] }, fn(state, x) {
+    let next = state.acc + x in
+    { acc: next, result: list.concat([state.result, [next]]) }
+  }).result
+}
+test "running total" { running_total([1,2,3,4,5]) == [1,3,6,10,15] }
+
+fn group_by(xs, f) {
+  list.fold(xs, [], fn(acc, x) {
+    let key = f(x) in
+    let found = list.any(acc, fn(g) { g.key == key }) in
+    if found then
+      list.map(acc, fn(g) { if g.key == key then { key: key, vals: list.concat([g.vals, [x]]) } else g })
+    else
+      list.concat([acc, [{ key: key, vals: [x] }]])
+  })
+}
+let grouped = group_by([1,2,3,4,5,6], fn(x) { x % 2 == 0 })
+test "group_by count" { list.len(grouped) == 2 }
+
+fn chunk(xs, n) {
+  let result = while { xs: xs, acc: [] }
+    fn(s) { list.len(s.xs) > 0 }
+    fn(s) {
+      let chunk = list.take(s.xs, n) in
+      let rest = list.drop(s.xs, n) in
+      { xs: rest, acc: list.concat([s.acc, [chunk]]) }
+    }
+  in result.value.acc
+}
+let chunked = chunk([1,2,3,4,5,6,7], 3)
+test "chunk count" { list.len(chunked) == 3 }
+test "chunk first" { list.get(chunked, 0) == [1,2,3] }
+test "chunk last" { list.get(chunked, 2) == [7] }
+
+fn flatten(xs) { list.fold(xs, [], fn(acc, x) { list.concat([acc, x]) }) }
+test "flatten" { flatten([[1,2],[3,4],[5]]) == [1,2,3,4,5] }
+test "flatten empty" { flatten([[], [], []]) == [] }
+
+fn zip_with(f, xs, ys) {
+  list.map(list.range(0, list.len(xs)), fn(i) {
+    f(list.get(xs, i), list.get(ys, i))
+  })
+}
+test "zip_with" { zip_with(fn(a,b) { a + b }, [1,2,3], [10,20,30]) == [11,22,33] }
+
+fn sliding_window(xs, n) {
+  list.map(list.range(0, list.len(xs) - n + 1), fn(i) {
+    list.take(list.drop(xs, i), n)
+  })
+}
+let windows = sliding_window([1,2,3,4,5], 3)
+test "window count" { list.len(windows) == 3 }
+test "window first" { list.get(windows, 0) == [1,2,3] }
+test "window last" { list.get(windows, 2) == [3,4,5] }
+
+fn moving_avg(xs, n) {
+  list.map(sliding_window(xs, n), fn(w) {
+    list.fold(w, 0, fn(acc, x) { acc + x }) / n
+  })
+}
+test "moving avg 3" { moving_avg([1,2,3,4,5], 3) == [2,3,4] }
+
+fn transpose(matrix) {
+  let rows = list.len(matrix) in
+  let cols = list.len(list.get(matrix, 0)) in
+  list.map(list.range(0, cols), fn(j) {
+    list.map(list.range(0, rows), fn(i) {
+      list.get(list.get(matrix, i), j)
+    })
+  })
+}
+let m = [[1,2,3],[4,5,6]]
+let t = transpose(m)
+test "transpose shape" { list.len(t) == 3 }
+test "transpose first col" { list.get(t, 0) == [1,4] }
+test "transpose last col" { list.get(t, 2) == [3,6] }
