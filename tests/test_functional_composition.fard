@@ -1,0 +1,63 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+import("std/float") as float
+
+// Advanced functional composition patterns
+
+fn compose(f, g) { fn(x) { f(g(x)) } }
+fn compose3(f, g, h) { compose(f, compose(g, h)) }
+fn flip(f) { fn(a) { fn(b) { f(b, a) } } }
+fn curry(f) { fn(a) { fn(b) { f(a, b) } } }
+fn uncurry(f) { fn(a, b) { f(a)(b) } }
+
+// Basic composition
+let inc = fn(x) { x + 1 }
+let double = fn(x) { x * 2 }
+let square = fn(x) { x * x }
+
+test "compose" { compose(double, inc)(3) == 8 }
+test "compose3" { compose3(square, double, inc)(2) == 36 }
+test "flip add" { flip(fn(a, b) { a - b })(3)(10) == 7 }
+test "curry" { curry(fn(a, b) { a + b })(3)(4) == 7 }
+test "uncurry" { uncurry(curry(fn(a, b) { a * b }))(3, 4) == 12 }
+
+// Functor laws
+fn fmap(f, xs) { list.map(xs, f) }
+let id = fn(x) { x }
+test "functor id" { fmap(id, [1,2,3]) == [1,2,3] }
+test "functor compose" {
+  fmap(compose(double, inc), [1,2,3]) == fmap(double, fmap(inc, [1,2,3]))
+}
+
+// Monoid patterns
+fn mempty_list() { [] }
+fn mappend_list(a, b) { list.concat([a, b]) }
+test "monoid left id" { mappend_list(mempty_list(), [1,2,3]) == [1,2,3] }
+test "monoid right id" { mappend_list([1,2,3], mempty_list()) == [1,2,3] }
+test "monoid assoc" {
+  mappend_list(mappend_list([1], [2]), [3]) == mappend_list([1], mappend_list([2], [3]))
+}
+
+// Church numerals (encoding numbers as functions)
+fn church_zero() { fn(f) { fn(x) { x } } }
+fn church_succ(n) { fn(f) { fn(x) { f(n(f)(x)) } } }
+fn church_to_int(n) { n(fn(x) { x + 1 })(0) }
+fn church_add(m, n) { fn(f) { fn(x) { m(f)(n(f)(x)) } } }
+let zero = church_zero()
+let one = church_succ(zero)
+let two = church_succ(one)
+let three = church_succ(two)
+test "church zero" { church_to_int(zero) == 0 }
+test "church one" { church_to_int(one) == 1 }
+test "church two" { church_to_int(two) == 2 }
+test "church add" { church_to_int(church_add(two, three)) == 5 }
+
+// Point-free via partial application
+fn sum_list(xs) { list.fold(xs, 0, fn(acc, x) { acc + x }) }
+fn double_all(xs) { list.map(xs, double) }
+fn even_filter(xs) { list.filter(xs, fn(x) { x % 2 == 0 }) }
+test "sum_list" { sum_list([1,2,3,4,5]) == 15 }
+test "double_all" { double_all([1,2,3]) == [2,4,6] }
+test "even_filter" { even_filter([1,2,3,4,5,6]) == [2,4,6] }

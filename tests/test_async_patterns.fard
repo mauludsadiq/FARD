@@ -1,0 +1,60 @@
+import("std/str") as str
+
+import("../packages/async/main") as async
+import("std/list") as list
+import("std/type") as type
+import("std/math") as math
+
+// Async computation patterns
+fn slow_square(x) { x * x }
+fn slow_sum(xs) { list.fold(xs, 0, fn(acc, x) { acc + x }) }
+
+// Parallel computation
+let squares = async.map_parallel(list.range(1, 6), slow_square)
+test "parallel squares" { squares == [1, 4, 9, 16, 25] }
+test "parallel squares sum" { slow_sum(squares) == 55 }
+
+// Parallel with filter
+let even_squares = list.filter(
+  async.map_parallel(list.range(1, 11), slow_square),
+  fn(x) { x % 2 == 0 }
+)
+test "parallel filter" { list.len(even_squares) == 5 }
+test "parallel filter vals" { list.get(even_squares, 0) == 4 }
+
+// all combinator with computation
+let tasks = list.map(list.range(1, 6), fn(i) {
+  async.spawn(fn() { i * i })
+})
+let results = async.all(tasks)
+test "all count" { list.len(results) == 5 }
+test "all sum" { slow_sum(results) == 55 }
+
+// Race patterns (first to complete)
+let fast = async.spawn(fn() { 1 })
+let slow = async.spawn(fn() { 2 })
+let race = async.race([fast, slow])
+test "race result" { race >= 1 }
+
+// Parallel string processing
+let texts = ["hello", "world", "fard", "language"]
+let upper_texts = async.map_parallel(texts, fn(s) { str.upper(s) })
+test "parallel str" { list.get(upper_texts, 0) == "HELLO" }
+test "parallel str last" { list.get(upper_texts, 3) == "LANGUAGE" }
+
+// Parallel math
+let pi_estimates = async.map_parallel(
+  list.range(1, 6),
+  fn(n) { math.pi * n * n }
+)
+test "parallel math" { list.len(pi_estimates) == 5 }
+test "parallel pi" { list.get(pi_estimates, 0) > 3.14 }
+
+// nested async
+let nested = async.map_parallel(list.range(1, 4), fn(x) {
+  let inner = async.map_parallel(list.range(1, 4), fn(y) { x * y }) in
+  slow_sum(inner)
+})
+test "nested parallel" { list.len(nested) == 3 }
+test "nested parallel 1" { list.get(nested, 0) == 6 }
+test "nested parallel 2" { list.get(nested, 1) == 12 }
