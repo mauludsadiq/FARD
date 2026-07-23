@@ -1,0 +1,89 @@
+import("std/list") as list
+import("std/math") as math
+
+fn node(v, l, r) { { v: v, l: l, r: r } }
+fn leaf(v) { { v: v, l: null, r: null } }
+
+// Tree traversals
+fn inorder(t) {
+  if t == null then []
+  else list.concat([inorder(t.l), [t.v], inorder(t.r)])
+}
+fn preorder(t) {
+  if t == null then []
+  else list.concat([[t.v], preorder(t.l), preorder(t.r)])
+}
+fn postorder(t) {
+  if t == null then []
+  else list.concat([postorder(t.l), postorder(t.r), [t.v]])
+}
+fn height(t) {
+  if t == null then 0
+  else 1 + (let lh = height(t.l) in let rh = height(t.r) in if lh > rh then lh else rh)
+}
+fn count(t) {
+  if t == null then 0 else 1 + count(t.l) + count(t.r)
+}
+fn sum_tree(t) {
+  if t == null then 0 else t.v + sum_tree(t.l) + sum_tree(t.r)
+}
+
+let t = node(4, node(2, leaf(1), leaf(3)), node(6, leaf(5), leaf(7)))
+test "inorder" { inorder(t) == [1,2,3,4,5,6,7] }
+test "preorder" { preorder(t) == [4,2,1,3,6,5,7] }
+test "postorder" { postorder(t) == [1,3,2,5,7,6,4] }
+test "height" { height(t) == 3 }
+test "count" { count(t) == 7 }
+test "sum" { sum_tree(t) == 28 }
+
+// Level order (BFS)
+fn level_order(t) {
+  if t == null then []
+  else
+    let result = while { queue: [t], levels: [] }
+      fn(s) { list.len(s.queue) > 0 }
+      fn(s) {
+        let node = list.head(s.queue) in
+        let rest = list.tail(s.queue) in
+        let next = list.filter(
+          list.concat([if node.l != null then [node.l] else [], if node.r != null then [node.r] else []]),
+          fn(x) { x != null }
+        ) in
+        { queue: list.concat([rest, next]), levels: list.concat([s.levels, [node.v]]) }
+      }
+    in result.value.levels
+}
+test "level order" { level_order(t) == [4,2,6,1,3,5,7] }
+test "level order leaf" { level_order(leaf(1)) == [1] }
+test "level order null" { level_order(null) == [] }
+
+// Mirror tree
+fn mirror(t) {
+  if t == null then null
+  else node(t.v, mirror(t.r), mirror(t.l))
+}
+test "mirror inorder" { inorder(mirror(t)) == [7,6,5,4,3,2,1] }
+test "mirror height" { height(mirror(t)) == height(t) }
+test "mirror count" { count(mirror(t)) == count(t) }
+
+// Is balanced
+fn is_balanced(t) {
+  if t == null then true
+  else
+    let lh = height(t.l) in
+    let rh = height(t.r) in
+    math.abs(lh - rh + 0.0) <= 1.0 && is_balanced(t.l) && is_balanced(t.r)
+}
+test "balanced" { is_balanced(t) }
+test "balanced leaf" { is_balanced(leaf(1)) }
+test "unbalanced" { is_balanced(node(1, node(2, leaf(3), null), null)) == false }
+
+// Path sum
+fn has_path_sum(t, target) {
+  if t == null then false
+  else if t.l == null && t.r == null then t.v == target
+  else has_path_sum(t.l, target - t.v) || has_path_sum(t.r, target - t.v)
+}
+test "path sum 7" { has_path_sum(t, 7) }
+test "path sum 17" { has_path_sum(t, 17) }
+test "path sum 99" { has_path_sum(t, 99) == false }

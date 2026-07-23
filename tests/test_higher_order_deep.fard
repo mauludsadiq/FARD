@@ -1,0 +1,85 @@
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+
+// Deep higher-order function patterns
+
+// Function memoization (using list as cache)
+fn memoize_fib() {
+  let cache = while { n: 30, fibs: [0, 1] }
+    fn(s) { list.len(s.fibs) <= s.n }
+    fn(s) {
+      let len = list.len(s.fibs) in
+      let next = list.get(s.fibs, len-1) + list.get(s.fibs, len-2) in
+      { n: s.n, fibs: list.concat([s.fibs, [next]]) }
+    }
+  in cache.value.fibs
+}
+let fib_cache = memoize_fib()
+fn fib_fast(n) { list.get(fib_cache, n) }
+test "fib fast 10" { fib_fast(10) == 55 }
+test "fib fast 20" { fib_fast(20) == 6765 }
+test "fib fast 30" { fib_fast(30) == 832040 }
+
+// Transducer-like patterns
+fn mapping(f) { fn(reducer) { fn(acc, x) { reducer(acc, f(x)) } } }
+fn filtering(pred) { fn(reducer) { fn(acc, x) { if pred(x) then reducer(acc, x) else acc } } }
+fn compose_xf(xf1, xf2) { fn(reducer) { xf1(xf2(reducer)) } }
+
+let xf = compose_xf(
+  filtering(fn(x) { x % 2 == 0 }),
+  mapping(fn(x) { x * x })
+)
+let result = list.fold(list.range(1, 11), [], xf(fn(acc, x) { list.concat([acc, [x]]) }))
+test "transducer" { result == [4, 16, 36, 64, 100] }
+test "transducer len" { list.len(result) == 5 }
+
+// Fixed point combinator
+fn fix(f) { fn(x) { f(fix(f))(x) } }
+let factorial = fix(fn(self) { fn(n) { if n <= 1 then 1 else n * self(n-1) } })
+let fibonacci = fix(fn(self) { fn(n) { if n <= 1 then n else self(n-1) + self(n-2) } })
+test "fix factorial 5" { factorial(5) == 120 }
+test "fix factorial 0" { factorial(0) == 1 }
+test "fix fib 10" { fibonacci(10) == 55 }
+
+// Applicative functor operations
+fn lift2(f, ma, mb) { if ma == null || mb == null then null else f(ma, mb) }
+fn lift3(f, ma, mb, mc) { lift2(fn(ab, c) { ab(c) }, lift2(f, ma, mb), mc) }
+test "lift2 ok" { lift2(fn(a, b) { a + b }, 3, 4) == 7 }
+test "lift2 null left" { lift2(fn(a, b) { a + b }, null, 4) == null }
+test "lift2 null right" { lift2(fn(a, b) { a + b }, 3, null) == null }
+
+// Function pipeline with error handling
+fn try_pipe(fns, initial) {
+  list.fold(fns, { ok: true, value: initial }, fn(acc, f) {
+    if acc.ok == false then acc
+    else
+      let result = f(acc.value) in
+      if result == null then { ok: false, value: null }
+      else { ok: true, value: result }
+  })
+}
+let pipeline = try_pipe([
+  fn(x) { if x > 0 then x * 2 else null },
+  fn(x) { if x < 100 then x + 1 else null },
+  fn(x) { x * x }
+], 5)
+test "try pipe ok" { pipeline.ok }
+test "try pipe val" { pipeline.value == 121 }
+let bad = try_pipe([fn(x) { null }, fn(x) { x + 1 }], 5)
+test "try pipe fail" { bad.ok == false }
+
+// Partial application and currying
+fn partial1(f, a) { fn(b) { f(a, b) } }
+fn partial2(f, a, b) { fn(c) { f(a, b, c) } }
+fn curry2(f) { fn(a) { fn(b) { f(a, b) } } }
+fn curry3(f) { fn(a) { fn(b) { fn(c) { f(a, b, c) } } } }
+fn uncurry2(f) { fn(a, b) { f(a)(b) } }
+
+let add = fn(a, b) { a + b }
+let mul3 = fn(a, b, c) { a * b * c }
+test "partial1" { partial1(add, 5)(3) == 8 }
+test "curry2" { curry2(add)(3)(4) == 7 }
+test "curry3" { curry3(mul3)(2)(3)(4) == 24 }
+test "uncurry2" { uncurry2(curry2(add))(3, 4) == 7 }
+test "partial2" { partial2(mul3, 2, 3)(4) == 24 }

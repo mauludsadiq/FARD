@@ -1,0 +1,65 @@
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+
+// Category theory concepts in FARD
+
+// Functors
+fn fmap_list(f, xs) { list.map(xs, f) }
+fn fmap_maybe(f, m) { if m == null then null else f(m) }
+
+// Functor laws
+fn id(x) { x }
+test "functor id list" { fmap_list(id, [1,2,3]) == [1,2,3] }
+test "functor id maybe" { fmap_maybe(id, 42) == 42 }
+test "functor id null" { fmap_maybe(id, null) == null }
+
+fn compose(f, g) { fn(x) { f(g(x)) } }
+let double = fn(x) { x * 2 }
+let inc = fn(x) { x + 1 }
+test "functor compose list" { fmap_list(compose(double, inc), [1,2,3]) == fmap_list(double, fmap_list(inc, [1,2,3])) }
+
+// Natural transformations
+fn list_to_maybe(xs) { if list.len(xs) == 0 then null else list.head(xs) }
+fn maybe_to_list(m) { if m == null then [] else [m] }
+
+test "list to maybe empty" { list_to_maybe([]) == null }
+test "list to maybe" { list_to_maybe([1,2,3]) == 1 }
+test "maybe to list null" { maybe_to_list(null) == [] }
+test "maybe to list" { maybe_to_list(42) == [42] }
+
+// Monoid
+fn string_empty() { "" }
+fn string_append(a, b) { str.concat(a, b) }
+test "string monoid left" { string_append(string_empty(), "hello") == "hello" }
+test "string monoid right" { string_append("hello", string_empty()) == "hello" }
+test "string monoid assoc" { string_append(string_append("a","b"),"c") == string_append("a",string_append("b","c")) }
+
+fn list_empty() { [] }
+fn list_append(a, b) { list.concat([a, b]) }
+test "list monoid left" { list_append(list_empty(), [1,2,3]) == [1,2,3] }
+test "list monoid right" { list_append([1,2,3], list_empty()) == [1,2,3] }
+test "list monoid assoc" { list_append(list_append([1],[2]),[3]) == list_append([1],list_append([2],[3])) }
+
+// Applicative
+fn ap_list(fs, xs) { list.flat_map(fs, fn(f) { list.map(xs, f) }) }
+let fns = [fn(x) { x + 1 }, fn(x) { x * 2 }]
+test "ap list" { ap_list(fns, [1,2,3]) == [2,3,4,2,4,6] }
+
+// Kleisli composition
+fn kleisli_compose(f, g) { fn(x) { let r = f(x) in if r == null then null else g(r) } }
+fn safe_head(xs) { if list.len(xs) == 0 then null else list.head(xs) }
+fn safe_double(x) { if x == null then null else x * 2 }
+let safe_head_double = kleisli_compose(safe_head, safe_double)
+test "kleisli ok" { safe_head_double([5,6,7]) == 10 }
+test "kleisli null" { safe_head_double([]) == null }
+
+// Fold as catamorphism
+fn cata_list(nil_case, cons_fn, xs) {
+  if list.len(xs) == 0 then nil_case
+  else cons_fn(list.head(xs), cata_list(nil_case, cons_fn, list.tail(xs)))
+}
+test "cata sum" { cata_list(0, fn(h, t) { h + t }, [1,2,3,4,5]) == 15 }
+test "cata product" { cata_list(1, fn(h, t) { h * t }, [1,2,3,4,5]) == 120 }
+test "cata reverse" { cata_list([], fn(h, t) { list.concat([t, [h]]) }, [1,2,3]) == [3,2,1] }
+test "cata length" { cata_list(0, fn(_, t) { 1 + t }, [1,2,3,4,5]) == 5 }

@@ -1,0 +1,103 @@
+import("std/record") as rec
+import("std/str") as str
+import("std/list") as list
+import("std/math") as math
+
+// KMP string search
+fn kmp_failure(pattern) {
+  let chars = str.chars(pattern) in
+  let n = list.len(chars) in
+  list.fold(list.range(1, n), [0], fn(f, i) {
+    let k = while { k: list.get(f, i-1) }
+      fn(s) { s.k > 0 && list.get(chars, s.k) != list.get(chars, i) }
+      fn(s) { { k: list.get(f, s.k - 1) } }
+    in
+    let new_k = if list.get(chars, k.value.k) == list.get(chars, i) then k.value.k + 1 else k.value.k in
+    list.concat([f, [new_k]])
+  })
+}
+
+fn kmp_search(text, pattern) {
+  let tc = str.chars(text) in
+  let pc = str.chars(pattern) in
+  let fail = kmp_failure(pattern) in
+  let n = list.len(tc) in
+  let m = list.len(pc) in
+  let result = list.fold(list.range(0, n), { q: 0, matches: [] }, fn(state, i) {
+    let q = while { q: state.q }
+      fn(s) { s.q > 0 && list.get(pc, s.q) != list.get(tc, i) }
+      fn(s) { { q: list.get(fail, s.q - 1) } }
+    in
+    let new_q = if list.get(pc, q.value.q) == list.get(tc, i) then q.value.q + 1 else q.value.q in
+    if new_q == m then
+      { q: list.get(fail, new_q - 1), matches: list.concat([state.matches, [i - m + 1]]) }
+    else
+      { q: new_q, matches: state.matches }
+  }) in
+  result.matches
+}
+
+test "kmp basic" { kmp_search("abcabcabc", "abc") == [0, 3, 6] }
+test "kmp not found" { kmp_search("hello", "xyz") == [] }
+test "kmp single" { kmp_search("hello", "h") == [0] }
+test "kmp overlap" { list.len(kmp_search("aaaa", "aa")) == 3 }
+
+// Anagram check
+fn is_anagram(a, b) {
+  let freq = fn(s) {
+    list.fold(str.chars(s), {}, fn(acc, c) {
+      let n = if rec.has(acc, c) then rec.get(acc, c) else 0 in
+      rec.set(acc, c, n + 1)
+    })
+  } in
+  let fa = freq(str.lower(a)) in
+  let fb = freq(str.lower(b)) in
+  let keys_a = rec.keys(fa) in
+  list.len(keys_a) == list.len(rec.keys(fb)) &&
+  list.all(keys_a, fn(k) {
+    rec.has(fb, k) && rec.get(fa, k) == rec.get(fb, k)
+  })
+}
+test "anagram yes" { is_anagram("listen", "silent") }
+test "anagram no" { is_anagram("hello", "world") == false }
+test "anagram case" { is_anagram("Listen", "Silent") }
+test "anagram diff len" { is_anagram("abc", "ab") == false }
+
+// Longest common prefix
+fn longest_common_prefix(strs) {
+  if list.len(strs) == 0 then ""
+  else
+    let first = list.head(strs) in
+    let chars = str.chars(first) in
+    let len = list.fold(list.tail(strs), list.len(chars), fn(min_len, s) {
+      let sc = str.chars(s) in
+      let common = while { i: 0 }
+        fn(st) { st.i < min_len && st.i < list.len(sc) && list.get(chars, st.i) == list.get(sc, st.i) }
+        fn(st) { { i: st.i + 1 } }
+      in common.value.i
+    }) in
+    str.slice(first, 0, len)
+}
+test "lcp basic" { longest_common_prefix(["flower","flow","flight"]) == "fl" }
+test "lcp none" { longest_common_prefix(["abc","xyz"]) == "" }
+test "lcp full" { longest_common_prefix(["abc","abc"]) == "abc" }
+test "lcp single" { longest_common_prefix(["hello"]) == "hello" }
+
+// String compression
+fn compress(s) {
+  let chars = str.chars(s) in
+  if list.len(chars) == 0 then ""
+  else
+    let groups = list.fold(list.tail(chars), [{ c: list.head(chars), n: 1 }], fn(acc, c) {
+      let last = list.get(acc, list.len(acc)-1) in
+      if last.c == c then list.concat([list.take(acc, list.len(acc)-1), [{ c: c, n: last.n + 1 }]])
+      else list.concat([acc, [{ c: c, n: 1 }]])
+    }) in
+    str.join(list.map(groups, fn(g) {
+      if g.n == 1 then g.c else str.concat(g.c, str.from_int(g.n))
+    }), "")
+}
+test "compress basic" { compress("aaabbbcc") == "a3b3c2" }
+test "compress none" { compress("abcd") == "abcd" }
+test "compress empty" { compress("") == "" }
+test "compress single" { compress("aaa") == "a3" }

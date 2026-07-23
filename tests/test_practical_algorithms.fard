@@ -1,0 +1,85 @@
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+import("std/record") as rec
+
+// Practical algorithms
+
+// Huffman encoding (frequency table)
+fn build_freq(s) {
+  list.fold(str.chars(s), {}, fn(acc, c) {
+    let count = if rec.has(acc, c) then rec.get(acc, c) else 0 in
+    rec.set(acc, c, count + 1)
+  })
+}
+let freq = build_freq("abracadabra")
+test "freq a" { rec.get(freq, "a") == 5 }
+test "freq b" { rec.get(freq, "b") == 2 }
+test "freq r" { rec.get(freq, "r") == 2 }
+test "freq c" { rec.get(freq, "c") == 1 }
+test "freq d" { rec.get(freq, "d") == 1 }
+
+// Run-length encoding
+fn rle_encode(xs) {
+  if list.len(xs) == 0 then []
+  else list.fold(list.tail(xs), [{ val: list.head(xs), count: 1 }], fn(acc, x) {
+    let last = list.get(acc, list.len(acc) - 1) in
+    if last.val == x then
+      list.concat([list.take(acc, list.len(acc)-1), [{ val: x, count: last.count + 1 }]])
+    else
+      list.concat([acc, [{ val: x, count: 1 }]])
+  })
+}
+fn rle_decode(encoded) {
+  list.flat_map(encoded, fn(e) { list.map(list.range(0, e.count), fn(_) { e.val }) })
+}
+
+let encoded = rle_encode([1,1,1,2,2,3,3,3,3,1])
+test "rle encode len" { list.len(encoded) == 4 }
+test "rle encode first" { list.get(encoded, 0).count == 3 }
+test "rle decode" { rle_decode(encoded) == [1,1,1,2,2,3,3,3,3,1] }
+
+// Merge sort
+fn merge(a, b) {
+  if list.len(a) == 0 then b
+  else if list.len(b) == 0 then a
+  else if list.get(a, 0) <= list.get(b, 0) then
+    list.concat([[list.head(a)], merge(list.tail(a), b)])
+  else
+    list.concat([[list.head(b)], merge(a, list.tail(b))])
+}
+fn merge_sort(xs) {
+  let n = list.len(xs) in
+  if n <= 1 then xs
+  else
+    let mid = n / 2 in
+    merge(merge_sort(list.take(xs, mid)), merge_sort(list.drop(xs, mid)))
+}
+test "merge sort" { merge_sort([5,3,8,1,9,2,7,4,6]) == [1,2,3,4,5,6,7,8,9] }
+test "merge sort empty" { merge_sort([]) == [] }
+test "merge sort single" { merge_sort([1]) == [1] }
+test "merge sort sorted" { merge_sort([1,2,3,4,5]) == [1,2,3,4,5] }
+test "merge sort reversed" { merge_sort([5,4,3,2,1]) == [1,2,3,4,5] }
+
+// Bloom filter (approximate membership)
+fn make_bloom(size) { list.map(list.range(0, size), fn(_) { false }) }
+fn bloom_hash1(s, size) { str.len(s) % size }
+fn bloom_hash2(s, size) { str.char_code(str.slice(s, 0, 1)) % size }
+fn bloom_add(bloom, s) {
+  let h1 = bloom_hash1(s, list.len(bloom)) in
+  let h2 = bloom_hash2(s, list.len(bloom)) in
+  list.map(list.range(0, list.len(bloom)), fn(i) {
+    if i == h1 || i == h2 then true else list.get(bloom, i)
+  })
+}
+fn bloom_has(bloom, s) {
+  let h1 = bloom_hash1(s, list.len(bloom)) in
+  let h2 = bloom_hash2(s, list.len(bloom)) in
+  list.get(bloom, h1) && list.get(bloom, h2)
+}
+
+let bloom = bloom_add(bloom_add(bloom_add(make_bloom(20), "hello"), "world"), "fard")
+test "bloom has hello" { bloom_has(bloom, "hello") }
+test "bloom has world" { bloom_has(bloom, "world") }
+test "bloom has fard" { bloom_has(bloom, "fard") }
+test "bloom empty" { bloom_has(make_bloom(20), "test") == false }
