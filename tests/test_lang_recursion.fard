@@ -1,0 +1,59 @@
+
+import("std/list") as list
+
+fn factorial(n) { if n <= 1 then 1 else n * factorial(n - 1) }
+test "factorial 0" { factorial(0) == 1 }
+test "factorial 1" { factorial(1) == 1 }
+test "factorial 5" { factorial(5) == 120 }
+test "factorial 10" { factorial(10) == 3628800 }
+
+fn fib(n) { if n <= 1 then n else fib(n-1) + fib(n-2) }
+test "fib 0" { fib(0) == 0 }
+test "fib 1" { fib(1) == 1 }
+test "fib 5" { fib(5) == 5 }
+test "fib 10" { fib(10) == 55 }
+
+fn my_sum(xs) {
+  if list.len(xs) == 0 then 0
+  else list.head(xs) + my_sum(list.tail(xs))
+}
+test "recursive sum empty" { my_sum([]) == 0 }
+test "recursive sum" { my_sum([1,2,3,4,5]) == 15 }
+
+fn ackermann(m, n) {
+  if m == 0 then n + 1
+  else if n == 0 then ackermann(m - 1, 1)
+  else ackermann(m - 1, ackermann(m, n - 1))
+}
+test "ackermann 0 0" { ackermann(0, 0) == 1 }
+test "ackermann 1 1" { ackermann(1, 1) == 3 }
+test "ackermann 2 2" { ackermann(2, 2) == 7 }
+test "ackermann 3 2" { ackermann(3, 2) == 29 }
+
+fn make_node(v, l, r) { { val: v, left: l, right: r } }
+fn leaf(v) { { val: v, left: null, right: null } }
+fn tree_sum(node) {
+  if node == null then 0
+  else node.val + tree_sum(node.left) + tree_sum(node.right)
+}
+fn tree_depth(node) {
+  if node == null then 0
+  else
+    let ld = tree_depth(node.left) in
+    let rd = tree_depth(node.right) in
+    1 + (if ld > rd then ld else rd)
+}
+let tree = make_node(1,
+  make_node(2, leaf(4), leaf(5)),
+  make_node(3, leaf(6), null))
+test "tree sum" { tree_sum(tree) == 21 }
+test "tree depth" { tree_depth(tree) == 3 }
+test "leaf depth" { tree_depth(leaf(1)) == 1 }
+test "null depth" { tree_depth(null) == 0 }
+
+fn is_even(n) { if n == 0 then true else is_odd(n - 1) }
+fn is_odd(n) { if n == 0 then false else is_even(n - 1) }
+test "is_even 4" { is_even(4) }
+test "is_odd 3" { is_odd(3) }
+test "is_even 0" { is_even(0) }
+test "is_odd 1" { is_odd(1) }

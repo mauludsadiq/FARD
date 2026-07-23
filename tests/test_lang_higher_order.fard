@@ -1,0 +1,58 @@
+
+import("std/list") as list
+import("std/str") as str
+
+fn compose(f, g) { fn(x) { f(g(x)) } }
+fn pipe(fns) {
+  list.fold(fns, fn(x) { x }, fn(acc, f) { compose(f, acc) })
+}
+
+let double = fn(x) { x * 2 }
+let inc = fn(x) { x + 1 }
+let square = fn(x) { x * x }
+
+test "compose" { compose(double, inc)(3) == 8 }
+test "compose chain" { compose(square, double)(3) == 36 }
+
+let pipeline = pipe([inc, double, square])
+test "pipe" { pipeline(3) == 64 }
+
+fn curry2(f) { fn(a) { fn(b) { f(a, b) } } }
+let add = fn(a, b) { a + b }
+let curried_add = curry2(add)
+let add5 = curried_add(5)
+test "curry basic" { add5(3) == 8 }
+test "curry add10" { curry2(add)(10)(7) == 17 }
+
+fn memoize_fib(n) {
+  let result = while { i: 0, a: 0, b: 1 }
+    fn(s) { s.i < n }
+    fn(s) { { i: s.i + 1, a: s.b, b: s.a + s.b } }
+  in result.value.a
+}
+test "iter fib 0" { memoize_fib(0) == 0 }
+test "iter fib 10" { memoize_fib(10) == 55 }
+test "iter fib 20" { memoize_fib(20) == 6765 }
+
+fn zip_with(f, xs, ys) {
+  list.map(list.range(0, list.len(xs)), fn(i) {
+    f(list.get(xs, i), list.get(ys, i))
+  })
+}
+test "zip_with add" { zip_with(fn(a,b) { a+b }, [1,2,3], [4,5,6]) == [5,7,9] }
+test "zip_with mul" { zip_with(fn(a,b) { a*b }, [1,2,3], [4,5,6]) == [4,10,18] }
+
+fn flat_map(f, xs) { list.concat(list.map(xs, f)) }
+test "flat_map" { flat_map(fn(x) { [x, x*2] }, [1,2,3]) == [1,2,2,4,3,6] }
+test "flat_map empty" { flat_map(fn(x) { [] }, [1,2,3]) == [] }
+
+fn partition(pred, xs) {
+  list.fold(xs, { yes: [], no: [] }, fn(acc, x) {
+    if pred(x) then { yes: list.concat([acc.yes, [x]]), no: acc.no }
+    else { yes: acc.yes, no: list.concat([acc.no, [x]]) }
+  })
+}
+let p = partition(fn(x) { x % 2 == 0 }, [1,2,3,4,5,6])
+test "partition yes" { p.yes == [2,4,6] }
+test "partition no" { p.no == [1,3,5] }
+test "partition empty" { partition(fn(x) { true }, []).yes == [] }
