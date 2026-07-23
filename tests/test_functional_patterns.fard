@@ -1,0 +1,70 @@
+import("std/record") as rec
+
+import("std/list") as list
+import("std/type") as type
+
+// Functor / map laws
+test "map id" { list.map([1,2,3], fn(x) { x }) == [1,2,3] }
+test "map compose" {
+  let f = fn(x) { x * 2 } in
+  let g = fn(x) { x + 1 } in
+  list.map(list.map([1,2,3], g), f) == list.map([1,2,3], fn(x) { f(g(x)) })
+}
+
+// Monad-like patterns with option
+fn safe_div(a, b) {
+  if b == 0 then { none: null } else { some: a / b }
+}
+fn bind_option(opt, f) {
+  if type.of(opt) == "record" && opt != null && rec.has(opt, "some")
+  then f(opt.some)
+  else { none: null }
+}
+test "bind some" { bind_option({ some: 10 }, fn(x) { { some: x * 2 } }).some == 20 }
+test "bind none" { rec.has(bind_option({ none: null }, fn(x) { { some: x } }), "none") }
+test "safe_div ok" { safe_div(10, 2).some == 5 }
+test "safe_div zero" { rec.has(safe_div(10, 0), "none") }
+
+// Chained safe operations
+let result = bind_option(
+  bind_option(safe_div(100, 5), fn(x) { safe_div(x, 2) }),
+  fn(x) { { some: x + 1 } }
+)
+test "chained bind" { result.some == 11 }
+
+// Applicative-like: apply list of functions to value
+fn apply_all(fns, x) { list.map(fns, fn(f) { f(x) }) }
+let fns = [fn(x) { x + 1 }, fn(x) { x * 2 }, fn(x) { x * x }]
+test "apply_all" { apply_all(fns, 3) == [4, 6, 9] }
+
+// Lens-like pattern
+fn lens_get(obj, key) { rec.get(obj, key) }
+fn lens_set(obj, key, val) { rec.set(obj, key, val) }
+fn lens_over(obj, key, f) { lens_set(obj, key, f(lens_get(obj, key))) }
+let person = { name: "Alice", age: 30 }
+test "lens get" { lens_get(person, "age") == 30 }
+test "lens set" { lens_set(person, "age", 31).age == 31 }
+test "lens over" { lens_over(person, "age", fn(a) { a + 1 }).age == 31 }
+
+// Accumulator pattern
+fn scan(xs, init, f) {
+  list.fold(xs, { acc: init, result: [init] }, fn(state, x) {
+    let next = f(state.acc, x) in
+    { acc: next, result: list.concat([state.result, [next]]) }
+  }).result
+}
+test "scan running sum" { scan([1,2,3,4,5], 0, fn(acc,x) { acc + x }) == [0,1,3,6,10,15] }
+test "scan running max" { scan([3,1,4,1,5,9], 0, fn(acc,x) { if x > acc then x else acc }) == [0,3,3,4,4,5,9] }
+
+// Unfold (generate list from seed)
+fn unfold(f, seed, n) {
+  list.fold(list.range(0, n), { val: seed, result: [] }, fn(state, _) {
+    let next = f(state.val) in
+    { val: next, result: list.concat([state.result, [state.val]]) }
+  }).result
+}
+test "unfold powers of 2" { unfold(fn(x) { x * 2 }, 1, 5) == [1,2,4,8,16] }
+test "unfold fibonacci" {
+  let fibs = unfold(fn(p) { { a: p.b, b: p.a + p.b } }, { a: 0, b: 1 }, 8) in
+  list.map(fibs, fn(p) { p.a }) == [0,1,1,2,3,5,8,13]
+}

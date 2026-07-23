@@ -1,0 +1,57 @@
+
+import("std/list") as list
+import("std/math") as math
+
+fn gcd(a, b) { if b == 0 then a else gcd(b, a % b) }
+fn lcm(a, b) { (a * b) / gcd(a, b) }
+fn is_prime(n) {
+  if n < 2 then false
+  else if n == 2 then true
+  else if n % 2 == 0 then false
+  else
+    let limit = math.floor(math.sqrt(n + 0.0)) in
+    let result = while { i: 3, is_p: true }
+      fn(s) { s.i <= limit && s.is_p }
+      fn(s) { { i: s.i + 2, is_p: n % s.i != 0 } }
+    in result.value.is_p
+}
+
+test "gcd basic" { gcd(12, 8) == 4 }
+test "gcd prime" { gcd(7, 13) == 1 }
+test "gcd same" { gcd(5, 5) == 5 }
+test "gcd zero" { gcd(5, 0) == 5 }
+test "lcm basic" { lcm(4, 6) == 12 }
+test "lcm prime" { lcm(5, 7) == 35 }
+
+fn primes_to(n) { list.filter(list.range(2, n+1), fn(x) { is_prime(x) }) }
+let first_primes = primes_to(30)
+test "primes count to 30" { list.len(first_primes) == 10 }
+test "first prime" { list.get(first_primes, 0) == 2 }
+test "last prime to 30" { list.get(first_primes, 9) == 29 }
+
+fn fib_list(n) {
+  list.fold(list.range(0, n), [0, 1], fn(acc, _) {
+    let len = list.len(acc) in
+    let a = list.get(acc, len-2) in
+    let b = list.get(acc, len-1) in
+    list.concat([acc, [a+b]])
+  })
+}
+let fibs = fib_list(8)
+test "fib list len" { list.len(fibs) == 10 }
+test "fib list 7th" { list.get(fibs, 7) == 13 }
+test "fib list 9th" { list.get(fibs, 9) == 34 }
+
+fn collatz(n) {
+  let result = while { n: n, steps: 0 }
+    fn(s) { s.n != 1 }
+    fn(s) {
+      let next = if s.n % 2 == 0 then s.n / 2 else 3 * s.n + 1 in
+      { n: next, steps: s.steps + 1 }
+    }
+  in result.value.steps
+}
+test "collatz 1" { collatz(1) == 0 }
+test "collatz 2" { collatz(2) == 1 }
+test "collatz 6" { collatz(6) == 8 }
+test "collatz 27" { collatz(27) == 111 }
