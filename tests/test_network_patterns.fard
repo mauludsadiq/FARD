@@ -1,0 +1,86 @@
+
+import("../packages/fard-web/main") as web
+import("../packages/http-middleware/main") as mw
+import("../packages/jwt/main") as jwt
+import("../packages/hmac-sign/main") as hmac
+import("std/str") as str
+import("std/list") as list
+import("std/json") as json
+import("std/record") as rec
+
+// Request/response patterns
+fn make_req(method, path, body) {
+  { method: method, path: path, body: body, headers: {}, params: {} }
+}
+
+// CRUD API simulation  
+fn user_db() {
+  { users: [
+    { id: 1, name: "Alice", email: "alice@example.com", role: "admin" },
+    { id: 2, name: "Bob",   email: "bob@example.com",   role: "user" },
+    { id: 3, name: "Carol", email: "carol@example.com", role: "user" }
+  ]}
+}
+
+fn find_user(db, id) {
+  list.find(db.users, fn(u) { u.id == id })
+}
+fn list_users(db) { db.users }
+fn create_user(db, user) {
+  let new_id = list.len(db.users) + 1 in
+  let new_user = rec.set(user, "id", new_id) in
+  { users: list.concat([db.users, [new_user]]) }
+}
+
+let db = user_db()
+test "list users" { list.len(list_users(db)) == 3 }
+test "find user 1" { find_user(db, 1).some.name == "Alice" }
+test "find user 3" { find_user(db, 3).some.role == "user" }
+test "find missing" { find_user(db, 99) != null }
+
+let new_db = create_user(db, { name: "Dave", email: "dave@example.com", role: "user" })
+test "create user" { list.len(new_db.users) == 4 }
+test "created name" { list.get(new_db.users, 3).name == "Dave" }
+test "created id" { list.get(new_db.users, 3).id == 4 }
+
+// JWT auth flow
+let secret = "network-test-secret"
+fn issue_token(user) {
+  jwt.encode({ sub: str.from_int(user.id), role: user.role, name: user.name }, secret)
+}
+fn verify_token(token) { jwt.verify(token, secret) }
+
+let alice = find_user(db, 1).some
+let token = issue_token(alice)
+test "token issued" { str.len(token) > 0 }
+test "token valid" { verify_token(token).ok }
+test "token sub" { rec.get(verify_token(token).claims, "sub") == "1" }
+test "token role" { rec.get(verify_token(token).claims, "role") == "admin" }
+
+// Request signing
+let payload = json.encode({ action: "delete", resource: "user", id: 2 })
+let sig = hmac.sign(payload, secret)
+test "request signed" { str.len(sig) > 0 }
+test "request verified" { hmac.verify(payload, secret, sig) }
+test "tampered rejected" { hmac.verify(json.encode({ action: "delete", resource: "user", id: 99 }), secret, sig) == false }
+
+// Response building
+let users_res = web.ok(list_users(db))
+test "users response" { users_res.status == 200 }
+test "users body" { str.contains(users_res.body, "Alice") }
+
+let not_found = web.not_found("User not found")
+test "not found status" { not_found.status == 404 }
+
+let created_res = web.created({ id: 4, name: "Dave" })
+test "created status" { created_res.status == 201 }
+test "created body" { str.contains(created_res.body, "Dave") }
+
+// Middleware chain
+let routes = [
+  web.get("/users", fn(req) { web.ok(list_users(db)) }),
+  web.get("/health", fn(req) { web.ok({ status: "ok" }) })
+]
+let app = mw.wrap(web.router(routes), [mw.logger()])
+let health_res = app({ method: "GET", path: "/health", body: "", headers: {} })
+test "middleware health" { health_res.status == 200 }

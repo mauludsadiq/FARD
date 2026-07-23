@@ -1,0 +1,78 @@
+
+import("std/list") as list
+import("std/record") as rec
+import("std/str") as str
+import("std/type") as type
+import("std/json") as json
+
+// Domain modeling with records
+
+// Product catalog
+fn make_product(id, name, price, category, stock) {
+  { id: id, name: name, price: price, category: category, stock: stock }
+}
+fn in_stock(p) { p.stock > 0 }
+fn discount(p, pct) { rec.set(p, "price", p.price * (1.0 - pct / 100.0)) }
+fn apply_tax(p, rate) { p.price * (1.0 + rate) }
+
+let products = [
+  make_product(1, "Laptop", 999.99, "electronics", 5),
+  make_product(2, "Book", 29.99, "education", 100),
+  make_product(3, "Headphones", 149.99, "electronics", 0),
+  make_product(4, "Notebook", 4.99, "stationery", 200),
+  make_product(5, "Monitor", 399.99, "electronics", 3)
+]
+
+test "products count" { list.len(products) == 5 }
+test "in stock" { list.len(list.filter(products, in_stock)) == 4 }
+test "electronics" { list.len(list.filter(products, fn(p) { p.category == "electronics" })) == 3 }
+test "discount" { discount(list.get(products, 0), 10.0).price < 999.99 }
+test "tax" { apply_tax(list.get(products, 1), 0.1) > 29.99 }
+
+let sorted_by_price = list.sort_by(products, fn(a, b) {
+  if a.price < b.price then -1 else if a.price > b.price then 1 else 0
+})
+test "cheapest" { list.get(sorted_by_price, 0).name == "Notebook" }
+test "priciest" { list.get(sorted_by_price, 4).name == "Laptop" }
+
+// Shopping cart
+fn cart_new() { { items: [], total: 0.0 } }
+fn cart_add(cart, product, qty) {
+  let item = { product: product, qty: qty, subtotal: product.price * (qty + 0.0) } in
+  { items: list.concat([cart.items, [item]]), total: cart.total + item.subtotal }
+}
+fn cart_item_count(cart) { list.fold(cart.items, 0, fn(acc, i) { acc + i.qty }) }
+
+let cart = cart_new()
+let cart1 = cart_add(cart, list.get(products, 0), 1)
+let cart2 = cart_add(cart1, list.get(products, 1), 2)
+test "cart items" { list.len(cart2.items) == 2 }
+test "cart item count" { cart_item_count(cart2) == 3 }
+test "cart total" { cart2.total > 1050.0 }
+test "cart subtotal" { list.get(cart2.items, 1).subtotal > 59.0 }
+
+// Order processing
+fn make_order(cart, customer) {
+  { id: 1001, customer: customer, items: cart.items, total: cart.total, status: "pending" }
+}
+fn process_order(order) { rec.set(order, "status", "processing") }
+fn complete_order(order) { rec.set(order, "status", "completed") }
+
+let customer = { id: 42, name: "Alice", email: "alice@example.com" }
+let order = make_order(cart2, customer)
+test "order pending" { order.status == "pending" }
+test "order customer" { order.customer.name == "Alice" }
+test "order total" { order.total == cart2.total }
+
+let processing = process_order(order)
+test "order processing" { processing.status == "processing" }
+let completed = complete_order(processing)
+test "order completed" { completed.status == "completed" }
+
+// Serialization
+let order_json = json.encode(order)
+test "order json" { str.contains(order_json, "Alice") }
+test "order json status" { str.contains(order_json, "pending") }
+let decoded = json.decode(order_json)
+test "order decode" { decoded.customer.name == "Alice" }
+test "order decode status" { decoded.status == "pending" }
