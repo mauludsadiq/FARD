@@ -1,0 +1,62 @@
+
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("std/json") as json
+import("std/type") as type
+
+// File I/O patterns
+let path = "/tmp/fard_io_test.txt"
+
+// Write and read
+let _ = io.write_file(path, "Hello, FARD!")
+let content = io.read_file(path)
+test "read content" { str.contains(content.ok, "FARD") }
+
+// Multiple writes
+let _ = io.write_file(path, "line1
+line2
+line3")
+let lines_content = io.read_file(path)
+let lines = str.split_lines(lines_content.ok)
+test "lines count" { list.len(lines) >= 3 }
+test "first line" { list.get(lines, 0) == "line1" }
+
+// JSON file roundtrip
+let data = { name: "Alice", age: 30, scores: [95, 87, 92] }
+let json_path = "/tmp/fard_json_test.json"
+let _ = io.write_file(json_path, json.encode(data))
+let json_content = io.read_file(json_path)
+let parsed = json.decode(json_content.ok)
+test "json file name" { parsed.name == "Alice" }
+test "json file age" { parsed.age == 30 }
+test "json file scores" { list.get(parsed.scores, 0) == 95 }
+
+// File existence
+test "file exists after write" { io.file_exists(path) }
+test "file not exists" { io.file_exists("/tmp/nonexistent_fard_abc123.txt") == false }
+
+// Directory operations
+let dir_path = "/tmp/fard_test_dir_io"
+let _ = io.make_dir(dir_path)
+test "dir created" { io.file_exists(dir_path) }
+
+// Multiple file operations
+let files = list.map(list.range(0, 3), fn(i) {
+  let p = str.concat("/tmp/fard_test_", str.concat(str.from_int(i), ".txt")) in
+  let _ = io.write_file(p, str.concat("content ", str.from_int(i))) in
+  p
+})
+test "files created" { list.all(files, fn(p) { io.file_exists(p) }) }
+test "files count" { list.len(files) == 3 }
+
+// Read lines
+let multi_path = "/tmp/fard_multiline.txt"
+let _ = io.write_file(multi_path, "alpha
+beta
+gamma
+delta")
+let multi_content = io.read_file(multi_path)
+let multi_lines = str.split_lines(multi_content.ok)
+test "multiline count" { list.len(multi_lines) == 4 }
+test "multiline last" { list.get(multi_lines, 3) == "delta" }
