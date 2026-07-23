@@ -1,0 +1,93 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/type") as type
+import("std/record") as rec
+import("std/int") as int
+
+// Deeply nested expressions
+test "nested if" { (if true then if false then 0 else 1 else 2) == 1 }
+test "nested match" {
+  match { x: 1 } {
+    { x: 1 } => match "a" { "a" => true, _ => false },
+    _ => false
+  }
+}
+
+// Let in let
+test "nested let" {
+  let a = 1 in
+  let b = a + 1 in
+  let c = b + 1 in
+  c == 3
+}
+
+// Let shadow
+test "let shadow" {
+  let x = 1 in
+  let x = x + 1 in
+  x == 2
+}
+
+// Closures over closures
+fn outer(x) {
+  fn(y) {
+    fn(z) { x + y + z }
+  }
+}
+test "triple closure" { outer(1)(2)(3) == 6 }
+test "triple closure 2" { outer(10)(20)(30) == 60 }
+
+// Higher order with closures
+fn apply_twice(f, x) { f(f(x)) }
+fn apply_n(f, n, x) {
+  list.fold(list.range(0, n), x, fn(acc, _) { f(acc) })
+}
+test "apply_twice" { apply_twice(fn(x) { x + 1 }, 5) == 7 }
+test "apply_n" { apply_n(fn(x) { x * 2 }, 4, 1) == 16 }
+
+// Mutual recursion
+fn even(n) { if n == 0 then true else odd(n - 1) }
+fn odd(n) { if n == 0 then false else even(n - 1) }
+test "even 0" { even(0) }
+test "even 4" { even(4) }
+test "odd 1" { odd(1) }
+test "odd 7" { odd(7) }
+test "even 10" { even(10) }
+
+// Pattern matching edge cases
+fn match_list(xs) {
+  let n = list.len(xs) in
+  if n == 0 then 0
+  else if n == 1 then 1
+  else if n == 2 then 2
+  else 99
+}
+test "match empty list" { match_list([]) == 0 }
+test "match one" { match_list([42]) == 1 }
+test "match two" { match_list([1,2]) == 2 }
+test "match many" { match_list([1,2,3,4]) == 99 }
+
+// while loop edge cases
+fn while_sum(n) {
+  let r = while { i: 0, sum: 0 }
+    fn(s) { s.i < n }
+    fn(s) { { i: s.i + 1, sum: s.sum + s.i } }
+  in r.value.sum
+}
+test "while sum 0" { while_sum(0) == 0 }
+test "while sum 1" { while_sum(1) == 0 }
+test "while sum 5" { while_sum(5) == 10 }
+test "while sum 10" { while_sum(10) == 45 }
+
+// Null handling
+test "null ?? chain" { (null ?? null ?? 42) == 42 }
+test "null eq null" { null == null }
+test "null ne value" { null != 0 }
+test "type of null" { type.of(null) == "unit" || type.of(null) == "null" }
+
+// Large list operations
+let big = list.range(1, 1001)
+test "big list len" { list.len(big) == 1000 }
+test "big list sum" { list.fold(big, 0, fn(acc,x) { acc+x }) == 500500 }
+test "big list filter" { list.len(list.filter(big, fn(x) { x % 100 == 0 })) == 10 }
