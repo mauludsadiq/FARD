@@ -1,0 +1,92 @@
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+
+// Advanced functional programming patterns
+
+// Continuation passing style transforms
+fn sum_cps(xs, k) {
+  if list.len(xs) == 0 then k(0)
+  else sum_cps(list.tail(xs), fn(rest) { k(list.head(xs) + rest) })
+}
+fn product_cps(xs, k) {
+  if list.len(xs) == 0 then k(1)
+  else product_cps(list.tail(xs), fn(rest) { k(list.head(xs) * rest) })
+}
+test "sum cps" { sum_cps([1,2,3,4,5], fn(x) { x }) == 15 }
+test "product cps" { product_cps([1,2,3,4,5], fn(x) { x }) == 120 }
+test "sum cps empty" { sum_cps([], fn(x) { x }) == 0 }
+
+// Defunctionalization
+fn make_add_cont(n, k) { { type: "add", n: n, k: k } }
+fn make_mul_cont(n, k) { { type: "mul", n: n, k: k } }
+fn apply_cont(k, v) {
+  if k == null then v
+  else match k.type {
+    "add" => apply_cont(k.k, v + k.n),
+    "mul" => apply_cont(k.k, v * k.n),
+    _ => v
+  }
+}
+let cont = make_add_cont(3, make_mul_cont(2, null))
+test "apply cont" { apply_cont(cont, 5) == 16 }
+
+// Corecursion (stream generation)
+fn iterate(f, seed) {
+  { head: seed, tail: fn() { iterate(f, f(seed)) } }
+}
+fn stream_take(s, n) {
+  if n == 0 then []
+  else list.concat([[s.head], stream_take(s.tail(), n-1)])
+}
+let nats = iterate(fn(x) { x + 1 }, 0)
+test "stream take 5" { stream_take(nats, 5) == [0,1,2,3,4] }
+test "stream take 1" { stream_take(nats, 1) == [0] }
+let squares = iterate(fn(x) { x + 1 }, 1)
+let sq_vals = stream_take(squares, 5)
+test "stream map" { list.map(sq_vals, fn(x) { x * x }) == [1,4,9,16,25] }
+
+// Catamorphism (fold over recursive structure)
+fn tree_leaf(v) { { type: "leaf", value: v } }
+fn tree_node(l, r) { { type: "node", left: l, right: r } }
+fn cata(leaf_fn, node_fn, tree) {
+  match tree.type {
+    "leaf" => leaf_fn(tree.value),
+    "node" => node_fn(cata(leaf_fn, node_fn, tree.left), cata(leaf_fn, node_fn, tree.right)),
+    _ => null
+  }
+}
+let t = tree_node(tree_node(tree_leaf(1), tree_leaf(2)), tree_node(tree_leaf(3), tree_leaf(4)))
+test "cata sum" { cata(fn(v) { v }, fn(l, r) { l + r }, t) == 10 }
+test "cata max" { cata(fn(v) { v }, fn(l, r) { if l > r then l else r }, t) == 4 }
+test "cata count" { cata(fn(_) { 1 }, fn(l, r) { l + r }, t) == 4 }
+test "cata depth" { cata(fn(_) { 1 }, fn(l, r) { 1 + (if l > r then l else r) }, t) == 3 }
+
+// Free monad (simplified)
+fn free_pure(v) { { type: "pure", value: v } }
+fn free_effect(effect, next) { { type: "effect", effect: effect, next: next } }
+fn interpret(pure_fn, effect_fn, m) {
+  match m.type {
+    "pure"   => pure_fn(m.value),
+    "effect" => effect_fn(m.effect, fn(v) { interpret(pure_fn, effect_fn, m.next(v)) }),
+    _        => null
+  }
+}
+
+let program = free_effect("read", fn(input) {
+  free_effect("write", fn(_) {
+    free_pure(str.concat("processed: ", input))
+  })
+})
+let result = interpret(
+  fn(v) { v },
+  fn(effect, next) {
+    match effect {
+      "read"  => next("hello"),
+      "write" => next(null),
+      _       => next(null)
+    }
+  },
+  program
+)
+test "free monad" { result == "processed: hello" }

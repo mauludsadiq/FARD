@@ -1,0 +1,84 @@
+import("std/list") as list
+import("std/math") as math
+
+// Dynamic programming algorithms
+
+// Fibonacci with memoization via list
+fn fib_dp(n) {
+  if n == 0 then 0
+  else if n == 1 then 1
+  else
+    let dp = list.fold(list.range(2, n+1), [0, 1], fn(acc, i) {
+      let len = list.len(acc) in
+      list.concat([acc, [list.get(acc, len-1) + list.get(acc, len-2)]])
+    }) in
+    list.get(dp, n)
+}
+test "fib dp 0" { fib_dp(0) == 0 }
+test "fib dp 1" { fib_dp(1) == 1 }
+test "fib dp 10" { fib_dp(10) == 55 }
+test "fib dp 20" { fib_dp(20) == 6765 }
+
+// Knapsack problem (0/1)
+fn knapsack(items, capacity) {
+  let n = list.len(items) in
+  let dp = list.map(list.range(0, n+1), fn(i) {
+    list.map(list.range(0, capacity+1), fn(w) {
+      if i == 0 || w == 0 then 0 else -1
+    })
+  }) in
+  let result = list.fold(list.range(1, n+1), dp, fn(table, i) {
+    let item = list.get(items, i-1) in
+    list.fold(list.range(1, capacity+1), table, fn(t2, w) {
+      let no_take = list.get(list.get(t2, i-1), w) in
+      let take = if item.weight <= w then
+        list.get(list.get(t2, i-1), w - item.weight) + item.value
+      else -1 in
+      let best = if take > no_take then take else no_take in
+      list.map(list.range(0, list.len(t2)), fn(row) {
+        if row == i then
+          list.map(list.range(0, list.len(list.get(t2, row))), fn(col) {
+            if col == w then best else list.get(list.get(t2, row), col)
+          })
+        else list.get(t2, row)
+      })
+    })
+  }) in
+  list.get(list.get(result, n), capacity)
+}
+
+let items = [
+  { weight: 2, value: 3 },
+  { weight: 3, value: 4 },
+  { weight: 4, value: 5 },
+  { weight: 5, value: 6 }
+]
+test "knapsack basic" { knapsack(items, 5) == 7 }
+test "knapsack full" { knapsack(items, 14) >= 18 }
+test "knapsack zero" { knapsack(items, 0) == 0 }
+test "knapsack small" { knapsack(items, 2) == 3 }
+
+// Coin change
+fn coin_change(coins, amount) {
+  let dp = list.map(list.range(0, amount+1), fn(i) {
+    if i == 0 then 0 else 99999
+  }) in
+  let result = list.fold(list.range(1, amount+1), dp, fn(table, i) {
+    let best = list.fold(coins, list.get(table, i), fn(min_val, coin) {
+      if coin <= i then
+        let prev = list.get(table, i - coin) + 1 in
+        if prev < min_val then prev else min_val
+      else min_val
+    }) in
+    list.map(list.range(0, list.len(table)), fn(j) {
+      if j == i then best else list.get(table, j)
+    })
+  }) in
+  let ans = list.get(result, amount) in
+  if ans >= 99999 then -1 else ans
+}
+
+test "coins 11" { coin_change([1,5,6,9], 11) == 2 }
+test "coins 0" { coin_change([1,5,10], 0) == 0 }
+test "coins exact" { coin_change([5,10,25], 25) == 1 }
+test "coins impossible" { coin_change([5,10], 3) == -1 }

@@ -1,0 +1,98 @@
+import("std/list") as list
+import("std/str") as str
+import("std/int") as int
+import("std/record") as rec
+import("std/type") as type
+
+// Validation framework
+fn ok(v) { { ok: true, value: v, errors: [] } }
+fn fail(errs) { { ok: false, value: null, errors: errs } }
+fn validate_and(v1, v2) {
+  if v1.ok && v2.ok then ok(v2.value)
+  else fail(list.concat([v1.errors, v2.errors]))
+}
+fn validate_map(v, f) {
+  if v.ok then ok(f(v.value)) else v
+}
+
+// Validators
+fn required(v, name) {
+  if v == null || type.of(v) == "unit" then fail([str.concat(name, " is required")])
+  else ok(v)
+}
+fn min_len(s, n, name) {
+  if str.len(s) < n then fail([str.concat(name, str.concat(" must be at least ", str.concat(str.from_int(n), " chars")))])
+  else ok(s)
+}
+fn max_len(s, n, name) {
+  if str.len(s) > n then fail([str.concat(name, " is too long")])
+  else ok(s)
+}
+fn in_range(v, lo, hi, name) {
+  if v < lo || v > hi then fail([str.concat(name, " out of range")])
+  else ok(v)
+}
+fn matches_pattern(s, pred, name) {
+  if pred(s) then ok(s) else fail([str.concat(name, " invalid format")])
+}
+
+// User validation
+fn validate_user(data) {
+  let name_v = validate_and(
+    required(rec.get(data, "name"), "name"),
+    min_len(if rec.has(data, "name") then rec.get(data, "name") else "", 2, "name")
+  ) in
+  let age_v = if rec.has(data, "age") then
+    in_range(rec.get(data, "age"), 0, 150, "age")
+  else fail(["age is required"]) in
+  let email_v = if rec.has(data, "email") then
+    matches_pattern(rec.get(data, "email"), fn(e) { str.contains(e, "@") }, "email")
+  else fail(["email is required"]) in
+  if name_v.ok && age_v.ok && email_v.ok then
+    ok({ name: name_v.value, age: age_v.value, email: email_v.value })
+  else
+    fail(list.concat([name_v.errors, list.concat([age_v.errors, email_v.errors])]))
+}
+
+let valid = validate_user({ name: "Alice", age: 30, email: "alice@example.com" })
+test "valid user ok" { valid.ok }
+test "valid user name" { valid.value.name == "Alice" }
+test "valid user age" { valid.value.age == 30 }
+
+let missing_name = validate_user({ age: 30, email: "a@b.com" })
+test "missing name" { missing_name.ok == false }
+test "missing name error" { list.len(missing_name.errors) > 0 }
+
+let short_name = validate_user({ name: "A", age: 30, email: "a@b.com" })
+test "short name" { short_name.ok == false }
+
+let bad_age = validate_user({ name: "Bob", age: 200, email: "b@c.com" })
+test "bad age" { bad_age.ok == false }
+test "bad age error" { str.contains(list.get(bad_age.errors, 0), "range") }
+
+let bad_email = validate_user({ name: "Carol", age: 25, email: "notanemail" })
+test "bad email" { bad_email.ok == false }
+
+// Multiple errors collected
+let all_bad = validate_user({ name: "X", age: -1, email: "bad" })
+test "multiple errors" { list.len(all_bad.errors) >= 3 }
+
+// Validation pipeline
+fn pipeline(validators, value) {
+  list.fold(validators, ok(value), fn(acc, v) {
+    if acc.ok then v(acc.value) else acc
+  })
+}
+let str_pipeline = pipeline([
+  fn(s) { min_len(s, 3, "input") },
+  fn(s) { max_len(s, 20, "input") },
+  fn(s) { ok(str.upper(s)) }
+], "hello")
+test "pipeline ok" { str_pipeline.ok }
+test "pipeline value" { str_pipeline.value == "HELLO" }
+
+let short_pipeline = pipeline([
+  fn(s) { min_len(s, 10, "input") },
+  fn(s) { ok(str.upper(s)) }
+], "hi")
+test "pipeline fail" { short_pipeline.ok == false }
