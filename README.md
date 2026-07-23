@@ -21,7 +21,7 @@ Installs fardrun to /usr/local/bin. Detects macOS arm64/x86_64 and Linux x86_64 
 
 ## Testing
 
-279 test suites passing across 286 total.
+309 test suites passing across 316 total.
 
     for f in tests/test_*.fard; do fardrun test --program "$f"; done
 
