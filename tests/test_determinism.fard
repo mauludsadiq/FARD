@@ -1,0 +1,56 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/json") as json
+import("std/hash") as hash
+
+// Pure functions are deterministic
+fn fib(n) { if n <= 1 then n else fib(n-1) + fib(n-2) }
+test "fib deterministic 1" { fib(10) == 55 }
+test "fib deterministic 2" { fib(10) == 55 }
+test "fib deterministic 3" { fib(10) == fib(10) }
+
+// Same input produces same hash
+test "hash deterministic" { hash.sha256_text("hello") == hash.sha256_text("hello") }
+test "hash different inputs" { hash.sha256_text("a") != hash.sha256_text("b") }
+
+// JSON encoding is deterministic for same input
+let obj = { z: 1, a: 2, m: 3 }
+test "json encode consistent" { json.encode(obj) == json.encode(obj) }
+
+// List operations are deterministic
+let xs = [5, 3, 1, 4, 2]
+let sorted = list.sort_by(xs, fn(a,b) { a - b })
+test "sort deterministic" { sorted == list.sort_by(xs, fn(a,b) { a - b }) }
+test "sort correct" { sorted == [1,2,3,4,5] }
+
+// String operations are deterministic  
+test "str ops deterministic" { str.upper("hello") == str.upper("hello") }
+test "str replace consistent" { str.replace("abc", "b", "X") == "aXc" }
+test "str replace idempotent" { 
+  str.replace(str.replace("abc", "b", "X"), "b", "X") == str.replace("abc", "b", "X")
+}
+
+// Closure captures are stable
+fn make_adder(n) { fn(x) { x + n } }
+let add5 = make_adder(5)
+let add5b = make_adder(5)
+test "closure deterministic 1" { add5(10) == 15 }
+test "closure deterministic 2" { add5(10) == add5b(10) }
+test "closure deterministic 3" { add5(10) == add5(10) }
+
+// Fold order matters - left fold
+test "fold left order" { 
+  list.fold(["a","b","c"], "", fn(acc,x) { str.concat(acc, x) }) == "abc"
+}
+test "fold order matters" {
+  list.fold(["a","b","c"], "", fn(acc,x) { str.concat(acc, x) }) != list.fold(["c","b","a"], "", fn(acc,x) { str.concat(acc, x) })
+}
+
+// map preserves order
+let mapped = list.map([1,2,3,4,5], fn(x) { x * x })
+test "map order preserved" { mapped == [1,4,9,16,25] }
+test "map deterministic" { list.map([1,2,3], fn(x) { x*2 }) == list.map([1,2,3], fn(x) { x*2 }) }
+
+// Record field order doesn't affect equality
+test "record order eq" { { a: 1, b: 2 } == { b: 2, a: 1 } }

@@ -1,0 +1,71 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/type") as type
+import("std/int") as int
+import("std/json") as json
+import("std/rec") as rec
+
+// Empty collection edge cases
+test "empty list len" { list.len([]) == 0 }
+test "empty list map" { list.map([], fn(x) { x * 2 }) == [] }
+test "empty list filter" { list.filter([], fn(x) { true }) == [] }
+test "empty list fold" { list.fold([], 0, fn(acc, x) { acc + x }) == 0 }
+test "empty list any" { list.any([], fn(x) { true }) == false }
+test "empty list all" { list.all([], fn(x) { false }) == true }
+test "empty list reverse" { list.reverse([]) == [] }
+test "empty list concat" { list.concat([[], []]) == [] }
+
+// String edge cases
+test "empty str len" { str.len("") == 0 }
+test "empty str contains" { str.contains("", "") }
+test "empty str split" { type.of(str.split("", ",")) == "list" }
+test "empty str trim" { str.trim("") == "" }
+test "empty str upper" { str.upper("") == "" }
+test "str single char" { str.len("a") == 1 }
+test "str unicode" { str.len("hi") == 2 }
+
+// Null handling
+test "null ?? int" { (null ?? 42) == 42 }
+test "null ?? str" { (null ?? "default") == "default" }
+test "null ?? null" { (null ?? null) == null }
+test "non-null ??" { (42 ?? 99) == 42 }
+test "false ??" { (false ?? true) == false }
+test "zero ??" { (0 ?? 99) == 0 }
+
+// Type coercion
+test "int to float add" { 1 + 0.5 == 1.5 }
+test "float comparison" { 1.0 == 1.0 }
+test "int comparison" { 42 == 42 }
+
+// Deep nesting
+let deep = { a: { b: { c: { d: { e: 42 } } } } }
+test "deep access" { deep.a.b.c.d.e == 42 }
+
+// Large numbers
+test "large int" { 1000000 * 1000000 == 1000000000000 }
+test "negative int" { -2147483648 < 0 }
+
+// Record operations
+let r = { a: 1, b: 2, c: 3 }
+test "rec keys count" { list.len(rec.keys(r)) == 3 }
+test "rec get present" { rec.get(r, "a") == 1 }
+test "rec get missing" { rec.get(r, "z") == null }
+test "rec has" { rec.has(r, "b") }
+test "rec remove" { rec.has(rec.remove(r, "a"), "a") == false }
+test "rec merge" { rec.merge({ x: 1 }, { y: 2 }).x == 1 }
+
+// JSON edge cases
+test "json null" { json.decode("null") == null }
+test "json empty obj" { json.decode("{}") == {} }
+test "json empty arr" { json.decode("[]") == [] }
+test "json nested" { json.decode("{\"a\":{\"b\":1}}").a.b == 1 }
+test "json string escapes" { json.decode("\"hello world\"") == "hello world" }
+
+// Int parsing edge cases
+test "parse zero" { int.parse("0").v == 0 }
+test "parse neg" { int.parse("-42").v == -42 }
+test "parse large" { int.parse("999999").v == 999999 }
+test "parse invalid" { int.parse("abc").t == "err" }
+test "parse empty" { int.parse("").t == "err" }
+test "parse float str" { int.parse("3.14").t == "err" }
