@@ -1,0 +1,74 @@
+import("std/list") as list
+import("std/str") as str
+import("std/type") as type
+import("std/record") as rec
+import("std/math") as math
+
+// Maybe monad
+fn just(v) { { just: v } }
+fn nothing() { { nothing: true } }
+fn is_just(m) { rec.has(m, "just") }
+fn maybe_bind(m, f) { if is_just(m) then f(m.just) else nothing() }
+fn maybe_map(m, f) { if is_just(m) then just(f(m.just)) else nothing() }
+fn maybe_or(m, default) { if is_just(m) then m.just else default }
+
+test "just is_just" { is_just(just(42)) }
+test "nothing not just" { is_just(nothing()) == false }
+test "from_just" { just(42).just == 42 }
+test "bind just" { maybe_bind(just(5), fn(x) { just(x * 2) }).just == 10 }
+test "bind nothing" { is_just(maybe_bind(nothing(), fn(x) { just(x) })) == false }
+test "map just" { maybe_map(just(3), fn(x) { x + 1 }).just == 4 }
+test "or just" { maybe_or(just(42), 0) == 42 }
+test "or nothing" { maybe_or(nothing(), 99) == 99 }
+
+// Safe operations
+fn safe_div(a, b) { if b == 0 then nothing() else just(a / b) }
+fn safe_sqrt(n) { if n < 0 then nothing() else just(math.sqrt(n + 0.0)) }
+
+let r1 = maybe_bind(just(16), fn(n) { safe_sqrt(n) })
+test "chain sqrt ok" { is_just(r1) }
+test "chain sqrt val" { math.abs(r1.just - 4.0) < 0.001 }
+let r2 = maybe_bind(just(-1), fn(n) { safe_sqrt(n) })
+test "chain neg sqrt" { is_just(r2) == false }
+
+// List monad
+fn list_bind(xs, f) { list.flat_map(xs, f) }
+let pairs = list_bind([1,2,3], fn(x) {
+  list_bind([1,2,3], fn(y) {
+    if x != y then [[x, y]] else []
+  })
+})
+test "list monad count" { list.len(pairs) == 6 }
+test "list monad no diag" { list.all(pairs, fn(p) { list.get(p,0) != list.get(p,1) }) }
+
+// Writer monad
+fn w_return(v) { { value: v, log: [] } }
+fn w_bind(w, f) {
+  let r = f(w.value) in
+  { value: r.value, log: list.concat([w.log, r.log]) }
+}
+let logged = w_bind(
+  { value: 3, log: ["start"] },
+  fn(n) { { value: n * 2, log: [str.concat("doubled to ", str.from_int(n * 2))] } }
+)
+test "writer value" { logged.value == 6 }
+test "writer log len" { list.len(logged.log) == 2 }
+test "writer log start" { list.get(logged.log, 0) == "start" }
+test "writer log end" { str.contains(list.get(logged.log, 1), "doubled") }
+
+// State monad
+fn s_return(v) { fn(s) { { value: v, state: s } } }
+fn s_get() { fn(s) { { value: s, state: s } } }
+fn s_put(ns) { fn(_) { { value: null, state: ns } } }
+fn s_bind(m, f) { fn(s) { let r = m(s) in f(r.value)(r.state) } }
+fn run_state(m, init) { m(init) }
+
+let counter = s_bind(s_get(), fn(n) {
+  s_bind(s_put(n + 1), fn(_) { s_return(n) })
+})
+let c1 = run_state(counter, 0)
+test "state val 0" { c1.value == 0 }
+test "state next 1" { c1.state == 1 }
+let c2 = run_state(counter, c1.state)
+test "state val 1" { c2.value == 1 }
+test "state next 2" { c2.state == 2 }

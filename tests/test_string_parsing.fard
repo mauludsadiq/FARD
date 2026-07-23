@@ -1,0 +1,95 @@
+import("std/record") as rec
+import("std/record") as rec
+import("std/str") as str
+import("std/list") as list
+import("std/int") as int
+import("std/float") as float
+
+// String parsing utilities
+
+fn parse_int_or(s, default) {
+  let r = int.parse(str.trim(s)) in
+  if r.t == "ok" then r.v else default
+}
+fn parse_float_or(s, default) {
+  let r = float.parse(str.trim(s)) in
+  if r.t == "ok" then r.v else default
+}
+
+test "parse int ok" { parse_int_or("42", 0) == 42 }
+test "parse int neg" { parse_int_or("-17", 0) == -17 }
+test "parse int default" { parse_int_or("abc", -1) == -1 }
+test "parse float ok" { parse_float_or("3.14", 0.0) > 3.13 }
+test "parse float default" { parse_float_or("abc", -1.0) == -1.0 }
+
+// URL parsing
+fn parse_query_string(qs) {
+  let pairs = str.split(qs, "&") in
+  list.fold(pairs, {}, fn(acc, pair) {
+    let parts = str.split(pair, "=") in
+    if list.len(parts) >= 2 then
+      rec.set(acc, list.get(parts, 0), list.get(parts, 1))
+    else acc
+  })
+}
+let params = parse_query_string("name=Alice&age=30&city=NYC")
+test "qs name" { rec.get(params, "name") == "Alice" }
+test "qs age" { rec.get(params, "age") == "30" }
+test "qs city" { rec.get(params, "city") == "NYC" }
+
+// Email validation (simple)
+fn is_valid_email(email) {
+  str.contains(email, "@") &&
+  str.contains(email, ".") &&
+  str.len(email) > 5 &&
+  str.index_of(email, "@") > 0 &&
+  str.index_of(email, "@") < str.len(email) - 2
+}
+test "valid email" { is_valid_email("user@example.com") }
+test "invalid no @" { is_valid_email("userexample.com") == false }
+test "invalid no dot" { is_valid_email("user@example") == false }
+test "invalid short" { is_valid_email("a@b") == false }
+
+// Phone number normalization
+fn normalize_phone(s) {
+  let digits = list.filter(str.chars(s), fn(c) {
+    let code = str.char_code(c) in
+    code >= 48 && code <= 57
+  }) in
+  str.join(digits, "")
+}
+test "normalize phone" { normalize_phone("(555) 123-4567") == "5551234567" }
+test "normalize dots" { normalize_phone("555.123.4567") == "5551234567" }
+test "normalize plain" { normalize_phone("5551234567") == "5551234567" }
+
+// Slug generation
+fn slugify(s) {
+  str.lower(
+    str.join(
+      list.filter(
+        list.map(str.chars(s), fn(c) {
+          let code = str.char_code(c) in
+          if (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) then c
+          else if c == " " then "-"
+          else ""
+        }),
+        fn(c) { str.len(c) > 0 }
+      ),
+      ""
+    )
+  )
+}
+test "slugify basic" { slugify("Hello World") == "hello-world" }
+test "slugify special" { slugify("Hello, World!") == "hello-world" }
+test "slugify numbers" { slugify("Version 2.0") == "version-20" }
+
+// CSV field parsing
+fn parse_csv_field(s) {
+  let trimmed = str.trim(s) in
+  if str.starts_with(trimmed, "\"") then
+    str.slice(trimmed, 1, str.len(trimmed) - 1)
+  else trimmed
+}
+test "csv unquoted" { parse_csv_field("hello") == "hello" }
+test "csv quoted" { parse_csv_field("\"hello world\"") == "hello world" }
+test "csv trim" { parse_csv_field("  hello  ") == "hello" }
