@@ -1,0 +1,79 @@
+import("std/list") as list
+import("std/record") as rec
+import("std/str") as str
+import("std/type") as type
+
+// Observer
+fn make_subject(v) { { value: v, observers: [] } }
+fn subscribe(s, obs) { rec.set(s, "observers", list.concat([s.observers, [obs]])) }
+let subj = subscribe(subscribe(make_subject(0), fn(v) { v * 2 }), fn(v) { v + 10 })
+let notes = list.map(subj.observers, fn(obs) { obs(5) })
+test "observer count" { list.len(notes) == 2 }
+test "observer first" { list.get(notes, 0) == 10 }
+test "observer second" { list.get(notes, 1) == 15 }
+
+// Strategy
+fn sort_asc(xs) { list.sort_by(xs, fn(a,b) { a - b }) }
+fn sort_desc(xs) { list.sort_by(xs, fn(a,b) { b - a }) }
+let data = [5,3,1,4,2]
+test "strategy asc" { sort_asc(data) == [1,2,3,4,5] }
+test "strategy desc" { sort_desc(data) == [5,4,3,2,1] }
+
+// Chain of responsibility
+fn make_chain(condition, handle, next) {
+  fn(req) {
+    if condition(req) then handle(req)
+    else if next != null then next(req)
+    else { handled: false, result: "unhandled" }
+  }
+}
+let admin_h = make_chain(fn(r) { r.role == "admin" }, fn(r) { { handled: true, result: "admin" } }, null)
+let user_h = make_chain(fn(r) { r.role == "user" }, fn(r) { { handled: true, result: "user" } }, admin_h)
+test "chain admin" { user_h({ role: "admin" }).result == "admin" }
+test "chain user" { user_h({ role: "user" }).result == "user" }
+test "chain unhandled" { user_h({ role: "bot" }).handled == false }
+
+// Visitor
+fn visit(visitor, v) {
+  match type.of(v) {
+    "int"  => visitor.visit_int(v),
+    "text" => visitor.visit_str(v),
+    "list" => visitor.visit_list(v),
+    _      => null
+  }
+}
+let size_visitor = {
+  visit_int: fn(n) { 1 },
+  visit_str: fn(s) { str.len(s) },
+  visit_list: fn(xs) { list.len(xs) }
+}
+test "visitor int" { visit(size_visitor, 42) == 1 }
+test "visitor str" { visit(size_visitor, "hello") == 5 }
+test "visitor list" { visit(size_visitor, [1,2,3,4]) == 4 }
+
+// Decorator
+fn logged(f, name) {
+  fn(x) { let result = f(x) in result }
+}
+fn validated(f, pred, err) {
+  fn(x) { if pred(x) then { ok: true, value: f(x) } else { ok: false, error: err } }
+}
+let safe_sqrt = validated(fn(x) { x * x }, fn(x) { x >= 0 }, "negative")
+test "decorator ok" { safe_sqrt(5).value == 25 }
+test "decorator fail" { safe_sqrt(-1).ok == false }
+test "decorator err" { safe_sqrt(-1).error == "negative" }
+
+// Builder
+fn build_query(table) {
+  { table: table, conditions: [], limit: null, order: null }
+}
+fn where_clause(q, cond) { rec.set(q, "conditions", list.concat([q.conditions, [cond]])) }
+fn limit_to(q, n) { rec.set(q, "limit", n) }
+fn order_by_col(q, col) { rec.set(q, "order", col) }
+
+let query = order_by_col(limit_to(where_clause(where_clause(build_query("users"),
+  "age > 18"), "active = true"), 10), "name")
+test "builder table" { query.table == "users" }
+test "builder conditions" { list.len(query.conditions) == 2 }
+test "builder limit" { query.limit == 10 }
+test "builder order" { query.order == "name" }

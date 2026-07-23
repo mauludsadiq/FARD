@@ -1,0 +1,74 @@
+import("std/list") as list
+import("std/math") as math
+
+// List comprehension patterns via map/filter/flat_map
+
+// Pythagorean triples
+fn pythagorean_triples(n) {
+  list.flat_map(list.range(1, n+1), fn(a) {
+    list.flat_map(list.range(a, n+1), fn(b) {
+      list.filter(list.range(b, n+1), fn(c) {
+        a * a + b * b == c * c
+      })
+      |> list.map(fn(c) { [a, b, c] })
+    })
+  })
+}
+let triples = pythagorean_triples(20)
+test "triples has 3-4-5" { list.any(triples, fn(t) { t == [3,4,5] }) }
+test "triples has 5-12-13" { list.any(triples, fn(t) { t == [5,12,13] }) }
+test "triples count" { list.len(triples) > 0 }
+test "all valid" { list.all(triples, fn(t) {
+  list.get(t, 0) * list.get(t, 0) + list.get(t, 1) * list.get(t, 1) == list.get(t, 2) * list.get(t, 2)
+}) }
+
+// Cross product
+fn cross(xs, ys) {
+  list.flat_map(xs, fn(x) { list.map(ys, fn(y) { { x: x, y: y } }) })
+}
+let pairs = cross([1,2,3], ["a","b"])
+test "cross len" { list.len(pairs) == 6 }
+test "cross first" { list.get(pairs, 0).x == 1 && list.get(pairs, 0).y == "a" }
+
+// Flatten nested
+fn flatten(xss) { list.flat_map(xss, fn(xs) { xs }) }
+test "flatten basic" { flatten([[1,2],[3,4],[5]]) == [1,2,3,4,5] }
+test "flatten empty inner" { flatten([[], [1], []]) == [1] }
+test "flatten empty" { flatten([]) == [] }
+
+// Sliding windows
+fn windows(xs, n) {
+  list.map(list.range(0, list.len(xs) - n + 1), fn(i) {
+    list.take(list.drop(xs, i), n)
+  })
+}
+test "windows 3" { list.len(windows([1,2,3,4,5], 3)) == 3 }
+test "windows 2" { list.get(windows([1,2,3,4], 2), 0) == [1,2] }
+test "windows full" { list.get(windows([1,2,3], 3), 0) == [1,2,3] }
+
+// Power set (small)
+fn power_set(xs) {
+  list.fold(xs, [[]], fn(acc, x) {
+    list.concat([acc, list.map(acc, fn(subset) { list.concat([subset, [x]]) })])
+  })
+}
+let ps = power_set([1,2,3])
+test "power set size" { list.len(ps) == 8 }
+test "power set has empty" { list.any(ps, fn(s) { s == [] }) }
+test "power set has all" { list.any(ps, fn(s) { s == [1,2,3] }) }
+test "power set has singles" { list.any(ps, fn(s) { s == [1] }) }
+
+// Generate combinations
+fn combinations(xs, k) {
+  if k == 0 then [[]]
+  else if list.len(xs) == 0 then []
+  else
+    let with_head = list.map(combinations(list.tail(xs), k-1), fn(c) {
+      list.concat([[list.head(xs)], c])
+    }) in
+    let without_head = combinations(list.tail(xs), k) in
+    list.concat([with_head, without_head])
+}
+let c3_2 = combinations([1,2,3,4], 2)
+test "combinations count" { list.len(c3_2) == 6 }
+test "combinations size" { list.all(c3_2, fn(c) { list.len(c) == 2 }) }
