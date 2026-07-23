@@ -1,0 +1,55 @@
+import("std/list") as list
+import("std/str") as str
+
+// Logic and boolean operations
+
+fn all_of(preds, x) { list.all(preds, fn(p) { p(x) }) }
+fn any_of(preds, x) { list.any(preds, fn(p) { p(x) }) }
+fn none_of(preds, x) { list.all(preds, fn(p) { p(x) == false }) }
+
+let is_positive = fn(x) { x > 0 }
+let is_even = fn(x) { x % 2 == 0 }
+let is_small = fn(x) { x < 100 }
+
+test "all_of true" { all_of([is_positive, is_even, is_small], 4) }
+test "all_of false" { all_of([is_positive, is_even, is_small], -2) == false }
+test "any_of true" { any_of([is_positive, is_even], -2) }
+test "any_of false" { any_of([is_positive, is_even], -3) == false }
+test "none_of" { none_of([is_positive, is_even], -3) }
+
+fn implies(p, q) { p == false || q }
+fn iff(p, q) { (implies(p, q)) && (implies(q, p)) }
+test "implies T T" { implies(true, true) }
+test "implies T F" { implies(true, false) == false }
+test "implies F T" { implies(false, true) }
+test "implies F F" { implies(false, false) }
+test "iff T T" { iff(true, true) }
+test "iff F F" { iff(false, false) }
+test "iff T F" { iff(true, false) == false }
+
+fn xor(a, b) { (a || b) && (a && b) == false }
+test "xor T F" { xor(true, false) }
+test "xor F T" { xor(false, true) }
+test "xor T T" { xor(true, true) == false }
+test "xor F F" { xor(false, false) == false }
+
+fn nand(a, b) { (a && b) == false }
+fn nor(a, b) { (a || b) == false }
+test "nand T T" { nand(true, true) == false }
+test "nand T F" { nand(true, false) }
+test "nor F F" { nor(false, false) }
+test "nor T F" { nor(true, false) == false }
+
+fn majority(a, b, c) { (a && b) || (b && c) || (a && c) }
+test "majority T T T" { majority(true, true, true) }
+test "majority T T F" { majority(true, true, false) }
+test "majority T F F" { majority(true, false, false) == false }
+test "majority F F F" { majority(false, false, false) == false }
+
+fn satisfies_all(constraints, values) {
+  list.all(constraints, fn(c) {
+    list.any(values, fn(v) { c(v) })
+  })
+}
+test "satisfies all" { satisfies_all([is_positive, is_even], [1, 2, 3]) }
+test "satisfies none" { satisfies_all([is_positive, fn(x) { x > 1000 }], [1, 2, 3]) == false }

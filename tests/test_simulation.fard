@@ -1,0 +1,82 @@
+import("std/type") as type
+import("std/list") as list
+import("std/math") as math
+import("std/random") as rand
+import("std/record") as rec
+
+// Simulation patterns
+
+// Random walk
+fn random_walk(steps) {
+  list.fold(list.range(0, steps), { x: 0, y: 0, path: [{ x: 0, y: 0 }] }, fn(state, _) {
+    let dir = rand.int(0, 3) in
+    let dx = if dir == 0 then 1 else if dir == 1 then -1 else 0 in
+    let dy = if dir == 2 then 1 else if dir == 3 then -1 else 0 in
+    let nx = state.x + dx in
+    let ny = state.y + dy in
+    { x: nx, y: ny, path: list.concat([state.path, [{ x: nx, y: ny }]]) }
+  })
+}
+let walk = random_walk(10)
+test "walk steps" { list.len(walk.path) == 11 }
+test "walk start" { list.get(walk.path, 0).x == 0 && list.get(walk.path, 0).y == 0 }
+test "walk type x" { type.of(walk.x) == "int" }
+
+// Game of Life step
+fn gol_neighbors(grid, r, c, rows, cols) {
+  let offsets = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]] in
+  list.fold(offsets, 0, fn(acc, off) {
+    let nr = r + list.get(off, 0) in
+    let nc = c + list.get(off, 1) in
+    if nr >= 0 && nr < rows && nc >= 0 && nc < cols then
+      acc + list.get(list.get(grid, nr), nc)
+    else acc
+  })
+}
+fn gol_step(grid) {
+  let rows = list.len(grid) in
+  let cols = list.len(list.get(grid, 0)) in
+  list.map(list.range(0, rows), fn(r) {
+    list.map(list.range(0, cols), fn(c) {
+      let cell = list.get(list.get(grid, r), c) in
+      let n = gol_neighbors(grid, r, c, rows, cols) in
+      if cell == 1 then (if n == 2 || n == 3 then 1 else 0)
+      else (if n == 3 then 1 else 0)
+    })
+  })
+}
+
+// Blinker oscillator
+let blinker = [[0,0,0,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,1,0,0],[0,0,0,0,0]]
+let blinker2 = gol_step(blinker)
+let blinker3 = gol_step(blinker2)
+test "gol blinker center" { list.get(list.get(blinker2, 2), 1) == 1 }
+test "gol blinker center2" { list.get(list.get(blinker2, 2), 2) == 1 }
+test "gol blinker center3" { list.get(list.get(blinker2, 2), 3) == 1 }
+test "gol blinker oscillates" { blinker3 == blinker }
+
+// Dice simulation
+fn roll_dice(n, sides) {
+  list.map(list.range(0, n), fn(_) { rand.int(1, sides) })
+}
+let dice = roll_dice(5, 6)
+test "dice count" { list.len(dice) == 5 }
+test "dice range" { list.all(dice, fn(d) { d >= 1 && d <= 6 }) }
+
+// Simple physics
+fn simulate_projectile(v0, angle_deg, dt, steps) {
+  let angle = angle_deg * math.pi / 180.0 in
+  let vx = v0 * math.cos(angle) in
+  let vy = v0 * math.sin(angle) in
+  let g = 9.8 in
+  let result = while { x: 0.0, y: 0.0, vx: vx, vy: vy, t: 0.0, step: 0 }
+    fn(s) { s.y >= 0.0 && s.step < steps }
+    fn(s) {
+      { x: s.x + s.vx * dt, y: s.y + s.vy * dt - 0.5 * g * dt * dt,
+        vx: s.vx, vy: s.vy - g * dt, t: s.t + dt, step: s.step + 1 }
+    }
+  in result.value
+}
+let proj = simulate_projectile(20.0, 45.0, 0.1, 1000)
+test "projectile traveled" { proj.x > 0.0 }
+test "projectile time" { proj.t > 0.0 }

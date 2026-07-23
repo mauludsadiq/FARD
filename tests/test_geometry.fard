@@ -1,0 +1,68 @@
+import("std/math") as math
+import("std/list") as list
+
+// Geometric primitives and algorithms
+
+fn point(x, y) { { x: x, y: y } }
+fn vec2(x, y) { { x: x, y: y } }
+fn vec_add(a, b) { { x: a.x + b.x, y: a.y + b.y } }
+fn vec_sub(a, b) { { x: a.x - b.x, y: a.y - b.y } }
+fn vec_scale(v, s) { { x: v.x * s, y: v.y * s } }
+fn vec_dot(a, b) { a.x * b.x + a.y * b.y }
+fn vec_len(v) { math.sqrt(v.x * v.x + v.y * v.y) }
+fn vec_norm(v) { let l = vec_len(v) in { x: v.x / l, y: v.y / l } }
+fn dist(a, b) { vec_len(vec_sub(b, a)) }
+
+test "vec_add" { let r = vec_add(vec2(1, 2), vec2(3, 4)) in r.x == 4 && r.y == 6 }
+test "vec_sub" { let r = vec_sub(vec2(5, 7), vec2(2, 3)) in r.x == 3 && r.y == 4 }
+test "vec_dot" { vec_dot(vec2(1, 0), vec2(0, 1)) == 0 }
+test "vec_dot parallel" { vec_dot(vec2(1, 0), vec2(1, 0)) == 1 }
+test "vec_len" { math.abs(vec_len(vec2(3, 4)) - 5.0) < 0.001 }
+test "dist" { math.abs(dist(point(0, 0), point(3, 4)) - 5.0) < 0.001 }
+
+// Rectangle
+fn rect(x, y, w, h) { { x: x, y: y, w: w, h: h } }
+fn rect_area(r) { r.w * r.h }
+fn rect_perimeter(r) { 2 * (r.w + r.h) }
+fn rect_contains(r, p) { p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h }
+fn rects_overlap(a, b) {
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+let r1 = rect(0, 0, 10, 5)
+let r2 = rect(5, 3, 8, 4)
+test "rect area" { rect_area(r1) == 50 }
+test "rect perimeter" { rect_perimeter(r1) == 30 }
+test "rect contains" { rect_contains(r1, point(5, 3)) }
+test "rect not contains" { rect_contains(r1, point(11, 3)) == false }
+test "rects overlap" { rects_overlap(r1, r2) }
+test "rects no overlap" { rects_overlap(rect(0,0,3,3), rect(5,5,3,3)) == false }
+
+// Circle
+fn circle(cx, cy, r) { { cx: cx, cy: cy, r: r } }
+fn circle_area(c) { math.pi * c.r * c.r }
+fn circle_contains(c, p) { dist(point(c.cx, c.cy), p) <= c.r }
+fn circles_overlap(a, b) { dist(point(a.cx, a.cy), point(b.cx, b.cy)) < a.r + b.r }
+
+let c1 = circle(0, 0, 5)
+let c2 = circle(3, 4, 3)
+test "circle area" { math.abs(circle_area(c1) - 78.539) < 0.01 }
+test "circle contains" { circle_contains(c1, point(3, 4)) }
+test "circle not contains" { circle_contains(c1, point(4, 4)) == false }
+test "circles overlap" { circles_overlap(c1, c2) }
+test "circles no overlap" { circles_overlap(circle(0,0,1), circle(10,0,1)) == false }
+
+// Polygon area (shoelace)
+fn polygon_area(vertices) {
+  let n = list.len(vertices) in
+  let sum = list.fold(list.range(0, n), 0.0, fn(acc, i) {
+    let p1 = list.get(vertices, i) in
+    let p2 = list.get(vertices, (i+1) % n) in
+    acc + p1.x * p2.y - p2.x * p1.y
+  }) in
+  math.abs(sum) / 2.0
+}
+let square = [point(0,0), point(1,0), point(1,1), point(0,1)]
+let triangle = [point(0,0), point(4,0), point(0,3)]
+test "square area" { polygon_area(square) == 1.0 }
+test "triangle area" { polygon_area(triangle) == 6.0 }

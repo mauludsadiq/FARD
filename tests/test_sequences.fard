@@ -1,0 +1,62 @@
+import("std/list") as list
+import("std/math") as math
+
+// Mathematical sequences
+
+fn arithmetic_seq(start, diff, n) {
+  list.map(list.range(0, n), fn(i) { start + i * diff })
+}
+fn geometric_seq(start, ratio, n) {
+  list.map(list.range(0, n), fn(i) {
+    list.fold(list.range(0, i), start + 0.0, fn(acc, _) { acc * ratio })
+  })
+}
+
+test "arithmetic" { arithmetic_seq(1, 2, 5) == [1,3,5,7,9] }
+test "arithmetic 0" { arithmetic_seq(0, 5, 4) == [0,5,10,15] }
+test "geometric" { geometric_seq(1.0, 2.0, 5) == [1.0,2.0,4.0,8.0,16.0] }
+test "geometric 3" { list.get(geometric_seq(3.0, 3.0, 4), 3) == 81.0 }
+
+fn collatz_seq(n) {
+  let r = while { n: n, seq: [n] }
+    fn(s) { s.n != 1 }
+    fn(s) {
+      let next = if s.n % 2 == 0 then s.n / 2 else 3 * s.n + 1 in
+      { n: next, seq: list.concat([s.seq, [next]]) }
+    }
+  in r.value.seq
+}
+test "collatz 1" { collatz_seq(1) == [1] }
+test "collatz 6" { list.get(collatz_seq(6), 0) == 6 }
+test "collatz ends 1" { list.get(collatz_seq(27), list.len(collatz_seq(27)) - 1) == 1 }
+
+fn lucas_seq(n) {
+  list.fold(list.range(2, n+1), [2, 1], fn(acc, _) {
+    let len = list.len(acc) in
+    list.concat([acc, [list.get(acc, len-1) + list.get(acc, len-2)]])
+  })
+}
+test "lucas 0" { list.get(lucas_seq(5), 0) == 2 }
+test "lucas 1" { list.get(lucas_seq(5), 1) == 1 }
+test "lucas 5" { list.get(lucas_seq(5), 5) == 11 }
+
+fn squares_seq(n) { list.map(list.range(1, n+1), fn(x) { x * x }) }
+fn cubes_seq(n) { list.map(list.range(1, n+1), fn(x) { x * x * x }) }
+fn triangular_seq(n) { list.map(list.range(1, n+1), fn(k) { k * (k+1) / 2 }) }
+
+test "squares" { squares_seq(5) == [1,4,9,16,25] }
+test "cubes" { cubes_seq(4) == [1,8,27,64] }
+test "triangular" { triangular_seq(5) == [1,3,6,10,15] }
+
+fn sum_seq(xs) { list.fold(xs, 0, fn(acc, x) { acc + x }) }
+test "sum squares 10" { sum_seq(squares_seq(10)) == 385 }
+test "sum triangular" { sum_seq(triangular_seq(4)) == 20 }
+
+fn is_perfect(n) {
+  let divisors = list.filter(list.range(1, n), fn(d) { n % d == 0 }) in
+  sum_seq(divisors) == n
+}
+test "perfect 6" { is_perfect(6) }
+test "perfect 28" { is_perfect(28) }
+test "not perfect 12" { is_perfect(12) == false }
+test "not perfect 1" { is_perfect(1) == false }
