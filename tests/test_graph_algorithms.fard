@@ -1,0 +1,112 @@
+
+import("std/list") as list
+import("std/record") as rec
+
+// Graph algorithms using adjacency lists
+
+fn make_graph() { {} }
+fn add_edge(g, from, to) {
+  let existing = if rec.has(g, from) then rec.get(g, from) else [] in
+  rec.set(g, from, list.concat([existing, [to]]))
+}
+fn neighbors(g, node) {
+  if rec.has(g, node) then rec.get(g, node) else []
+}
+
+// BFS
+fn bfs(g, start) {
+  let result = while { queue: [start], visited: [start], order: [] }
+    fn(s) { list.len(s.queue) > 0 }
+    fn(s) {
+      let node = list.head(s.queue) in
+      let rest = list.tail(s.queue) in
+      let nbrs = neighbors(g, node) in
+      let new_nbrs = list.filter(nbrs, fn(n) { list.any(s.visited, fn(v) { v == n }) == false }) in
+      {
+        queue: list.concat([rest, new_nbrs]),
+        visited: list.concat([s.visited, new_nbrs]),
+        order: list.concat([s.order, [node]])
+      }
+    }
+  in result.value.order
+}
+
+let g = add_edge(add_edge(add_edge(add_edge(add_edge(make_graph(),
+  "A", "B"), "A", "C"), "B", "D"), "C", "D"), "D", "E")
+
+let bfs_order = bfs(g, "A")
+test "bfs starts at A" { list.get(bfs_order, 0) == "A" }
+test "bfs visits all" { list.len(bfs_order) == 5 }
+test "bfs A before D" {
+  let ai = list.find_index(bfs_order, fn(x) { x == "A" }) in
+  let di = list.find_index(bfs_order, fn(x) { x == "D" }) in
+  ai < di
+}
+
+// DFS
+fn dfs(g, start) {
+  let result = while { stack: [start], visited: [], order: [] }
+    fn(s) { list.len(s.stack) > 0 }
+    fn(s) {
+      let node = list.head(s.stack) in
+      let rest = list.tail(s.stack) in
+      if list.any(s.visited, fn(v) { v == node }) then
+        { stack: rest, visited: s.visited, order: s.order }
+      else
+        let nbrs = neighbors(g, node) in
+        {
+          stack: list.concat([nbrs, rest]),
+          visited: list.concat([s.visited, [node]]),
+          order: list.concat([s.order, [node]])
+        }
+    }
+  in result.value.order
+}
+
+let dfs_order = dfs(g, "A")
+test "dfs starts at A" { list.get(dfs_order, 0) == "A" }
+test "dfs visits all" { list.len(dfs_order) == 5 }
+
+// Topological sort (DAG)
+fn topo_sort(g, nodes) {
+  let in_degree = list.fold(nodes, {}, fn(acc, n) {
+    rec.set(acc, n, 0)
+  }) in
+  let in_degree2 = list.fold(nodes, in_degree, fn(acc, n) {
+    list.fold(neighbors(g, n), acc, fn(a, nbr) {
+      rec.set(a, nbr, rec.get(a, nbr) + 1)
+    })
+  }) in
+  let result = while {
+    queue: list.filter(nodes, fn(n) { rec.get(in_degree2, n) == 0 }),
+    deg: in_degree2,
+    order: []
+  }
+    fn(s) { list.len(s.queue) > 0 }
+    fn(s) {
+      let node = list.head(s.queue) in
+      let rest = list.tail(s.queue) in
+      let new_deg = list.fold(neighbors(g, node), s.deg, fn(d, nbr) {
+        rec.set(d, nbr, rec.get(d, nbr) - 1)
+      }) in
+      let new_queue = list.concat([rest, list.filter(neighbors(g, node), fn(n) {
+        rec.get(new_deg, n) == 0
+      })]) in
+      { queue: new_queue, deg: new_deg, order: list.concat([s.order, [node]]) }
+    }
+  in result.value.order
+}
+
+let nodes = ["A", "B", "C", "D", "E"]
+let topo = topo_sort(g, nodes)
+test "topo has all" { list.len(topo) == 5 }
+test "topo A first" { list.get(topo, 0) == "A" }
+test "topo E last" { list.get(topo, 4) == "E" }
+
+// Path finding
+fn has_path(g, from, to) {
+  let visited = bfs(g, from) in
+  list.any(visited, fn(n) { n == to })
+}
+test "path A to E" { has_path(g, "A", "E") }
+test "no path E to A" { has_path(g, "E", "A") == false }

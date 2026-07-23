@@ -1,0 +1,84 @@
+
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+
+// Observable/reactive patterns via functions
+
+// Signal (value + subscribers)
+fn make_signal(initial) {
+  { value: initial, subscribers: [] }
+}
+fn signal_get(sig) { sig.value }
+fn signal_set(sig, val) {
+  let new_sig = rec.set(sig, "value", val) in
+  list.fold(sig.subscribers, new_sig, fn(acc, sub) { let _ = sub(val) in acc })
+}
+fn signal_map(sig, f) { make_signal(f(sig.value)) }
+
+let sig = make_signal(0)
+test "signal get" { signal_get(sig) == 0 }
+let sig2 = signal_set(sig, 42)
+test "signal set" { signal_get(sig2) == 42 }
+test "signal original" { signal_get(sig) == 0 }
+let doubled = signal_map(sig2, fn(x) { x * 2 })
+test "signal map" { signal_get(doubled) == 84 }
+
+// Event bus
+fn make_bus() { { handlers: {} } }
+fn bus_on(bus, event, handler) {
+  let existing = if rec.has(bus.handlers, event) then rec.get(bus.handlers, event) else [] in
+  rec.set(bus, "handlers", rec.set(bus.handlers, event, list.concat([existing, [handler]])))
+}
+fn bus_emit(bus, event, data) {
+  if rec.has(bus.handlers, event) then
+    list.map(rec.get(bus.handlers, event), fn(h) { h(data) })
+  else []
+}
+
+let bus = make_bus()
+let bus1 = bus_on(bus, "click", fn(d) { d.x + d.y })
+let bus2 = bus_on(bus1, "click", fn(d) { d.x * d.y })
+let bus3 = bus_on(bus2, "hover", fn(d) { d.element })
+let click_results = bus_emit(bus3, "click", { x: 3, y: 4 })
+test "bus emit count" { list.len(click_results) == 2 }
+test "bus emit first" { list.get(click_results, 0) == 7 }
+test "bus emit second" { list.get(click_results, 1) == 12 }
+let hover_results = bus_emit(bus3, "hover", { element: "button" })
+test "bus hover" { list.get(hover_results, 0) == "button" }
+let no_results = bus_emit(bus3, "keypress", {})
+test "bus no handler" { list.len(no_results) == 0 }
+
+// Store pattern (Redux-like)
+fn make_store(reducer, initial) {
+  { state: initial, reducer: reducer, history: [initial] }
+}
+fn dispatch(store, action) {
+  let new_state = store.reducer(store.state, action) in
+  { state: new_state, reducer: store.reducer, history: list.concat([store.history, [new_state]]) }
+}
+fn get_state(store) { store.state }
+
+fn counter_reducer(state, action) {
+  match action.type {
+    "INCREMENT" => state + 1,
+    "DECREMENT" => state - 1,
+    "RESET"     => 0,
+    "ADD"       => state + action.payload,
+    _           => state
+  }
+}
+
+let store = make_store(counter_reducer, 0)
+let s1 = dispatch(store, { type: "INCREMENT" })
+let s2 = dispatch(s1, { type: "INCREMENT" })
+let s3 = dispatch(s2, { type: "ADD", payload: 5 })
+let s4 = dispatch(s3, { type: "DECREMENT" })
+test "store increment" { get_state(s1) == 1 }
+test "store increment 2" { get_state(s2) == 2 }
+test "store add" { get_state(s3) == 7 }
+test "store decrement" { get_state(s4) == 6 }
+test "store history" { list.len(s4.history) == 5 }
+let s5 = dispatch(s4, { type: "RESET" })
+test "store reset" { get_state(s5) == 0 }
+test "store original" { get_state(store) == 0 }

@@ -1,0 +1,98 @@
+
+import("std/str") as str
+import("std/list") as list
+import("std/int") as int
+import("std/type") as type
+
+// Advanced string processing
+
+// Tokenizer
+fn tokenize(s) {
+  let result = while { chars: str.chars(s), i: 0, tokens: [], current: "", in_str: false }
+    fn(st) { st.i < list.len(st.chars) }
+    fn(st) {
+      let c = list.get(st.chars, st.i) in
+      if c == " " || c == "	" || c == "
+" then
+        if str.len(st.current) > 0 then
+          { chars: st.chars, i: st.i+1, tokens: list.concat([st.tokens, [st.current]]), current: "", in_str: false }
+        else
+          { chars: st.chars, i: st.i+1, tokens: st.tokens, current: "", in_str: false }
+      else
+        { chars: st.chars, i: st.i+1, tokens: st.tokens, current: str.concat(st.current, c), in_str: false }
+    }
+  in
+  let final = result.value in
+  if str.len(final.current) > 0 then list.concat([final.tokens, [final.current]])
+  else final.tokens
+}
+test "tokenize basic" { tokenize("hello world") == ["hello", "world"] }
+test "tokenize multi" { list.len(tokenize("a b c d")) == 4 }
+test "tokenize empty" { list.len(tokenize("")) == 0 }
+test "tokenize extra spaces" { tokenize("  hello  world  ") == ["hello", "world"] }
+
+// String interpolation helper
+fn interpolate(template, vars) {
+  list.fold(vars, template, fn(acc, pair) {
+    str.replace(acc, str.concat("{", str.concat(pair.key, "}")), pair.value)
+  })
+}
+test "interpolate" { interpolate("Hello {name}!", [{ key: "name", value: "Alice" }]) == "Hello Alice!" }
+test "interpolate multi" {
+  interpolate("{a} + {b} = {c}", [
+    { key: "a", value: "1" },
+    { key: "b", value: "2" },
+    { key: "c", value: "3" }
+  ]) == "1 + 2 = 3"
+}
+
+// Levenshtein distance
+fn levenshtein(s, t) {
+  let m = str.len(s) in
+  let n = str.len(t) in
+  let sc = str.chars(s) in
+  let tc = str.chars(t) in
+  let dp = list.map(list.range(0, m+1), fn(i) {
+    list.map(list.range(0, n+1), fn(j) {
+      if i == 0 then j
+      else if j == 0 then i
+      else 0
+    })
+  }) in
+  let result = list.fold(list.range(1, m+1), dp, fn(table, i) {
+    list.fold(list.range(1, n+1), table, fn(t2, j) {
+      let cost = if list.get(sc, i-1) == list.get(tc, j-1) then 0 else 1 in
+      let del = list.get(list.get(t2, i-1), j) + 1 in
+      let ins = list.get(list.get(t2, i), j-1) + 1 in
+      let sub = list.get(list.get(t2, i-1), j-1) + cost in
+      let min_val = if del < ins then (if del < sub then del else sub) else (if ins < sub then ins else sub) in
+      list.map(list.range(0, list.len(t2)), fn(row) {
+        if row == i then
+          list.map(list.range(0, list.len(list.get(t2, row))), fn(col) {
+            if col == j then min_val else list.get(list.get(t2, row), col)
+          })
+        else list.get(t2, row)
+      })
+    })
+  }) in
+  list.get(list.get(result, m), n)
+}
+test "lev same" { levenshtein("hello", "hello") == 0 }
+test "lev insert" { levenshtein("cat", "cats") == 1 }
+test "lev delete" { levenshtein("cats", "cat") == 1 }
+test "lev replace" { levenshtein("cat", "bat") == 1 }
+test "lev complex" { levenshtein("kitten", "sitting") == 3 }
+
+// Number formatting
+fn format_number(n) {
+  let s = str.from_int(n) in
+  let chars = list.reverse(str.chars(s)) in
+  let grouped = list.fold(list.range(0, list.len(chars)), [], fn(acc, i) {
+    if i > 0 && i % 3 == 0 then list.concat([acc, [",", list.get(chars, i)]])
+    else list.concat([acc, [list.get(chars, i)]])
+  }) in
+  str.join(list.reverse(grouped), "")
+}
+test "format 1000" { format_number(1000) == "1,000" }
+test "format 1000000" { format_number(1000000) == "1,000,000" }
+test "format small" { format_number(999) == "999" }
