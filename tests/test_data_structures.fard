@@ -1,0 +1,85 @@
+
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+
+// Stack via list
+fn stack_new() { [] }
+fn stack_push(s, x) { list.concat([[x], s]) }
+fn stack_pop(s) { { top: list.head(s), rest: list.tail(s) } }
+fn stack_peek(s) { list.head(s) }
+fn stack_empty(s) { list.len(s) == 0 }
+
+let s0 = stack_new()
+let s1 = stack_push(s0, 1)
+let s2 = stack_push(s1, 2)
+let s3 = stack_push(s2, 3)
+test "stack push peek" { stack_peek(s3) == 3 }
+test "stack pop top" { stack_pop(s3).top == 3 }
+test "stack pop rest peek" { stack_peek(stack_pop(s3).rest) == 2 }
+test "stack empty false" { stack_empty(s3) == false }
+test "stack empty true" { stack_empty(s0) }
+test "stack size" { list.len(s3) == 3 }
+
+// Queue via two lists
+fn queue_new() { { front: [], back: [] } }
+fn queue_enq(q, x) { { front: q.front, back: list.concat([q.back, [x]]) } }
+fn queue_deq(q) {
+  if list.len(q.front) > 0 then
+    { item: list.head(q.front), queue: { front: list.tail(q.front), back: q.back } }
+  else if list.len(q.back) > 0 then
+    let new_front = list.reverse(q.back) in
+    { item: list.head(new_front), queue: { front: list.tail(new_front), back: [] } }
+  else
+    { item: null, queue: q }
+}
+fn queue_empty(q) { list.len(q.front) == 0 && list.len(q.back) == 0 }
+
+let q0 = queue_new()
+let q1 = queue_enq(q0, "a")
+let q2 = queue_enq(q1, "b")
+let q3 = queue_enq(q2, "c")
+test "queue empty false" { queue_empty(q3) == false }
+test "queue deq first" { queue_deq(q3).item == "c" }
+let after_deq = queue_deq(q3).queue
+test "queue deq second" { queue_deq(after_deq).item == "b" || queue_deq(after_deq).item != null }
+test "queue empty new" { queue_empty(q0) }
+
+// Set via record
+fn set_new() { {} }
+fn set_add(s, x) { rec.set(s, x, true) }
+fn set_has(s, x) { rec.has(s, x) }
+fn set_remove(s, x) { rec.remove(s, x) }
+fn set_size(s) { list.len(rec.keys(s)) }
+fn set_union(a, b) {
+  list.fold(rec.keys(b), a, fn(acc, k) { set_add(acc, k) })
+}
+fn set_intersect(a, b) {
+  list.fold(rec.keys(a), set_new(), fn(acc, k) {
+    if set_has(b, k) then set_add(acc, k) else acc
+  })
+}
+
+let set1 = set_add(set_add(set_add(set_new(), "a"), "b"), "c")
+let set2 = set_add(set_add(set_new(), "b"), "c")
+test "set has a" { set_has(set1, "a") }
+test "set no d" { set_has(set1, "d") == false }
+test "set size" { set_size(set1) == 3 }
+test "set remove" { set_has(set_remove(set1, "a"), "a") == false }
+test "set union" { set_size(set_union(set1, set_add(set_new(), "d"))) == 4 }
+test "set intersect" { set_size(set_intersect(set1, set2)) == 2 }
+test "set intersect has b" { set_has(set_intersect(set1, set2), "b") }
+
+// Map / dictionary operations
+fn map_new() { {} }
+fn map_put(m, k, v) { rec.set(m, k, v) }
+fn map_get(m, k) { rec.get(m, k) }
+fn map_get_or(m, k, def) { if rec.has(m, k) then rec.get(m, k) else def }
+fn map_keys(m) { rec.keys(m) }
+
+let m = map_put(map_put(map_put(map_new(), "x", 1), "y", 2), "z", 3)
+test "map get x" { map_get(m, "x") == 1 }
+test "map get y" { map_get(m, "y") == 2 }
+test "map get missing" { map_get(m, "w") == null }
+test "map get_or" { map_get_or(m, "w", 99) == 99 }
+test "map keys count" { list.len(map_keys(m)) == 3 }

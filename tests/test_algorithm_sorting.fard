@@ -1,0 +1,71 @@
+
+import("std/list") as list
+
+// Insertion sort
+fn insert_sorted(xs, x) {
+  let result = while { remaining: xs, before: [], inserted: false }
+    fn(s) { list.len(s.remaining) > 0 }
+    fn(s) {
+      let h = list.head(s.remaining) in
+      if s.inserted == false && x <= h then
+        { remaining: [], before: list.concat([s.before, [x], s.remaining]), inserted: true }
+      else
+        { remaining: list.tail(s.remaining), before: list.concat([s.before, [h]]), inserted: s.inserted }
+    }
+  in
+  if result.value.inserted then result.value.before
+  else list.concat([result.value.before, [x]])
+}
+fn insertion_sort(xs) {
+  list.fold(xs, [], fn(acc, x) { insert_sorted(acc, x) })
+}
+
+let unsorted = [5, 2, 8, 1, 9, 3, 7, 4, 6]
+let sorted = insertion_sort(unsorted)
+test "insertion sort len" { list.len(sorted) == 9 }
+test "insertion sort first" { list.get(sorted, 0) == 1 }
+test "insertion sort last" { list.get(sorted, 8) == 9 }
+test "insertion sort middle" { list.get(sorted, 4) == 5 }
+test "insertion sort empty" { insertion_sort([]) == [] }
+test "insertion sort single" { insertion_sort([42]) == [42] }
+
+// Binary search
+fn binary_search(xs, target) {
+  let result = while { lo: 0, hi: list.len(xs) - 1, found: -1 }
+    fn(s) { s.lo <= s.hi && s.found == -1 }
+    fn(s) {
+      let mid = (s.lo + s.hi) / 2 in
+      let val = list.get(xs, mid) in
+      if val == target then { lo: s.lo, hi: s.hi, found: mid }
+      else if val < target then { lo: mid + 1, hi: s.hi, found: -1 }
+      else { lo: s.lo, hi: mid - 1, found: -1 }
+    }
+  in result.value.found
+}
+
+let sorted_list = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+test "bsearch found first" { binary_search(sorted_list, 1) == 0 }
+test "bsearch found last" { binary_search(sorted_list, 19) == 9 }
+test "bsearch found mid" { binary_search(sorted_list, 11) == 5 }
+test "bsearch not found" { binary_search(sorted_list, 6) == -1 }
+test "bsearch not found large" { binary_search(sorted_list, 100) == -1 }
+
+// Quicksort
+fn quicksort(xs) {
+  if list.len(xs) <= 1 then xs
+  else
+    let pivot = list.head(xs) in
+    let rest = list.tail(xs) in
+    let smaller = list.filter(rest, fn(x) { x <= pivot }) in
+    let larger = list.filter(rest, fn(x) { x > pivot }) in
+    list.concat([quicksort(smaller), [pivot], quicksort(larger)])
+}
+
+let qs_input = [3, 6, 8, 10, 1, 2, 1]
+let qs_result = quicksort(qs_input)
+test "quicksort len" { list.len(qs_result) == 7 }
+test "quicksort first" { list.get(qs_result, 0) == 1 }
+test "quicksort last" { list.get(qs_result, 6) == 10 }
+test "quicksort empty" { quicksort([]) == [] }
+test "quicksort sorted" { quicksort([1,2,3,4,5]) == [1,2,3,4,5] }
+test "quicksort reversed" { quicksort([5,4,3,2,1]) == [1,2,3,4,5] }

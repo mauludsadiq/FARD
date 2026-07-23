@@ -1,0 +1,24 @@
+
+import("std/list") as list
+import("std/record") as rec
+
+fn queue_new() { { front: [], back: [] } }
+fn queue_enq(q, x) { { front: q.front, back: list.concat([q.back, [x]]) } }
+fn queue_deq(q) {
+  if list.len(q.front) > 0 then
+    { item: list.head(q.front), queue: { front: list.tail(q.front), back: q.back } }
+  else if list.len(q.back) > 0 then
+    let new_front = list.reverse(q.back) in
+    { item: list.head(new_front), queue: { front: list.tail(new_front), back: [] } }
+  else
+    { item: null, queue: q }
+}
+
+let q0 = queue_new()
+let q1 = queue_enq(q0, "a")
+let q2 = queue_enq(q1, "b")
+let q3 = queue_enq(q2, "c")
+test "back" { q3.back }
+let d = queue_deq(q3)
+test "deq item" { d.item }
+test "deq is a" { d.item == "a" }
