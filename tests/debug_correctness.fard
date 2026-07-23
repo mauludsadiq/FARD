@@ -1,0 +1,55 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+import("std/float") as float
+
+// Arithmetic correctness
+fn sum_list(xs) { list.fold(xs, 0, fn(acc, x) { acc + x }) }
+fn product_list(xs) { list.fold(xs, 1, fn(acc, x) { acc * x }) }
+fn max_list(xs) { list.fold(list.tail(xs), list.head(xs), fn(acc, x) { if x > acc then x else acc }) }
+
+test "sum" { sum_list([1,2,3,4,5]) == 15 }
+test "product" { product_list([1,2,3,4,5]) == 120 }
+test "max" { max_list([3,1,4,1,5,9,2,6]) == 9 }
+
+// String operations
+fn join_words(ws) { list.fold(list.tail(ws), list.head(ws), fn(acc, w) { str.concat(str.concat(acc, " "), w) }) }
+test "join words" { join_words(["hello", "world", "fard"]) == "hello world fard" }
+
+fn count_char(s, c) {
+  list.len(list.filter(str.chars(s), fn(ch) { ch == c }))
+}
+test "count char" { count_char("hello world", "l") == 3 }
+test "count char zero" { count_char("hello", "z") == 0 }
+
+// Float correctness
+fn circle_area(r) { math.pi * r * r }
+test "circle area" { circle_area(1.0) > 3.14 && circle_area(1.0) < 3.15 }
+test "float sqrt" { float.sqrt(2.0) > 1.414 && float.sqrt(2.0) < 1.415 }
+test "float floor in fn" { float.floor(3.9) == 3.0 }
+test "float ceil in fn" { float.ceil(3.1) == 4.0 }
+
+// Closure correctness  
+fn counter(start) {
+  let n = start in
+  fn(step) { n + step }
+}
+let c = counter(10)
+test "closure capture" { c(5) == 15 }
+test "closure independent" { c(0) == 10 }
+
+// Recursion correctness
+fn power(base, exp) {
+  if exp == 0 then 1
+  else base * power(base, exp - 1)
+}
+test "power 2 10" { power(2, 10) == 1024 }
+test "power 3 5" { power(3, 5) == 243 }
+test "power x 0" { power(99, 0) == 1 }
+
+// Higher order correctness
+fn twice(f, x) { f(f(x)) }
+fn add3(x) { x + 3 }
+test "twice" { twice(add3, 10) == 16 }
+test "twice compose" { twice(fn(x) { x * 2 }, 3) == 12 }

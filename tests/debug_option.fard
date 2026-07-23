@@ -1,0 +1,22 @@
+
+import("std/env") as env
+import("std/record") as rec
+
+// Option pattern - common usage
+fn env_or(key, default) {
+  let result = env.get(key) in
+  if rec.has(result, "some") then result.some else default
+}
+
+test "env_or present" { env_or("PATH", "missing") != "missing" }
+test "env_or missing" { env_or("FARD_NONEXISTENT_XYZ_123", "default") == "default" }
+
+// Safe chaining pattern
+fn safe_get(opt, default) {
+  if opt == null then default
+  else if rec.has(opt, "some") then opt.some
+  else default
+}
+test "safe_get some" { safe_get({ some: 42 }, 0) == 42 }
+test "safe_get none" { safe_get({ none: null }, 0) == 0 }
+test "safe_get null" { safe_get(null, 0) == 0 }

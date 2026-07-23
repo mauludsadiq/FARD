@@ -1,0 +1,13 @@
+
+import("std/env") as env
+import("std/type") as type
+import("std/record") as rec
+
+let path = env.get("PATH")
+test "PATH type" { type.of(path) }
+test "PATH has some" { rec.has(path, "some") }
+test "PATH value type" { type.of(path.some) == "text" }
+
+let missing = env.get("FARD_NONEXISTENT_XYZ")
+test "missing type" { type.of(missing) }
+test "missing has none" { rec.has(missing, "none") }
