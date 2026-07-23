@@ -1,0 +1,90 @@
+
+import("std/list") as list
+import("std/record") as rec
+import("std/str") as str
+
+// Immutable data structure patterns in FARD
+
+// Persistent stack
+fn stack_push(s, x) { { head: x, tail: s, size: s.size + 1 } }
+fn stack_pop(s) { { value: s.head, rest: s.tail } }
+fn stack_empty() { { head: null, tail: null, size: 0 } }
+fn stack_is_empty(s) { s.size == 0 }
+
+let s0 = stack_empty()
+let s1 = stack_push(s0, 1)
+let s2 = stack_push(s1, 2)
+let s3 = stack_push(s2, 3)
+test "stack size" { s3.size == 3 }
+test "stack head" { s3.head == 3 }
+test "stack pop" { stack_pop(s3).value == 3 }
+test "stack pop rest" { stack_pop(s3).rest.head == 2 }
+test "stack empty" { stack_is_empty(s0) }
+test "stack not empty" { stack_is_empty(s3) == false }
+
+// Persistent linked list with sharing
+fn cons(head, tail) { { head: head, tail: tail, len: tail.len + 1 } }
+fn nil() { { head: null, tail: null, len: 0 } }
+fn to_list(xs) {
+  let result = while { node: xs, acc: [] }
+    fn(s) { s.node.len > 0 }
+    fn(s) { { node: s.node.tail, acc: list.concat([s.acc, [s.node.head]]) } }
+  in result.value.acc
+}
+
+let base = cons(3, cons(4, cons(5, nil())))
+let extended = cons(1, cons(2, base))
+test "cons len" { extended.len == 5 }
+test "cons head" { extended.head == 1 }
+test "base shared" { base.head == 3 }
+test "to_list" { to_list(extended) == [1,2,3,4,5] }
+test "to_list base" { to_list(base) == [3,4,5] }
+
+// Functional updates
+let config = { host: "localhost", port: 8080, debug: false, workers: 4 }
+fn set_port(cfg, p) { rec.set(cfg, "port", p) }
+fn enable_debug(cfg) { rec.set(cfg, "debug", true) }
+fn scale_workers(cfg, n) { rec.set(cfg, "workers", n) }
+
+let prod_config = scale_workers(set_port(enable_debug(config), 443), 16)
+test "original unchanged" { config.port == 8080 }
+test "prod port" { prod_config.port == 443 }
+test "prod debug" { prod_config.debug == true }
+test "prod workers" { prod_config.workers == 16 }
+
+// Structural sharing in records
+let r1 = { a: 1, b: { c: 2, d: 3 }, e: 4 }
+let r2 = rec.set(r1, "e", 99)
+let r3 = rec.set(r1, "a", 100)
+test "sharing r1 unchanged" { r1.e == 4 }
+test "r2 updated" { r2.e == 99 }
+test "r2 shares b" { r2.b.c == 2 }
+test "r3 updated" { r3.a == 100 }
+test "r3 shares b" { r3.b.d == 3 }
+
+// Version history pattern
+fn make_versioned(initial) { { current: initial, history: [] } }
+fn update_versioned(v, new_val) {
+  { current: new_val, history: list.concat([v.history, [v.current]]) }
+}
+fn undo(v) {
+  if list.len(v.history) == 0 then v
+  else
+    let prev = list.get(v.history, list.len(v.history) - 1) in
+    { current: prev, history: list.take(v.history, list.len(v.history) - 1) }
+}
+
+let doc = make_versioned("initial")
+let doc1 = update_versioned(doc, "version 1")
+let doc2 = update_versioned(doc1, "version 2")
+let doc3 = update_versioned(doc2, "version 3")
+test "current v3" { doc3.current == "version 3" }
+test "history len" { list.len(doc3.history) == 3 }
+let undone = undo(doc3)
+test "undo" { undone.current == "version 2" }
+let undone2 = undo(undone)
+test "undo 2" { undone2.current == "version 1" }
+let undone3 = undo(undone2)
+test "undo to initial" { undone3.current == "initial" }
+let no_undo = undo(undone3)
+test "undo at start" { no_undo.current == "initial" }

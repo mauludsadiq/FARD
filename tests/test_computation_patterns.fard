@@ -1,0 +1,78 @@
+import("std/random") as rand
+import("std/type") as type
+
+import("std/list") as list
+import("std/math") as math
+import("std/float") as float
+import("std/str") as str
+
+// Monte Carlo pi estimation
+fn monte_carlo_pi(n) {
+  let hits = list.fold(list.range(0, n), 0, fn(acc, i) {
+    let x = rand.float() in
+    let y = rand.float() in
+    if x * x + y * y <= 1.0 then acc + 1 else acc
+  }) in
+  4.0 * (hits + 0.0) / n
+}
+let pi_est = monte_carlo_pi(1000)
+test "monte carlo pi range" { pi_est > 2.0 && pi_est < 5.0 }
+test "monte carlo pi type" { type.of(pi_est) == "float" }
+
+// Numerical integration (Simpson rule)
+fn simpsons(f, a, b, n) {
+  let h = (b - a) / (n + 0.0) in
+  let xs = list.map(list.range(0, n+1), fn(i) { a + (i + 0.0) * h }) in
+  let coeffs = list.map(list.range(0, n+1), fn(i) {
+    if i == 0 || i == n then 1.0
+    else if i % 2 == 1 then 4.0
+    else 2.0
+  }) in
+  h / 3.0 * list.fold(list.range(0, n+1), 0.0, fn(acc, i) {
+    acc + list.get(coeffs, i) * f(list.get(xs, i))
+  })
+}
+let integral_x2 = simpsons(fn(x) { x * x }, 0.0, 1.0, 100)
+test "integral x^2" { math.abs(integral_x2 - 1.0/3.0) < 0.001 }
+let integral_sin = simpsons(math.sin, 0.0, math.pi, 100)
+test "integral sin" { math.abs(integral_sin - 2.0) < 0.001 }
+
+// Gradient descent
+fn gradient_descent(f, df, x0, lr, steps) {
+  list.fold(list.range(0, steps), x0, fn(x, _) { x - lr * df(x) })
+}
+// minimize f(x) = (x-3)^2, df = 2(x-3)
+let min_x = gradient_descent(
+  fn(x) { (x - 3.0) * (x - 3.0) },
+  fn(x) { 2.0 * (x - 3.0) },
+  0.0, 0.1, 50
+)
+test "gradient descent converges" { math.abs(min_x - 3.0) < 0.1 }
+
+// Fast exponentiation
+fn fast_pow(base, exp) {
+  if exp == 0 then 1
+  else if exp % 2 == 0 then
+    let half = fast_pow(base, exp / 2) in
+    half * half
+  else
+    base * fast_pow(base, exp - 1)
+}
+test "fast_pow 2 10" { fast_pow(2, 10) == 1024 }
+test "fast_pow 3 5" { fast_pow(3, 5) == 243 }
+test "fast_pow x 0" { fast_pow(99, 0) == 1 }
+test "fast_pow 2 0" { fast_pow(2, 0) == 1 }
+
+// Extended Euclidean algorithm
+fn ext_gcd(a, b) {
+  if b == 0 then { gcd: a, x: 1, y: 0 }
+  else
+    let r = ext_gcd(b, a % b) in
+    { gcd: r.gcd, x: r.y, y: r.x - (a / b) * r.y }
+}
+test "ext_gcd 35 15" { ext_gcd(35, 15).gcd == 5 }
+test "ext_gcd 7 3" { ext_gcd(7, 3).gcd == 1 }
+test "bezout identity" {
+  let r = ext_gcd(35, 15) in
+  35 * r.x + 15 * r.y == r.gcd
+}
