@@ -1,0 +1,96 @@
+
+import("../packages/fard-web/main") as web
+import("../packages/http-middleware/main") as mw
+import("../packages/jwt/main") as jwt
+import("std/str") as str
+import("std/json") as json
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+
+// Full web application simulation
+let secret = "web-integration-secret"
+
+// Auth middleware simulation
+fn auth_middleware(handler) {
+  fn(req) {
+    let auth = rec.get(req.headers, "Authorization") in
+    if auth == null then
+      web.unauthorized("missing token")
+    else
+      let token = str.slice(auth, 7, str.len(auth)) in
+      let verified = jwt.verify(token, secret) in
+      if verified.ok then
+        handler(rec.set(req, "user", verified.claims))
+      else
+        web.unauthorized("invalid token")
+  }
+}
+
+// Route handlers
+fn users_handler(req) {
+  web.ok([{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }])
+}
+fn user_handler(req) {
+  let id = web.req_param(req, "id") in
+  web.ok({ id: id, name: "Alice" })
+}
+fn create_user_handler(req) {
+  let body = json.decode(req.body) in
+  web.created({ id: 3, name: body.name })
+}
+
+// Build app
+let routes = [
+  web.get("/users", users_handler),
+  web.get("/users/:id", user_handler),
+  web.post("/users", create_user_handler),
+  web.get("/health", fn(req) { web.ok({ status: "healthy" }) })
+]
+let app = web.router(routes)
+let secured_app = mw.wrap(app, [mw.logger(), mw.cors(["*"])])
+
+// Test responses
+test "ok status" { web.ok({ x: 1 }).status == 200 }
+test "created status" { web.created({ x: 1 }).status == 201 }
+test "not_found status" { web.not_found("missing").status == 404 }
+test "unauthorized status" { web.unauthorized("denied").status == 401 }
+test "bad_request status" { web.bad_request("err").status == 400 }
+
+// Test routing
+let get_users = { method: "GET", path: "/users", body: "", headers: {} }
+let res1 = app(get_users)
+test "GET /users status" { res1.status == 200 }
+test "GET /users body" { str.contains(res1.body, "Alice") }
+
+let health = { method: "GET", path: "/health", body: "", headers: {} }
+let res2 = app(health)
+test "health ok" { res2.status == 200 }
+
+let missing = { method: "GET", path: "/missing", body: "", headers: {} }
+let res3 = app(missing)
+test "missing 404" { res3.status == 404 }
+
+// Test middleware wrapping
+test "middleware type" { type.of(secured_app) == "func" }
+let mw_res = secured_app(get_users)
+test "middleware passes" { mw_res.status == 200 }
+
+// JWT integration
+let token = jwt.encode({ sub: "user1", role: "admin" }, secret)
+let auth_req = { method: "GET", path: "/users", body: "", headers: { Authorization: str.concat("Bearer ", token) } }
+let verified = jwt.verify(token, secret)
+test "jwt verified" { verified.ok }
+test "jwt sub" { rec.get(verified.claims, "sub") == "user1" }
+
+// Response body parsing
+let r = web.ok({ users: [1, 2, 3], total: 3 })
+let parsed_body = json.decode(r.body)
+test "response parse" { parsed_body.total == 3 }
+test "response list" { list.len(parsed_body.users) == 3 }
+
+// Path matching
+test "path match users" { web.match_path("/users", "/users").ok }
+test "path match param" { web.match_path("/users/:id", "/users/42").ok }
+test "path no match" { web.match_path("/users", "/posts").ok == false }
+test "path param value" { web.match_path("/users/:id", "/users/42").params.id == "42" }

@@ -1,0 +1,90 @@
+
+import("../packages/parse/main") as p
+import("../packages/json-schema/main") as schema
+import("../packages/toml/main") as toml
+import("../packages/yaml/main") as yaml
+import("../packages/xml/main") as xml
+import("std/str") as str
+import("std/list") as list
+import("std/type") as type
+
+// Parser combinators deep
+let digit = p.digit()
+let alpha = p.alpha()
+let integer = p.integer()
+let word = p.word()
+
+test "digit 0" { digit("0rest").value == "0" }
+test "digit 9" { digit("9abc").value == "9" }
+test "digit fail" { digit("abc").ok == false }
+test "alpha a" { alpha("abc").value == "a" }
+test "alpha fail" { alpha("123").ok == false }
+test "integer pos" { integer("42rest").value == 42 }
+test "integer zero" { integer("0rest").value == 0 }
+test "integer fail" { integer("abc").ok == false }
+test "word basic" { word("hello world").value == "hello" }
+test "word rest" { word("hello world").rest == " world" }
+
+// many combinator
+let digits = p.many(p.digit())
+let result = digits("123abc")
+test "many digits" { type.of(result.value) == "list" }
+test "many rest" { result.rest == "abc" }
+
+// sequence combinator
+let seq = p.sequence([p.alpha(), p.digit()])
+let seq_r = seq("a1rest")
+test "sequence ok" { seq_r.ok }
+test "sequence len" { seq_r.ok }
+
+// choice combinator
+let choice = p.choice([p.digit(), p.alpha()])
+test "choice digit" { choice("1abc").value == "1" }
+test "choice alpha" { choice("abc").value == "a" }
+
+// TOML parsing
+let toml_src = "name = \"hello\"
+value = 42
+flag = true"
+let toml_parsed = toml.parse(toml_src)
+test "toml name" { toml_parsed.name == "hello" }
+test "toml value" { toml_parsed.value == 42 }
+test "toml flag" { toml_parsed.flag == true }
+
+let toml_encoded = toml.encode({ x: "test", y: 99 })
+test "toml encode" { str.len(toml_encoded) > 0 }
+
+// YAML parsing
+let yaml_src = "name: world
+count: 5"
+let yaml_parsed = yaml.parse(yaml_src)
+test "yaml name" { yaml_parsed.name == "world" }
+test "yaml count" { yaml_parsed.count == 5 }
+
+// JSON Schema validation
+let user_schema = schema.schema(
+  ["name", "age", "email"],
+  {
+    name:  schema.field("string", true),
+    age:   schema.field("integer", true),
+    email: schema.field("string", false)
+  }
+)
+let valid_user = schema.validate({ name: "Alice", age: 30, email: "a@b.com" }, user_schema)
+test "schema valid" { valid_user.ok }
+let missing_field = schema.validate({ name: "Bob" }, user_schema)
+test "schema missing required" { missing_field.ok == false }
+test "schema error list" { list.len(missing_field.errors) > 0 }
+let optional_missing = schema.validate({ name: "Carol", age: 25 }, user_schema)
+test "schema optional ok" { optional_missing.ok }
+
+// XML generation
+let doc = xml.elem("users", [
+  xml.elem_attrs("user", { id: "1" }, [xml.text_node("name", "Alice")]),
+  xml.elem_attrs("user", { id: "2" }, [xml.text_node("name", "Bob")])
+])
+let xml_str = xml.render(doc)
+test "xml root" { str.contains(xml_str, "<users>") }
+test "xml users" { str.contains(xml_str, "<user") }
+test "xml alice" { str.contains(xml_str, "Alice") }
+test "xml attr" { str.contains(xml_str, "id=") }
