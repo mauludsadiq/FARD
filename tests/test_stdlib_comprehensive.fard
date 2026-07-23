@@ -1,0 +1,82 @@
+
+import("std/str") as str
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+import("std/int") as int
+import("std/float") as float
+import("std/math") as math
+import("std/json") as json
+
+// Comprehensive stdlib correctness tests
+// Testing interactions between modules
+
+// str + list
+fn words(s) { list.filter(str.split(s, " "), fn(w) { str.len(w) > 0 }) }
+fn sentence(ws) { str.join(ws, " ") }
+test "words roundtrip" { sentence(words("hello world foo")) == "hello world foo" }
+test "words count" { list.len(words("the quick brown fox")) == 4 }
+test "empty words" { list.len(words("  ")) == 0 }
+
+// list + math
+fn sum_squares(n) {
+  list.fold(list.range(1, n+1), 0.0, fn(acc, x) { acc + (x + 0.0) * (x + 0.0) })
+}
+test "sum squares 3" { sum_squares(3) == 14.0 }
+test "sum squares 5" { sum_squares(5) == 55.0 }
+
+// float + math
+fn degrees_to_radians(d) { d * math.pi / 180.0 }
+fn sin_degrees(d) { math.sin(degrees_to_radians(d)) }
+test "sin 0" { math.abs(sin_degrees(0.0)) < 0.001 }
+test "sin 90" { math.abs(sin_degrees(90.0) - 1.0) < 0.001 }
+test "sin 180" { math.abs(sin_degrees(180.0)) < 0.001 }
+
+// int + list
+fn range_sum(lo, hi) { list.fold(list.range(lo, hi+1), 0, fn(acc, x) { acc + x }) }
+test "range sum 1-10" { range_sum(1, 10) == 55 }
+test "range sum 1-100" { range_sum(1, 100) == 5050 }
+
+// json + record
+let obj = { name: "test", values: [1, 2, 3], nested: { x: 42 } }
+let encoded = json.encode(obj)
+let decoded = json.decode(encoded)
+test "json nested" { decoded.nested.x == 42 }
+test "json array" { list.len(decoded.values) == 3 }
+
+// type + match dispatch
+fn process(v) {
+  match type.of(v) {
+    "int"    => v * 2,
+    "float"  => math.floor(v * 2.0),
+    "text"   => str.len(v),
+    "list"   => list.len(v),
+    "record" => list.len(rec.keys(v)),
+    _        => 0
+  }
+}
+test "process int" { process(21) == 42 }
+test "process float" { process(3.7) == 7.0 }
+test "process text" { process("hello") == 5 }
+test "process list" { process([1,2,3,4]) == 4 }
+test "process record" { process({a:1, b:2, c:3}) == 3 }
+
+// int.parse + list.map
+fn parse_ints(strs) {
+  list.map(strs, fn(s) {
+    let r = int.parse(str.trim(s)) in
+    if r.t == "ok" then r.v else null
+  })
+}
+fn sum_parsed(strs) {
+  let nums = list.filter(parse_ints(strs), fn(x) { x != null }) in
+  list.fold(nums, 0, fn(acc, x) { acc + x })
+}
+test "parse sum" { sum_parsed(["1", "2", "3", "4", "5"]) == 15 }
+test "parse sum with spaces" { sum_parsed([" 10 ", " 20 "]) == 30 }
+test "parse sum skip bad" { sum_parsed(["1", "bad", "3"]) == 4 }
+
+// float precision
+test "float add precision" { math.abs(0.1 + 0.2 - 0.3) < 0.0001 }
+test "float mul" { math.abs(0.1 * 10.0 - 1.0) < 0.0001 }
+test "sqrt precision" { math.abs(float.sqrt(2.0) * float.sqrt(2.0) - 2.0) < 0.0001 }
