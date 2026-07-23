@@ -1,0 +1,112 @@
+import("std/list") as list
+import("std/str") as str
+import("std/record") as rec
+import("std/type") as type
+import("std/json") as json
+import("std/int") as int
+
+// Data transformation pipeline patterns
+
+// Pipeline builder
+fn pipe(fns) {
+  fn(x) { list.fold(fns, x, fn(acc, f) { f(acc) }) }
+}
+let process = pipe([
+  fn(x) { x * 2 },
+  fn(x) { x + 1 },
+  fn(x) { x * x }
+])
+test "pipe 3" { process(3) == 49 }
+test "pipe 0" { process(0) == 1 }
+test "pipe 5" { process(5) == 121 }
+
+// ETL pipeline
+fn extract(raw) {
+  list.map(str.split(raw, "\n"), fn(line) {
+    let parts = str.split(line, ",") in
+    if list.len(parts) >= 3 then
+      { name: str.trim(list.get(parts, 0)),
+        value: let r = int.parse(str.trim(list.get(parts, 1))) in if r.t == "ok" then r.v else 0,
+        tag: str.trim(list.get(parts, 2)) }
+    else null
+  })
+}
+fn transform(records) {
+  list.filter(list.map(
+    list.filter(records, fn(r) { r != null && r.value > 0 }),
+    fn(r) { rec.set(r, "value", r.value * 2) }
+  ), fn(r) { r != null })
+}
+fn load(records) {
+  { count: list.len(records), total: list.fold(records, 0, fn(acc, r) { acc + r.value }), records: records }
+}
+
+let raw = "Alice,30,eng\nBob,25,mkt\nCarol,0,ops\nDave,40,eng"
+let extracted = extract(raw)
+let transformed = transform(extracted)
+let loaded = load(transformed)
+test "extract count" { list.len(extracted) == 4 }
+test "transform filters zero" { list.len(transformed) == 3 }
+test "transform doubles" { list.get(transformed, 0).value == 60 }
+test "load count" { loaded.count == 3 }
+test "load total" { loaded.total == 190 }
+
+// Stream processing
+fn stream_pipeline(xs, ops) {
+  list.fold(ops, xs, fn(acc, op) { op(acc) })
+}
+let result = stream_pipeline(list.range(1, 11), [
+  fn(xs) { list.filter(xs, fn(x) { x % 2 == 0 }) },
+  fn(xs) { list.map(xs, fn(x) { x * x }) },
+  fn(xs) { list.filter(xs, fn(x) { x > 20 }) }
+])
+test "stream pipeline" { result == [36, 64, 100] }
+
+// JSON transformation pipeline
+let users_json = "[{\"name\":\"Alice\",\"age\":30},{\"name\":\"Bob\",\"age\":25}]"
+let users = json.decode(users_json)
+let summary = pipe([
+  fn(xs) { list.filter(xs, fn(u) { u.age >= 28 }) },
+  fn(xs) { list.map(xs, fn(u) { u.name }) },
+  fn(xs) { str.join(xs, ", ") }
+])(users)
+test "json pipeline" { summary == "Alice" }
+
+// Aggregation pipeline
+let sales = [
+  { product: "A", amount: 100, region: "north" },
+  { product: "B", amount: 200, region: "south" },
+  { product: "A", amount: 150, region: "north" },
+  { product: "C", amount: 75, region: "south" },
+  { product: "B", amount: 125, region: "north" }
+]
+let north_total = pipe([
+  fn(xs) { list.filter(xs, fn(s) { s.region == "north" }) },
+  fn(xs) { list.map(xs, fn(s) { s.amount }) },
+  fn(xs) { list.fold(xs, 0, fn(acc, x) { acc + x }) }
+])(sales)
+test "north total" { north_total == 375 }
+
+let product_a = pipe([
+  fn(xs) { list.filter(xs, fn(s) { s.product == "A" }) },
+  fn(xs) { list.fold(xs, 0, fn(acc, s) { acc + s.amount }) }
+])(sales)
+test "product a total" { product_a == 250 }
+
+// Map-reduce pattern
+fn map_reduce(xs, mapper, reducer, initial) {
+  let mapped = list.map(xs, mapper) in
+  list.fold(mapped, initial, reducer)
+}
+let word_count = map_reduce(
+  str.split("the quick brown fox the fox", " "),
+  fn(w) { { word: w, count: 1 } },
+  fn(acc, item) {
+    let current = if rec.has(acc, item.word) then rec.get(acc, item.word) else 0 in
+    rec.set(acc, item.word, current + 1)
+  },
+  {}
+)
+test "word count the" { rec.get(word_count, "the") == 2 }
+test "word count fox" { rec.get(word_count, "fox") == 2 }
+test "word count quick" { rec.get(word_count, "quick") == 1 }

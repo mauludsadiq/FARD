@@ -1,0 +1,94 @@
+import("std/list") as list
+import("std/str") as str
+import("std/record") as rec
+import("std/int") as int
+import("std/type") as type
+
+// Mini interpreter patterns
+
+// Stack-based calculator
+fn calc(ops) {
+  let result = list.fold(ops, [], fn(stack, op) {
+    match type.of(op) {
+      "int" => list.concat([[op], stack]),
+      "text" => match op {
+        "+" => let b = list.get(stack, 0) in let a = list.get(stack, 1) in list.concat([[a+b], list.drop(stack, 2)]),
+        "-" => let b = list.get(stack, 0) in let a = list.get(stack, 1) in list.concat([[a-b], list.drop(stack, 2)]),
+        "*" => let b = list.get(stack, 0) in let a = list.get(stack, 1) in list.concat([[a*b], list.drop(stack, 2)]),
+        "/" => let b = list.get(stack, 0) in let a = list.get(stack, 1) in list.concat([[a/b], list.drop(stack, 2)]),
+        "dup" => list.concat([[list.head(stack)], stack]),
+        "pop" => list.tail(stack),
+        "swap" => let a = list.get(stack, 0) in let b = list.get(stack, 1) in list.concat([[b, a], list.drop(stack, 2)]),
+        _ => stack
+      },
+      _ => stack
+    }
+  }) in
+  list.head(result)
+}
+
+test "calc add" { calc([3, 4, "+"]) == 7 }
+test "calc sub" { calc([10, 3, "-"]) == 7 }
+test "calc mul" { calc([3, 4, "*"]) == 12 }
+test "calc div" { calc([12, 4, "/"]) == 3 }
+test "calc complex" { calc([2, 3, "+", 4, "*"]) == 20 }
+test "calc dup" { calc([5, "dup", "+"]) == 10 }
+test "calc swap" { calc([3, 7, "swap", "-"]) == 4 }
+
+// Simple expression evaluator
+fn eval_expr(expr, env) {
+  match expr.type {
+    "num"  => expr.value,
+    "var"  => rec.get(env, expr.name),
+    "add"  => eval_expr(expr.left, env) + eval_expr(expr.right, env),
+    "sub"  => eval_expr(expr.left, env) - eval_expr(expr.right, env),
+    "mul"  => eval_expr(expr.left, env) * eval_expr(expr.right, env),
+    "div"  => eval_expr(expr.left, env) / eval_expr(expr.right, env),
+    "neg"  => -eval_expr(expr.expr, env),
+    "if"   => if eval_expr(expr.cond, env) != 0 then eval_expr(expr.t, env) else eval_expr(expr.e, env),
+    _      => 0
+  }
+}
+
+fn num(v) { { type: "num", value: v } }
+fn var(n) { { type: "var", name: n } }
+fn add(l, r) { { type: "add", left: l, right: r } }
+fn mul(l, r) { { type: "mul", left: l, right: r } }
+fn neg(e) { { type: "neg", expr: e } }
+fn if_expr(c, t, e) { { type: "if", cond: c, t: t, e: e } }
+
+let env = { x: 5, y: 3 }
+test "eval num" { eval_expr(num(42), env) == 42 }
+test "eval var x" { eval_expr(var("x"), env) == 5 }
+test "eval add" { eval_expr(add(num(3), num(4)), env) == 7 }
+test "eval mul" { eval_expr(mul(var("x"), var("y")), env) == 15 }
+test "eval neg" { eval_expr(neg(num(5)), env) == -5 }
+test "eval nested" { eval_expr(add(mul(num(2), var("x")), var("y")), env) == 13 }
+test "eval if true" { eval_expr(if_expr(num(1), num(10), num(20)), env) == 10 }
+test "eval if false" { eval_expr(if_expr(num(0), num(10), num(20)), env) == 20 }
+
+// Simple command interpreter
+fn run_commands(cmds, initial_state) {
+  list.fold(cmds, initial_state, fn(state, cmd) {
+    match cmd.type {
+      "set"   => rec.set(state, cmd.key, cmd.value),
+      "inc"   => rec.set(state, cmd.key, rec.get(state, cmd.key) + 1),
+      "dec"   => rec.set(state, cmd.key, rec.get(state, cmd.key) - 1),
+      "reset" => rec.set(state, cmd.key, 0),
+      _       => state
+    }
+  })
+}
+
+let initial = { counter: 0, score: 100 }
+let commands = [
+  { type: "inc", key: "counter" },
+  { type: "inc", key: "counter" },
+  { type: "inc", key: "counter" },
+  { type: "set", key: "score", value: 150 },
+  { type: "dec", key: "score" }
+]
+let final_state = run_commands(commands, initial)
+test "cmd counter" { final_state.counter == 3 }
+test "cmd score" { final_state.score == 149 }
+test "cmd reset" { run_commands([{ type: "reset", key: "counter" }], final_state).counter == 0 }
