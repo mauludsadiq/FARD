@@ -1,0 +1,71 @@
+
+import("std/str") as str
+import("std/list") as list
+import("std/type") as type
+
+// String manipulation pipeline
+fn words(s) { list.filter(str.split(s, " "), fn(w) { str.len(w) > 0 }) }
+fn word_count(s) { list.len(words(s)) }
+fn char_count(s) { str.len(s) }
+
+let text = "the quick brown fox jumps over the lazy dog"
+test "word count" { word_count(text) == 9 }
+test "char count" { char_count(text) == 43 }
+
+let ws = words(text)
+test "first word" { list.get(ws, 0) == "the" }
+test "last word" { list.get(ws, 8) == "dog" }
+
+// Case transformations
+test "upper" { str.upper("hello world") == "HELLO WORLD" }
+test "lower" { str.lower("HELLO WORLD") == "hello world" }
+
+// String search
+test "contains yes" { str.contains(text, "fox") }
+test "contains no" { str.contains(text, "cat") == false }
+test "starts_with" { str.starts_with(text, "the") }
+test "ends_with" { str.ends_with(text, "dog") }
+test "index_of found" { str.index_of(text, "fox") > 0 }
+test "index_of not found" { str.index_of(text, "cat") == -1 }
+
+// String building
+let parts = ["Hello", "World", "from", "FARD"]
+test "join basic" { str.join(parts, " ") == "Hello World from FARD" }
+test "join empty sep" { str.join(["a","b","c"], "") == "abc" }
+test "join single" { str.join(["only"], ",") == "only" }
+
+// Replace
+test "replace basic" { str.replace("hello world", "world", "FARD") == "hello FARD" }
+test "replace not found" { str.replace("hello", "xyz", "abc") == "hello" }
+test "replace all" { str.replace("aaa", "a", "b") == "bbb" }
+
+// Trim
+test "trim both" { str.trim("  hello  ") == "hello" }
+test "trim left" { str.trim("  hello") == "hello" }
+test "trim right" { str.trim("hello  ") == "hello" }
+test "trim empty" { str.trim("") == "" }
+
+// Slice
+test "slice basic" { str.slice("hello world", 6, 11) == "world" }
+test "slice from 0" { str.slice("hello", 0, 3) == "hel" }
+test "slice empty" { str.slice("hello", 2, 2) == "" }
+
+// Split and rejoin
+let csv_line = "Alice,30,NYC,Engineer"
+let fields = str.split(csv_line, ",")
+test "split count" { list.len(fields) == 4 }
+test "split first" { list.get(fields, 0) == "Alice" }
+test "split last" { list.get(fields, 3) == "Engineer" }
+test "rejoin" { str.join(fields, ",") == csv_line }
+
+// Interpolation
+let name = "FARD"
+let version = 5
+test "interpolate" { "Hello ${name} v${version}" == "Hello FARD v5" }
+test "interpolate expr" { "${1 + 1 + 1} is three" == "3 is three" }
+
+// chars
+let chars = str.chars("hello")
+test "chars len" { list.len(chars) == 5 }
+test "chars first" { list.get(chars, 0) == "h" }
+test "chars last" { list.get(chars, 4) == "o" }

@@ -1,0 +1,74 @@
+import("std/record") as rec
+
+import("std/list") as list
+import("std/str") as str
+import("std/json") as json
+import("std/type") as type
+import("../packages/csv-extra/main") as csv
+import("../packages/stats/main") as stats
+import("../packages/template/main") as tmpl
+
+// Data transformation pipeline
+let raw = [
+  { name: "Alice", dept: "eng", salary: 95000, years: 5 },
+  { name: "Bob",   dept: "mkt", salary: 72000, years: 3 },
+  { name: "Carol", dept: "eng", salary: 105000, years: 8 },
+  { name: "Dave",  dept: "mkt", salary: 68000, years: 2 },
+  { name: "Eve",   dept: "eng", salary: 88000, years: 4 },
+  { name: "Frank", dept: "ops", salary: 78000, years: 6 }
+]
+
+// Filter and transform
+let engineers = list.filter(raw, fn(r) { r.dept == "eng" })
+test "engineers count" { list.len(engineers) == 3 }
+
+let salaries = list.map(raw, fn(r) { r.salary })
+test "salary count" { list.len(salaries) == 6 }
+test "salary sum" { stats.sum(salaries) == 506000 }
+test "salary mean" { stats.mean(salaries) > 84000 }
+test "salary min" { stats.min(salaries) == 68000 }
+test "salary max" { stats.max(salaries) == 105000 }
+
+// Group by dept
+let by_dept = list.fold(raw, {}, fn(acc, r) {
+  let dept = r.dept in
+  let existing = if type.of(acc) == "record" && rec.has(acc, dept)
+    then rec.get(acc, dept)
+    else [] in
+  rec.set(acc, dept, list.concat([existing, [r]]))
+})
+test "group count" { rec.has(by_dept, "eng") }
+
+// Sort by salary descending
+let sorted = list.sort_by(raw, fn(a, b) { b.salary - a.salary })
+test "sorted first" { list.get(sorted, 0).name == "Carol" }
+test "sorted last" { list.get(sorted, 5).name == "Dave" }
+
+// Top earners
+let top3 = list.take(sorted, 3)
+test "top3 count" { list.len(top3) == 3 }
+test "top3 carol" { list.any(top3, fn(r) { r.name == "Carol" }) }
+
+// Aggregate by department
+let eng_salaries = list.map(engineers, fn(r) { r.salary })
+test "eng mean salary" { stats.mean(eng_salaries) > 90000 }
+
+// JSON serialization
+let json_data = json.encode(raw)
+test "json encoded" { str.len(json_data) > 0 }
+let decoded = json.decode(json_data)
+test "json decoded len" { list.len(decoded) == 6 }
+
+// Template report
+let report = list.map(raw, fn(r) {
+  tmpl.render("{{name}} ({{dept}}): {{salary}}", r)
+})
+test "report len" { list.len(report) == 6 }
+test "report alice" { str.contains(list.get(report, 0), "Alice") }
+test "report has salary" { str.contains(list.get(report, 0), "95000") }
+
+// Tenure analysis
+let senior = list.filter(raw, fn(r) { r.years >= 5 })
+test "senior count" { list.len(senior) == 3 }
+let senior_names = list.map(senior, fn(r) { r.name })
+test "alice senior" { list.any(senior_names, fn(n) { n == "Alice" }) }
