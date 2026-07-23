@@ -1,0 +1,37 @@
+import("std/list") as list
+import("std/record") as rec
+
+fn set_of(xs) { list.fold(xs, {}, fn(acc, x) { rec.set(acc, x, true) }) }
+fn set_has(s, x) { rec.has(s, x) }
+fn set_add(s, x) { rec.set(s, x, true) }
+fn set_remove(s, x) { rec.remove(s, x) }
+fn set_size(s) { list.len(rec.keys(s)) }
+fn set_to_list(s) { rec.keys(s) }
+fn set_union(a, b) { list.fold(rec.keys(b), a, fn(acc, k) { rec.set(acc, k, true) }) }
+fn set_intersect(a, b) { list.fold(rec.keys(a), {}, fn(acc, k) { if rec.has(b, k) then rec.set(acc, k, true) else acc }) }
+fn set_diff(a, b) { list.fold(rec.keys(a), {}, fn(acc, k) { if rec.has(b, k) == false then rec.set(acc, k, true) else acc }) }
+fn set_eq(a, b) { set_size(a) == set_size(b) && set_size(set_intersect(a, b)) == set_size(a) }
+fn set_subset(a, b) { list.all(rec.keys(a), fn(k) { rec.has(b, k) }) }
+
+let s1 = set_of(["a","b","c","d"])
+let s2 = set_of(["c","d","e","f"])
+let s3 = set_of(["a","b"])
+
+test "set has a" { set_has(s1, "a") }
+test "set no z" { set_has(s1, "z") == false }
+test "set size" { set_size(s1) == 4 }
+test "set add" { set_size(set_add(s1, "e")) == 5 }
+test "set remove" { set_size(set_remove(s1, "a")) == 3 }
+test "union size" { set_size(set_union(s1, s2)) == 6 }
+test "union has all" { set_has(set_union(s1, s2), "f") }
+test "intersect size" { set_size(set_intersect(s1, s2)) == 2 }
+test "intersect has c" { set_has(set_intersect(s1, s2), "c") }
+test "intersect no a" { set_has(set_intersect(s1, s2), "a") == false }
+test "diff size" { set_size(set_diff(s1, s2)) == 2 }
+test "diff has a" { set_has(set_diff(s1, s2), "a") }
+test "diff no c" { set_has(set_diff(s1, s2), "c") == false }
+test "set eq" { set_eq(s1, set_of(["a","b","c","d"])) }
+test "set not eq" { set_eq(s1, s2) == false }
+test "subset" { set_subset(s3, s1) }
+test "not subset" { set_subset(s1, s3) == false }
+test "empty subset" { set_subset({}, s1) }

@@ -1,0 +1,58 @@
+import("std/list") as list
+import("std/math") as math
+
+fn mat_get(m, r, c) { list.get(list.get(m, r), c) }
+fn mat_rows(m) { list.len(m) }
+fn mat_cols(m) { list.len(list.get(m, 0)) }
+fn mat_zeros(r, c) { list.map(list.range(0, r), fn(_) { list.map(list.range(0, c), fn(_) { 0 }) }) }
+fn mat_identity(n) {
+  list.map(list.range(0, n), fn(i) {
+    list.map(list.range(0, n), fn(j) { if i == j then 1 else 0 })
+  })
+}
+fn mat_transpose(m) {
+  let r = mat_rows(m) in let c = mat_cols(m) in
+  list.map(list.range(0, c), fn(j) { list.map(list.range(0, r), fn(i) { mat_get(m, i, j) }) })
+}
+fn mat_add(a, b) {
+  list.map(list.range(0, mat_rows(a)), fn(i) {
+    list.map(list.range(0, mat_cols(a)), fn(j) { mat_get(a, i, j) + mat_get(b, i, j) })
+  })
+}
+fn mat_mul(a, b) {
+  let n = mat_cols(a) in
+  list.map(list.range(0, mat_rows(a)), fn(i) {
+    list.map(list.range(0, mat_cols(b)), fn(j) {
+      list.fold(list.range(0, n), 0, fn(acc, k) { acc + mat_get(a, i, k) * mat_get(b, k, j) })
+    })
+  })
+}
+fn mat_scale(m, s) {
+  list.map(m, fn(row) { list.map(row, fn(x) { x * s }) })
+}
+fn mat_trace(m) {
+  list.fold(list.range(0, mat_rows(m)), 0, fn(acc, i) { acc + mat_get(m, i, i) })
+}
+
+let a = [[1,2],[3,4]]
+let b = [[5,6],[7,8]]
+let id2 = mat_identity(2)
+
+test "identity diag" { mat_get(id2, 0, 0) == 1 && mat_get(id2, 1, 1) == 1 }
+test "identity off" { mat_get(id2, 0, 1) == 0 }
+test "transpose" { mat_get(mat_transpose(a), 0, 1) == 3 }
+test "transpose shape" { mat_rows(mat_transpose(a)) == mat_cols(a) }
+test "add" { mat_get(mat_add(a, b), 0, 0) == 6 }
+test "add 1 1" { mat_get(mat_add(a, b), 1, 1) == 12 }
+test "mul 0 0" { mat_get(mat_mul(a, b), 0, 0) == 19 }
+test "mul 0 1" { mat_get(mat_mul(a, b), 0, 1) == 22 }
+test "mul 1 0" { mat_get(mat_mul(a, b), 1, 0) == 43 }
+test "mul 1 1" { mat_get(mat_mul(a, b), 1, 1) == 50 }
+test "mul identity" { mat_mul(a, id2) == a }
+test "scale" { mat_get(mat_scale(a, 2), 0, 0) == 2 }
+test "scale 1 1" { mat_get(mat_scale(a, 3), 1, 1) == 12 }
+test "trace a" { mat_trace(a) == 5 }
+test "trace id" { mat_trace(id2) == 2 }
+test "zeros" { mat_get(mat_zeros(3, 3), 1, 1) == 0 }
+test "zeros size" { mat_rows(mat_zeros(3, 4)) == 3 }
+test "cols" { mat_cols(mat_zeros(3, 4)) == 4 }
