@@ -1,0 +1,57 @@
+
+import("../packages/stats/main") as stats
+import("std/list") as list
+import("std/math") as math
+
+// Basic descriptive stats
+let xs = [4, 7, 13, 2, 1, 8, 9, 3, 6, 5]
+test "sum" { stats.sum(xs) == 58 }
+test "mean" { stats.mean(xs) == 5 }
+test "min" { stats.min(xs) == 1 }
+test "max" { stats.max(xs) == 13 }
+test "count" { list.len(xs) == 10 }
+
+// With floats
+let fs = [2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]
+test "float sum" { stats.sum(fs) == 40.0 }
+test "float mean" { stats.mean(fs) == 5.0 }
+test "float min" { stats.min(fs) == 2.0 }
+test "float max" { stats.max(fs) == 9.0 }
+
+// Edge cases
+test "single element sum" { stats.sum([42]) == 42 }
+test "single element mean" { stats.mean([42]) == 42 }
+test "single element min" { stats.min([42]) == 42 }
+test "single element max" { stats.max([42]) == 42 }
+test "empty sum" { stats.sum([]) == 0 }
+test "empty mean" { stats.mean([]) == 0 }
+
+// freq / mode
+let mode_data = [1, 2, 2, 3, 3, 3, 4]
+let freq = stats.frequencies(mode_data)
+test "freq type" { freq != null }
+// range
+test "range" { stats.range(xs) == 12 }
+
+// top_n / bottom_n
+// percentile
+let p25 = stats.percentile(xs, 25)
+test "percentile runs" { p25 != null }
+let p75 = stats.percentile(xs, 75)
+test "percentile 75 runs" { p75 != null }
+
+// describe
+let desc = stats.describe(xs)
+test "describe has mean" { desc.mean == 5 }
+test "describe has min" { desc.min == 1 }
+test "describe has max" { desc.max == 13 }
+
+// normalize
+let normed = stats.normalize([0, 5, 10])
+test "normalize len" { list.len(normed) == 3 }
+test "normalize type" { normed != null }
+
+// zip_with stats
+let ys = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+let paired = list.zip(xs, ys)
+test "paired len" { list.len(paired) == 10 }
