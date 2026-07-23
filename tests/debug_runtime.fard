@@ -1,0 +1,46 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/float") as float
+import("std/int") as int
+import("std/record") as rec
+
+fn hypotenuse(a, b) { float.sqrt(a * a + b * b) }
+test "hypotenuse 3 4" { hypotenuse(3.0, 4.0) == 5.0 }
+test "hypotenuse floor" { float.floor(hypotenuse(3.0, 4.0)) == 5.0 }
+
+fn lists_equal(a, b) { a == b }
+fn list_contains(xs, val) { list.any(xs, fn(x) { x == val }) }
+test "lists_equal fn" { lists_equal([1,2,3], [1,2,3]) }
+test "list_contains fn" { list_contains([1,2,3], 2) }
+test "list_contains list" { list_contains([[1,2],[3,4]], [1,2]) }
+
+fn std_dev(xs) {
+  let n = list.len(xs) in
+  let mean = list.fold(xs, 0.0, fn(acc, x) { acc + x }) / n in
+  let variance = list.fold(xs, 0.0, fn(acc, x) {
+    let diff = x - mean in
+    acc + diff * diff
+  }) / n in
+  float.sqrt(variance)
+}
+test "std_dev" { std_dev([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]) == 2.0 }
+
+fn palindrome(s) {
+  let chars = str.chars(s) in
+  let rev = list.reverse(chars) in
+  chars == rev
+}
+test "palindrome racecar" { palindrome("racecar") }
+test "palindrome hello" { palindrome("hello") == false }
+test "palindrome a" { palindrome("a") }
+test "palindrome empty" { palindrome("") }
+
+fn parse_all(strs) {
+  list.map(strs, fn(s) {
+    let r = int.parse(s) in
+    if r.t == "ok" then r.v else -1
+  })
+}
+test "parse_all" { parse_all(["1","2","3"]) == [1,2,3] }
+test "parse_all mixed" { parse_all(["1","x","3"]) == [1,-1,3] }
