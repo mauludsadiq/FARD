@@ -1,0 +1,84 @@
+
+import("../packages/async/main") as async
+import("std/list") as list
+import("std/math") as math
+import("std/type") as type
+
+// Deep async/concurrency patterns
+
+// Parallel reduce
+fn parallel_sum(xs) {
+  if list.len(xs) <= 1 then
+    if list.len(xs) == 0 then 0 else list.head(xs)
+  else
+    let mid = list.len(xs) / 2 in
+    let left = async.spawn(fn() { parallel_sum(list.take(xs, mid)) }) in
+    let right = async.spawn(fn() { parallel_sum(list.drop(xs, mid)) }) in
+    async.await(left) + async.await(right)
+}
+
+let nums = list.range(1, 101)
+test "parallel sum" { parallel_sum(nums) == 5050 }
+test "parallel sum small" { parallel_sum([1,2,3,4,5]) == 15 }
+test "parallel sum empty" { parallel_sum([]) == 0 }
+
+// Parallel map with chunking
+fn parallel_map_chunked(xs, f, chunk_size) {
+  let fold_result = list.fold(list.range(0, list.len(xs)), { chunks: [], current: [] }, fn(acc, i) {
+    let item = list.get(xs, i) in
+    let new_current = list.concat([acc.current, [item]]) in
+    if list.len(new_current) == chunk_size then
+      { chunks: list.concat([acc.chunks, [new_current]]), current: [] }
+    else
+      { chunks: acc.chunks, current: new_current }
+  }) in
+  let all_chunks = if list.len(fold_result.current) > 0
+    then list.concat([fold_result.chunks, [fold_result.current]])
+    else fold_result.chunks in
+  let processed = async.map_parallel(all_chunks, fn(chunk) { list.map(chunk, f) }) in
+  list.fold(processed, [], fn(acc, chunk) { list.concat([acc, chunk]) })
+}
+
+let chunked = parallel_map_chunked(list.range(1, 11), fn(x) { x * x }, 3)
+test "chunked map len" { list.len(chunked) == 10 }
+test "chunked map first" { list.get(chunked, 0) == 1 }
+test "chunked map last" { list.get(chunked, 9) == 100 }
+
+// Race with timeout simulation
+fn with_default(promise, default_val) {
+  let result = async.await(promise) in
+  if result == null then default_val else result
+}
+
+let p1 = async.spawn(fn() { 42 })
+let p2 = async.spawn(fn() { "hello" })
+test "await int" { async.await(p1) == 42 }
+test "await str" { async.await(p2) == "hello" }
+
+// Parallel matrix operations
+fn parallel_mat_row(row, f) {
+  async.map_parallel(row, f)
+}
+fn parallel_mat(matrix, f) {
+  async.map_parallel(matrix, fn(row) { parallel_mat_row(row, f) })
+}
+
+let mat = [[1,2,3],[4,5,6],[7,8,9]]
+let doubled = parallel_mat(mat, fn(x) { x * 2 })
+test "parallel mat shape" { list.len(doubled) == 3 }
+test "parallel mat first" { list.get(list.get(doubled, 0), 0) == 2 }
+test "parallel mat last" { list.get(list.get(doubled, 2), 2) == 18 }
+
+// Fork-join pattern
+fn fork_join(tasks) {
+  let promises = list.map(tasks, fn(t) { async.spawn(t) }) in
+  async.all(promises)
+}
+let results = fork_join([
+  fn() { 1 + 1 },
+  fn() { 2 * 2 },
+  fn() { 3 * 3 },
+  fn() { 4 * 4 }
+])
+test "fork join count" { list.len(results) == 4 }
+test "fork join values" { list.fold(results, 0, fn(acc, x) { acc + x }) == 31 }

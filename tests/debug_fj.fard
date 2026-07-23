@@ -1,0 +1,13 @@
+
+import("../packages/async/main") as async
+import("std/list") as list
+
+let results = async.all([
+  async.spawn(fn() { 2 }),
+  async.spawn(fn() { 4 }),
+  async.spawn(fn() { 9 }),
+  async.spawn(fn() { 16 })
+])
+test "results" { results }
+test "sum" { list.fold(results, 0, fn(acc, x) { acc + x }) }
+test "sum eq" { list.fold(results, 0, fn(acc, x) { acc + x }) == 31 }

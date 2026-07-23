@@ -1,0 +1,86 @@
+
+import("std/type") as type
+import("std/list") as list
+import("std/record") as rec
+import("std/str") as str
+import("std/int") as int
+import("std/float") as float
+
+// Type-driven programming patterns
+
+// Polymorphic to_string
+fn to_string(v) {
+  match type.of(v) {
+    "int"    => str.from_int(v),
+    "float"  => str.from_float(v),
+    "bool"   => if v then "true" else "false",
+    "text"   => v,
+    "null"   => "null",
+    "unit"   => "null",
+    "list"   => str.concat("[", str.concat(str.join(list.map(v, to_string), ", "), "]")),
+    "record" => "{ ... }",
+    _        => "?"
+  }
+}
+test "to_string int" { to_string(42) == "42" }
+test "to_string float" { str.contains(to_string(3.14), "3.14") }
+test "to_string bool" { to_string(true) == "true" }
+test "to_string str" { to_string("hi") == "hi" }
+test "to_string null" { to_string(null) == "null" }
+test "to_string list" { to_string([1,2,3]) == "[1, 2, 3]" }
+
+// Type-safe operations
+fn safe_add(a, b) {
+  let ta = type.of(a) in
+  let tb = type.of(b) in
+  if ta == "int" && tb == "int" then { ok: true, value: a + b, type: "int" }
+  else if (ta == "float" || ta == "int") && (tb == "float" || tb == "int") then
+    { ok: true, value: (a + 0.0) + (b + 0.0), type: "float" }
+  else if ta == "text" && tb == "text" then { ok: true, value: str.concat(a, b), type: "text" }
+  else { ok: false, value: null, type: "error" }
+}
+test "safe_add int" { safe_add(1, 2).value == 3 }
+test "safe_add float" { safe_add(1.5, 2.5).value == 4.0 }
+test "safe_add mixed" { safe_add(1, 2.0).ok }
+test "safe_add str" { safe_add("hello", " world").value == "hello world" }
+test "safe_add fail" { safe_add(1, "x").ok == false }
+
+// Dynamic dispatch via type
+fn serialize(v) {
+  match type.of(v) {
+    "int"    => { t: "int", v: v },
+    "float"  => { t: "float", v: v },
+    "bool"   => { t: "bool", v: v },
+    "text"   => { t: "text", v: v },
+    "null"   => { t: "null", v: null },
+    "unit"   => { t: "null", v: null },
+    "list"   => { t: "list", v: list.map(v, serialize) },
+    "record" => { t: "record", v: rec.keys(v) },
+    _        => { t: "unknown", v: null }
+  }
+}
+let s1 = serialize(42)
+test "serialize int t" { s1.t == "int" }
+test "serialize int v" { s1.v == 42 }
+let s2 = serialize([1, 2, 3])
+test "serialize list t" { s2.t == "list" }
+test "serialize list len" { list.len(s2.v) == 3 }
+let s3 = serialize({ x: 1, y: "hello" })
+test "serialize record t" { s3.t == "record" }
+
+// Type coercion chain
+fn coerce_to_int(v) {
+  match type.of(v) {
+    "int"   => v,
+    "float" => float.round(v),
+    "text"  => let r = int.parse(v) in if r.t == "ok" then r.v else 0,
+    "bool"  => if v then 1 else 0,
+    _       => 0
+  }
+}
+test "coerce int" { coerce_to_int(42) == 42 }
+test "coerce float" { coerce_to_int(3.7) == 4 }
+test "coerce str" { coerce_to_int("99") == 99 }
+test "coerce bool t" { coerce_to_int(true) == 1 }
+test "coerce bool f" { coerce_to_int(false) == 0 }
+test "coerce null" { coerce_to_int(null) == 0 }
