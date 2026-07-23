@@ -1,0 +1,71 @@
+
+import("std/list") as list
+import("std/math") as math
+import("std/float") as float
+
+// Number theory
+fn gcd(a, b) { if b == 0 then a else gcd(b, a % b) }
+fn lcm(a, b) { (a * b) / gcd(a, b) }
+fn is_prime(n) {
+  if n < 2 then false
+  else if n == 2 then true
+  else if n % 2 == 0 then false
+  else
+    let limit = float.floor(math.sqrt(n + 0.0)) in
+    let i = while { i: 3, result: true }
+      fn(s) { s.i <= limit && s.result }
+      fn(s) { { i: s.i + 2, result: s.i * s.i > n || n % s.i != 0 } }
+    in i.value.result
+}
+
+test "gcd 12 8" { gcd(12, 8) == 4 }
+test "gcd 100 75" { gcd(100, 75) == 25 }
+test "gcd coprime" { gcd(7, 13) == 1 }
+test "lcm 4 6" { lcm(4, 6) == 12 }
+test "lcm 12 15" { lcm(12, 15) == 60 }
+
+test "prime 2" { is_prime(2) }
+test "prime 17" { is_prime(17) }
+test "prime 97" { is_prime(97) }
+test "not prime 1" { is_prime(1) == false }
+test "not prime 4" { is_prime(4) == false }
+test "not prime 100" { is_prime(100) == false }
+
+// Geometric calculations
+fn circle_circumference(r) { 2.0 * math.pi * r }
+fn sphere_volume(r) { (4.0 / 3.0) * math.pi * r * r * r }
+test "circle circumf" { circle_circumference(1.0) > 6.28 && circle_circumference(1.0) < 6.29 }
+test "sphere vol unit" { sphere_volume(1.0) > 4.18 && sphere_volume(1.0) < 4.19 }
+
+// Vector operations
+fn dot_product(v1, v2) {
+  list.fold(list.range(0, list.len(v1)), 0.0, fn(acc, i) {
+    acc + list.get(v1, i) * list.get(v2, i)
+  })
+}
+fn magnitude(v) { math.sqrt(dot_product(v, v)) }
+test "dot product" { dot_product([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]) == 32.0 }
+test "magnitude 3-4" { magnitude([3.0, 4.0]) == 5.0 }
+test "magnitude unit x" { magnitude([1.0, 0.0, 0.0]) == 1.0 }
+
+// Newton's method for sqrt
+fn newton_sqrt(n) {
+  let result = while { x: n / 2.0, prev: 0.0 }
+    fn(s) { math.abs(s.x - s.prev) > 0.0001 }
+    fn(s) { { x: (s.x + n / s.x) / 2.0, prev: s.x } }
+  in result.value.x
+}
+test "newton sqrt 4" { math.abs(newton_sqrt(4.0) - 2.0) < 0.001 }
+test "newton sqrt 9" { math.abs(newton_sqrt(9.0) - 3.0) < 0.001 }
+test "newton sqrt 2" { math.abs(newton_sqrt(2.0) - 1.41421) < 0.001 }
+
+// Statistics
+fn mean(xs) { list.fold(xs, 0.0, fn(acc, x) { acc + x }) / list.len(xs) }
+fn variance(xs) {
+  let m = mean(xs) in
+  list.fold(xs, 0.0, fn(acc, x) { acc + (x - m) * (x - m) }) / list.len(xs)
+}
+fn std_dev(xs) { math.sqrt(variance(xs)) }
+test "mean" { mean([1.0, 2.0, 3.0, 4.0, 5.0]) == 3.0 }
+test "variance" { variance([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]) == 4.0 }
+test "std_dev" { std_dev([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]) == 2.0 }

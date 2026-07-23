@@ -1,0 +1,96 @@
+import("std/int") as int_mod
+
+import("std/list") as list
+import("std/str") as str
+import("std/type") as type
+
+// Pattern matching as the core dispatch mechanism
+
+// AST evaluation
+fn eval_ast(node) {
+  match node.t {
+    "num"  => node.v,
+    "add"  => eval_ast(node.left) + eval_ast(node.right),
+    "sub"  => eval_ast(node.left) - eval_ast(node.right),
+    "mul"  => eval_ast(node.left) * eval_ast(node.right),
+    "div"  => eval_ast(node.left) / eval_ast(node.right),
+    "neg"  => -eval_ast(node.expr),
+    _      => 0
+  }
+}
+fn num(v) { { t: "num", v: v } }
+fn add(l, r) { { t: "add", left: l, right: r } }
+fn mul(l, r) { { t: "mul", left: l, right: r } }
+fn neg(e) { { t: "neg", expr: e } }
+
+test "eval num" { eval_ast(num(42)) == 42 }
+test "eval add" { eval_ast(add(num(3), num(4))) == 7 }
+test "eval mul" { eval_ast(mul(num(3), num(4))) == 12 }
+test "eval nested" { eval_ast(add(mul(num(2), num(3)), num(4))) == 10 }
+test "eval neg" { eval_ast(neg(num(5))) == -5 }
+test "eval complex" { eval_ast(mul(add(num(1), num(2)), add(num(3), num(4)))) == 21 }
+
+// Option chaining
+fn safe_head(xs) { if list.len(xs) == 0 then { none: null } else { some: list.head(xs) } }
+fn safe_div(a, b) { if b == 0 then { none: null } else { some: a / b } }
+fn chain_option(opt, f) {
+  match type.of(opt) {
+    "record" => if opt.none == null && opt.some != null then f(opt.some) else opt,
+    _        => { none: null }
+  }
+}
+test "option some" { safe_head([1,2,3]).some == 1 }
+test "option none" { safe_head([]).none == null }
+test "safe_div ok" { safe_div(10, 2).some == 5 }
+test "safe_div zero" { safe_div(10, 0).none == null }
+
+// Command pattern
+fn execute(cmd) {
+  match cmd.type {
+    "print"   => { ok: true, output: cmd.message },
+    "compute" => { ok: true, output: cmd.a + cmd.b },
+    "echo"    => { ok: true, output: cmd.value },
+    _         => { ok: false, output: "unknown command" }
+  }
+}
+test "print cmd" { execute({ type: "print", message: "hello" }).output == "hello" }
+test "compute cmd" { execute({ type: "compute", a: 3, b: 4 }).output == 7 }
+test "unknown cmd" { execute({ type: "fly" }).ok == false }
+
+// Recursive descent parser (simple arithmetic)
+fn parse_int_str(s) {
+  let r = int_mod.parse(s) in
+  if r.t == "ok" then r.v else 0
+}
+fn classify_token(t) {
+  match t {
+    "+" => "op",
+    "-" => "op",
+    "*" => "op",
+    "/" => "op",
+    _   => if parse_int_str(t) != 0 || t == "0" then "num" else "unknown"
+  }
+}
+test "classify plus" { classify_token("+") == "op" }
+test "classify num" { classify_token("42") == "num" }
+test "classify zero" { classify_token("0") == "num" }
+
+// Match with computation
+fn fizzbuzz_match(n) {
+  match { by3: n % 3 == 0, by5: n % 5 == 0 } {
+    { by3: true,  by5: true  } => "FizzBuzz",
+    { by3: true,  by5: false } => "Fizz",
+    { by3: false, by5: true  } => "Buzz",
+    _                          => str.from_int(n)
+  }
+}
+test "fizzbuzz 15" { fizzbuzz_match(15) == "FizzBuzz" }
+test "fizzbuzz 9" { fizzbuzz_match(9) == "Fizz" }
+test "fizzbuzz 10" { fizzbuzz_match(10) == "Buzz" }
+test "fizzbuzz 7" { fizzbuzz_match(7) == "7" }
+
+let fb_list = list.map(list.range(1, 16), fizzbuzz_match)
+test "fb first" { list.get(fb_list, 0) == "1" }
+test "fb third" { list.get(fb_list, 2) == "Fizz" }
+test "fb fifth" { list.get(fb_list, 4) == "Buzz" }
+test "fb fifteenth" { list.get(fb_list, 14) == "FizzBuzz" }
