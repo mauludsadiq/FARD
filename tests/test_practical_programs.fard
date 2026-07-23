@@ -1,0 +1,85 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/record") as rec
+import("std/int") as int
+import("std/math") as math
+
+// Caesar cipher
+let alphabet = ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z"]
+fn char_pos(c) { list.find_index(alphabet, fn(x) { x == c }) }
+fn shift_char(c, n) {
+  let pos = char_pos(c) in
+  if pos == -1 then c
+  else list.get(alphabet, (pos + n) % 26)
+}
+fn caesar_encode(text, shift) {
+  str.join(list.map(str.chars(str.lower(text)), fn(c) { shift_char(c, shift) }), "")
+}
+fn caesar_decode(text, shift) { caesar_encode(text, 26 - shift) }
+test "caesar encode" { caesar_encode("hello", 3) == "khoor" }
+test "caesar decode" { caesar_decode("khoor", 3) == "hello" }
+test "caesar roundtrip" { caesar_decode(caesar_encode("fard", 13), 13) == "fard" }
+
+// Run-length encoding
+fn rle_encode(s) {
+  let chars = str.chars(s) in
+  if list.len(chars) == 0 then []
+  else
+    list.fold(list.tail(chars), [{ char: list.head(chars), count: 1 }], fn(acc, c) {
+      let last = list.get(acc, list.len(acc) - 1) in
+      if last.char == c then
+        list.concat([list.take(acc, list.len(acc) - 1), [{ char: c, count: last.count + 1 }]])
+      else
+        list.concat([acc, [{ char: c, count: 1 }]])
+    })
+}
+fn rle_decode(encoded) {
+  str.join(list.map(encoded, fn(e) {
+    str.join(list.map(list.range(0, e.count), fn(_) { e.char }), "")
+  }), "")
+}
+let encoded = rle_encode("aaabbbccddddee")
+test "rle encode len" { list.len(encoded) == 5 }
+test "rle encode first" { list.get(encoded, 0).char == "a" }
+test "rle encode count" { list.get(encoded, 0).count == 3 }
+test "rle decode" { rle_decode(encoded) == "aaabbbccddddee" }
+test "rle roundtrip" { rle_decode(rle_encode("hello")) == "hello" }
+
+// Luhn algorithm (credit card validation)
+fn luhn_check(n) {
+  let digits = list.map(str.chars(str.from_int(n)), fn(c) {
+    let r = int.parse(c) in if r.t == "ok" then r.v else 0
+  }) in
+  let reversed = list.reverse(digits) in
+  let total = list.fold(list.range(0, list.len(reversed)), 0, fn(acc, i) {
+    let d = list.get(reversed, i) in
+    if i % 2 == 1 then
+      let doubled = d * 2 in
+      acc + (if doubled > 9 then doubled - 9 else doubled)
+    else acc + d
+  }) in
+  total % 10 == 0
+}
+test "luhn valid" { luhn_check(4532015112830366) }
+test "luhn invalid" { luhn_check(1234567890123456) == false }
+test "luhn simple" { luhn_check(79927398713) }
+
+// Binary search
+fn binary_search(xs, target) {
+  let result = while { lo: 0, hi: list.len(xs) - 1, found: -1 }
+    fn(s) { s.lo <= s.hi && s.found == -1 }
+    fn(s) {
+      let mid = (s.lo + s.hi) / 2 in
+      let val = list.get(xs, mid) in
+      if val == target then { lo: s.lo, hi: s.hi, found: mid }
+      else if val < target then { lo: mid + 1, hi: s.hi, found: -1 }
+      else { lo: s.lo, hi: mid - 1, found: -1 }
+    }
+  in result.value.found
+}
+let sorted = [1,3,5,7,9,11,13,15,17,19]
+test "bsearch found" { binary_search(sorted, 11) == 5 }
+test "bsearch first" { binary_search(sorted, 1) == 0 }
+test "bsearch last" { binary_search(sorted, 19) == 9 }
+test "bsearch missing" { binary_search(sorted, 6) == -1 }
