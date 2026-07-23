@@ -1,0 +1,85 @@
+import("std/math") as math
+
+import("std/record") as rec
+import("std/list") as list
+import("std/type") as type
+
+// Record as product type
+fn make_point(x, y) { { x: x, y: y } }
+fn distance(p1, p2) {
+  let dx = p2.x - p1.x in
+  let dy = p2.y - p1.y in
+  math.sqrt((dx * dx + dy * dy) + 0.0)
+}
+let origin = make_point(0, 0)
+let p1 = make_point(3, 4)
+let p2 = make_point(6, 8)
+test "point x" { p1.x == 3 }
+test "point y" { p1.y == 4 }
+test "distance origin" { distance(origin, p1) == 5.0 }
+test "distance points" { distance(p1, p2) == 5.0 }
+
+// Record update pattern
+fn move_point(p, dx, dy) { { x: p.x + dx, y: p.y + dy } }
+let moved = move_point(p1, 1, 1)
+test "move x" { moved.x == 4 }
+test "move y" { moved.y == 5 }
+test "original unchanged" { p1.x == 3 }
+
+// Record as sum type (tagged union)
+fn make_circle(r) { { type: "circle", radius: r } }
+fn make_rect(w, h) { { type: "rect", width: w, height: h } }
+fn area(shape) {
+  match shape.type {
+    "circle" => math.pi * shape.radius * shape.radius,
+    "rect"   => shape.width * shape.height + 0.0,
+    _        => 0.0
+  }
+}
+test "circle area" { area(make_circle(1.0)) > 3.14 }
+test "rect area" { area(make_rect(3, 4)) == 12.0 }
+
+// Record merge patterns
+let defaults = { color: "blue", size: 10, visible: true }
+fn with_overrides(base, overrides) { rec.merge(base, overrides) }
+let custom = with_overrides(defaults, { color: "red", extra: "yes" })
+test "merge override" { custom.color == "red" }
+test "merge keep" { custom.size == 10 }
+test "merge add" { custom.extra == "yes" }
+
+// Record as state machine
+fn transition(state, event) {
+  match state.status {
+    "idle"    => match event { "start" => { status: "running", count: 0 }, _ => state },
+    "running" => match event {
+      "tick"  => { status: "running", count: state.count + 1 },
+      "stop"  => { status: "idle", count: state.count },
+      _       => state
+    },
+    _ => state
+  }
+}
+let s0 = { status: "idle", count: 0 }
+let s1 = transition(s0, "start")
+let s2 = transition(s1, "tick")
+let s3 = transition(s2, "tick")
+let s4 = transition(s3, "stop")
+test "start" { s1.status == "running" }
+test "tick" { s2.count == 1 }
+test "tick 2" { s3.count == 2 }
+test "stop" { s4.status == "idle" }
+test "stop count" { s4.count == 2 }
+
+// Record collection operations
+let people = [
+  { name: "Alice", age: 30, dept: "eng" },
+  { name: "Bob",   age: 25, dept: "mkt" },
+  { name: "Carol", age: 35, dept: "eng" }
+]
+fn pluck(xs, key) { list.map(xs, fn(x) { rec.get(x, key) }) }
+test "pluck names" { pluck(people, "name") == ["Alice", "Bob", "Carol"] }
+test "pluck ages" { pluck(people, "age") == [30, 25, 35] }
+
+fn where_eq(xs, key, val) { list.filter(xs, fn(x) { rec.get(x, key) == val }) }
+test "where dept eng" { list.len(where_eq(people, "dept", "eng")) == 2 }
+test "where age 25" { list.get(where_eq(people, "age", 25), 0).name == "Bob" }

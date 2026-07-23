@@ -1,0 +1,62 @@
+import("std/record") as rec
+
+import("std/str") as str
+import("std/list") as list
+
+// String as character sequence
+fn reverse_str(s) { str.join(list.reverse(str.chars(s)), "") }
+test "reverse" { reverse_str("hello") == "olleh" }
+test "reverse palindrome" { reverse_str("racecar") == "racecar" }
+test "reverse empty" { reverse_str("") == "" }
+
+fn is_palindrome(s) { s == reverse_str(s) }
+test "palindrome yes" { is_palindrome("racecar") }
+test "palindrome no" { is_palindrome("hello") == false }
+test "palindrome single" { is_palindrome("a") }
+
+// String processing
+fn count_vowels(s) {
+  list.len(list.filter(str.chars(str.lower(s)), fn(c) {
+    c == "a" || c == "e" || c == "i" || c == "o" || c == "u"
+  }))
+}
+test "count vowels" { count_vowels("Hello World") == 3 }
+test "count vowels upper" { count_vowels("AEIOU") == 5 }
+test "count vowels none" { count_vowels("xyz") == 0 }
+
+fn word_freq(text) {
+  let ws = str.split(str.lower(text), " ") in
+  list.fold(ws, {}, fn(acc, w) {
+    if str.len(w) == 0 then acc
+    else
+      let count = if rec.has(acc, w) then rec.get(acc, w) else 0 in
+      rec.set(acc, w, count + 1)
+  })
+}
+let freq = word_freq("the cat sat on the mat the cat")
+test "freq the" { rec.get(freq, "the") == 3 }
+test "freq cat" { rec.get(freq, "cat") == 2 }
+test "freq sat" { rec.get(freq, "sat") == 1 }
+
+fn title_case(s) {
+  str.join(list.map(str.split(s, " "), fn(w) {
+    if str.len(w) == 0 then w
+    else str.concat(str.upper(str.slice(w, 0, 1)), str.lower(str.slice(w, 1, str.len(w))))
+  }), " ")
+}
+test "title case" { title_case("hello world") == "Hello World" }
+test "title case upper" { title_case("HELLO WORLD") == "Hello World" }
+test "title case mixed" { title_case("hELLO wORLD") == "Hello World" }
+
+fn starts_with_any(s, prefixes) {
+  list.any(prefixes, fn(p) { str.starts_with(s, p) })
+}
+test "starts_with_any yes" { starts_with_any("hello", ["hi", "he", "ho"]) }
+test "starts_with_any no" { starts_with_any("hello", ["world", "foo"]) == false }
+
+fn repeat_str(s, n) {
+  list.fold(list.range(0, n), "", fn(acc, _) { str.concat(acc, s) })
+}
+test "repeat str" { repeat_str("ab", 3) == "ababab" }
+test "repeat str 0" { repeat_str("ab", 0) == "" }
+test "repeat str 1" { repeat_str("x", 5) == "xxxxx" }
