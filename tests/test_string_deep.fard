@@ -1,0 +1,86 @@
+
+import("std/str") as str
+import("std/list") as list
+import("std/int") as int
+
+// String parsing
+fn parse_int_safe(s) {
+  let r = int.parse(str.trim(s)) in
+  if r.t == "ok" then r.v else null
+}
+test "parse int" { parse_int_safe("42") == 42 }
+test "parse neg" { parse_int_safe("-17") == -17 }
+test "parse spaces" { parse_int_safe("  99  ") == 99 }
+test "parse invalid" { parse_int_safe("abc") == null }
+
+// String search and replace
+fn replace_all(s, from, to) {
+  let parts = str.split(s, from) in
+  str.join(parts, to)
+}
+test "replace all" { replace_all("aabbaa", "aa", "X") == "XbbX" }
+test "replace none" { replace_all("hello", "xyz", "abc") == "hello" }
+test "replace empty" { replace_all("", "a", "b") == "" }
+
+// String splitting and joining
+fn csv_parse_line(line) {
+  list.map(str.split(line, ","), fn(f) { str.trim(f) })
+}
+test "csv parse" { csv_parse_line("a, b, c") == ["a","b","c"] }
+test "csv parse empty" { csv_parse_line("") == [""] }
+
+// String formatting
+fn pad_left(s, n, c) {
+  let padding = str.join(list.map(list.range(0, n - str.len(s)), fn(_) { c }), "") in
+  str.concat(padding, s)
+}
+fn pad_right(s, n, c) {
+  let padding = str.join(list.map(list.range(0, n - str.len(s)), fn(_) { c }), "") in
+  str.concat(s, padding)
+}
+test "pad left" { pad_left("42", 5, "0") == "00042" }
+test "pad right" { pad_right("hi", 5, " ") == "hi   " }
+test "pad exact" { pad_left("hello", 5, "x") == "hello" }
+
+// String search
+fn find_all(haystack, needle) {
+  let parts = str.split(haystack, needle) in
+  list.len(parts) - 1
+}
+test "find all" { find_all("abcabcabc", "abc") == 3 }
+test "find all none" { find_all("hello", "xyz") == 0 }
+test "find all overlap" { find_all("aaa", "a") == 3 }
+
+// String encoding checks
+fn is_numeric(s) {
+  str.len(s) > 0 && list.all(str.chars(s), fn(c) {
+    let code = str.char_code(c) in
+    code >= 48 && code <= 57
+  })
+}
+fn is_alpha(s) {
+  str.len(s) > 0 && list.all(str.chars(s), fn(c) {
+    let code = str.char_code(c) in
+    (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+  })
+}
+test "is_numeric yes" { is_numeric("12345") }
+test "is_numeric no" { is_numeric("12a45") == false }
+test "is_numeric empty" { is_numeric("") == false }
+test "is_alpha yes" { is_alpha("hello") }
+test "is_alpha no" { is_alpha("hello1") == false }
+test "is_alpha upper" { is_alpha("HELLO") }
+
+// String template
+fn template(s, vars) {
+  list.fold(vars, s, fn(acc, pair) {
+    str.replace(acc, str.concat("{{", str.concat(pair.key, "}}")), pair.value)
+  })
+}
+let t = template("Hello {{name}}, you are {{age}} years old!", [
+  { key: "name", value: "Alice" },
+  { key: "age", value: "30" }
+])
+test "template basic" { str.contains(t, "Alice") }
+test "template age" { str.contains(t, "30") }
+test "template static" { str.contains(t, "Hello") }
