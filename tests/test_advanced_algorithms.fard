@@ -1,0 +1,87 @@
+
+import("std/list") as list
+import("std/math") as math
+import("std/float") as float
+
+// Dynamic programming
+fn lcs_len(a, b) {
+  let m = list.len(a) in
+  let n = list.len(b) in
+  let dp = list.fold(list.range(0, m+1), [], fn(table, i) {
+    let row = list.fold(list.range(0, n+1), [], fn(row, j) {
+      if i == 0 || j == 0 then list.concat([row, [0]])
+      else if list.get(a, i-1) == list.get(b, j-1) then
+        let prev_row = list.get(table, i-1) in
+        list.concat([row, [list.get(prev_row, j-1) + 1]])
+      else
+        let prev_row = list.get(table, i-1) in
+        let prev_val = list.get(prev_row, j) in
+        let cur_val = list.get(row, j-1) in
+        list.concat([row, [if prev_val > cur_val then prev_val else cur_val]])
+    }) in
+    list.concat([table, [row]])
+  }) in
+  list.get(list.get(dp, m), n)
+}
+test "lcs same" { lcs_len([1,2,3], [1,2,3]) == 3 }
+test "lcs partial" { lcs_len([1,2,3,4], [1,3,4]) == 3 }
+test "lcs none" { lcs_len([1,2,3], [4,5,6]) == 0 }
+test "lcs empty" { lcs_len([], [1,2,3]) == 0 }
+
+// Sieve of Eratosthenes
+fn sieve(n) {
+  let initial = list.map(list.range(2, n+1), fn(x) { { n: x, prime: true } }) in
+  let result = list.fold(list.range(2, n+1), initial, fn(marked, p) {
+    if list.get(marked, p-2).prime then
+      list.map(list.range(0, list.len(marked)), fn(i) {
+        let item = list.get(marked, i) in
+        if item.n != p && item.n % p == 0 then { n: item.n, prime: false }
+        else item
+      })
+    else marked
+  }) in
+  list.map(list.filter(result, fn(x) { x.prime }), fn(x) { x.n })
+}
+let primes_30 = sieve(30)
+test "primes count" { list.len(primes_30) == 10 }
+test "primes first" { list.get(primes_30, 0) == 2 }
+test "primes last" { list.get(primes_30, 9) == 29 }
+
+// Matrix multiplication
+fn mat_mul(a, b, n) {
+  list.map(list.range(0, n), fn(i) {
+    list.map(list.range(0, n), fn(j) {
+      list.fold(list.range(0, n), 0, fn(acc, k) {
+        acc + list.get(list.get(a, i), k) * list.get(list.get(b, k), j)
+      })
+    })
+  })
+}
+let m1 = [[1,2],[3,4]]
+let m2 = [[5,6],[7,8]]
+let m3 = mat_mul(m1, m2, 2)
+test "matmul 0,0" { list.get(list.get(m3, 0), 0) == 19 }
+test "matmul 0,1" { list.get(list.get(m3, 0), 1) == 22 }
+test "matmul 1,0" { list.get(list.get(m3, 1), 0) == 43 }
+test "matmul 1,1" { list.get(list.get(m3, 1), 1) == 50 }
+
+// Flood fill
+fn make_grid(rows, cols, val) {
+  list.map(list.range(0, rows), fn(_) { list.map(list.range(0, cols), fn(_) { val }) })
+}
+fn grid_get(grid, r, c) { list.get(list.get(grid, r), c) }
+fn grid_set(grid, r, c, val) {
+  list.map(list.range(0, list.len(grid)), fn(i) {
+    if i == r then
+      list.map(list.range(0, list.len(list.get(grid, 0))), fn(j) {
+        if j == c then val else list.get(list.get(grid, i), j)
+      })
+    else list.get(grid, i)
+  })
+}
+let grid = make_grid(3, 3, 0)
+let g1 = grid_set(grid, 1, 1, 1)
+test "grid get" { grid_get(g1, 1, 1) == 1 }
+test "grid unchanged" { grid_get(g1, 0, 0) == 0 }
+test "grid size" { list.len(g1) == 3 }
+test "grid row size" { list.len(list.get(g1, 0)) == 3 }

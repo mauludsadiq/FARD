@@ -1,0 +1,10 @@
+
+import("../packages/csv-extra/main") as csv
+import("std/list") as list
+
+let csv_data = "name,age,score
+Alice,30,95
+Bob,25,72"
+let rows = csv.parse_with_headers(csv_data)
+test "rows count" { csv.count(rows) == 2 }
+test "column" { list.len(csv.column(rows, "name")) == 2 }

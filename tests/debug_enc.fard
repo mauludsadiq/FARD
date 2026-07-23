@@ -1,0 +1,12 @@
+
+import("../packages/yaml/main") as yaml
+import("std/str") as str
+
+let yaml_str = "name: FARD
+version: 5
+features:
+  - fast
+  - safe"
+let yaml_data = yaml.parse(yaml_str)
+test "yaml name" { yaml_data.name == "FARD" }
+test "yaml version" { yaml_data.version == 5 }
