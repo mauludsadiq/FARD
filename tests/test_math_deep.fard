@@ -1,0 +1,59 @@
+
+import("std/math") as math
+import("std/float") as float
+import("std/list") as list
+
+// Trigonometry
+test "sin 0" { math.sin(0.0) == 0.0 }
+test "cos 0" { math.cos(0.0) == 1.0 }
+test "tan 0" { math.tan(0.0) == 0.0 }
+test "sin pi/2" { math.abs(math.sin(math.pi / 2.0) - 1.0) < 0.0001 }
+test "cos pi" { math.abs(math.cos(math.pi) + 1.0) < 0.0001 }
+test "sin^2 + cos^2 = 1" { math.abs(math.sin(1.0) * math.sin(1.0) + math.cos(1.0) * math.cos(1.0) - 1.0) < 0.0001 }
+
+// Exponentials and logs
+test "exp 0" { math.exp(0.0) == 1.0 }
+test "exp 1" { math.abs(math.exp(1.0) - math.e) < 0.0001 }
+test "log 1" { math.log(1.0) == 0.0 }
+test "log e" { math.abs(math.log(math.e) - 1.0) < 0.0001 }
+test "exp log inverse" { math.abs(math.exp(math.log(5.0)) - 5.0) < 0.0001 }
+test "log exp inverse" { math.abs(math.log(math.exp(3.0)) - 3.0) < 0.0001 }
+
+// Power
+test "pow 2 10" { math.pow(2.0, 10.0) == 1024.0 }
+test "pow 0" { math.pow(5.0, 0.0) == 1.0 }
+test "pow 1" { math.pow(7.0, 1.0) == 7.0 }
+test "sqrt via pow" { math.abs(math.pow(4.0, 0.5) - 2.0) < 0.0001 }
+
+// Floor/ceil/round
+test "floor 3.9" { math.floor(3.9) == 3.0 }
+test "floor neg" { math.floor(-3.1) == -4.0 }
+test "ceil 3.1" { math.ceil(3.1) == 4.0 }
+test "ceil neg" { math.ceil(-3.9) == -3.0 }
+test "round 3.5" { math.round(3.5) == 4.0 }
+test "round 3.4" { math.round(3.4) == 3.0 }
+
+// Abs
+test "abs pos" { math.abs(3.14) == 3.14 }
+test "abs neg" { math.abs(-3.14) == 3.14 }
+test "abs zero" { math.abs(0.0) == 0.0 }
+
+// Min/max
+test "min" { math.min(3.0, 5.0) == 3.0 }
+test "max" { math.max(3.0, 5.0) == 5.0 }
+test "min neg" { math.min(-1.0, -5.0) == -5.0 }
+
+// Float operations
+test "float sqrt 4" { float.sqrt(4.0) == 2.0 }
+test "float floor" { float.floor(3.7) == 3.0 }
+test "float ceil" { float.ceil(3.2) == 4.0 }
+test "float abs" { float.abs(-2.5) == 2.5 }
+test "float from_int" { float.from_int(42) == 42.0 }
+test "float from_int neg" { float.from_int(-5) == -5.0 }
+
+// Numerical series
+fn harmonic(n) {
+  list.fold(list.range(1, n+1), 0.0, fn(acc, i) { acc + 1.0 / (i + 0.0) })
+}
+test "harmonic 1" { harmonic(1) == 1.0 }
+test "harmonic 4" { math.abs(harmonic(4) - 2.0833) < 0.001 }

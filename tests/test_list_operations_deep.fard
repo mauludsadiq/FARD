@@ -1,0 +1,99 @@
+
+import("std/list") as list
+import("std/str") as str
+
+// Deep list operations
+
+// take/drop variants
+fn take_while(pred, xs) {
+  list.fold(xs, { result: [], done: false }, fn(acc, x) {
+    if acc.done then acc
+    else if pred(x) then { result: list.concat([acc.result, [x]]), done: false }
+    else { result: acc.result, done: true }
+  }).result
+}
+fn drop_while(pred, xs) {
+  list.fold(xs, { result: [], dropping: true }, fn(acc, x) {
+    if acc.dropping && pred(x) then { result: acc.result, dropping: true }
+    else { result: list.concat([acc.result, [x]]), dropping: false }
+  }).result
+}
+test "take_while" { take_while(fn(x) { x < 4 }, [1,2,3,4,5]) == [1,2,3] }
+test "take_while all" { take_while(fn(x) { x > 0 }, [1,2,3]) == [1,2,3] }
+test "take_while none" { take_while(fn(x) { x > 10 }, [1,2,3]) == [] }
+test "drop_while" { drop_while(fn(x) { x < 4 }, [1,2,3,4,5]) == [4,5] }
+test "drop_while none" { drop_while(fn(x) { x > 10 }, [1,2,3]) == [1,2,3] }
+
+// span: split at predicate
+fn span(pred, xs) {
+  { left: take_while(pred, xs), right: drop_while(pred, xs) }
+}
+test "span" { span(fn(x) { x < 3 }, [1,2,3,4]).left == [1,2] }
+test "span right" { span(fn(x) { x < 3 }, [1,2,3,4]).right == [3,4] }
+
+// interleave two lists
+fn interleave(xs, ys) {
+  list.fold(list.range(0, list.len(xs)), [], fn(acc, i) {
+    let x_part = if i < list.len(xs) then [list.get(xs, i)] else [] in
+    let y_part = if i < list.len(ys) then [list.get(ys, i)] else [] in
+    list.concat([acc, x_part, y_part])
+  })
+}
+test "interleave" { interleave([1,3,5], [2,4,6]) == [1,2,3,4,5,6] }
+test "interleave empty" { interleave([], [1,2]) == [] }
+
+// unzip
+fn unzip(pairs) {
+  list.fold(pairs, { lefts: [], rights: [] }, fn(acc, p) {
+    { lefts: list.concat([acc.lefts, [list.get(p, 0)]]),
+      rights: list.concat([acc.rights, [list.get(p, 1)]]) }
+  })
+}
+let pairs = [[1,"a"],[2,"b"],[3,"c"]]
+let unzipped = unzip(pairs)
+test "unzip lefts" { unzipped.lefts == [1,2,3] }
+test "unzip rights" { unzipped.rights == ["a","b","c"] }
+
+// cartesian product
+fn cartesian(xs, ys) {
+  list.flat_map(xs, fn(x) { list.map(ys, fn(y) { [x, y] }) })
+}
+let product = cartesian([1,2], ["a","b"])
+test "cartesian len" { list.len(product) == 4 }
+test "cartesian first" { list.get(product, 0) == [1,"a"] }
+test "cartesian last" { list.get(product, 3) == [2,"b"] }
+
+// permutations (simple, small inputs)
+fn insert_at(xs, i, x) {
+  list.concat([list.take(xs, i), [x], list.drop(xs, i)])
+}
+fn permutations(xs) {
+  if list.len(xs) == 0 then [[]]
+  else
+    list.flat_map(permutations(list.tail(xs)), fn(perm) {
+      list.map(list.range(0, list.len(perm) + 1), fn(i) {
+        insert_at(perm, i, list.head(xs))
+      })
+    })
+}
+let perms = permutations([1,2,3])
+test "perms count" { list.len(perms) == 6 }
+test "perms all have 3" { list.all(perms, fn(p) { list.len(p) == 3 }) }
+
+// group_consecutive
+fn group_consecutive(xs) {
+  if list.len(xs) == 0 then []
+  else
+    list.fold(list.tail(xs), [[list.head(xs)]], fn(acc, x) {
+      let last_group = list.get(acc, list.len(acc) - 1) in
+      let last_elem = list.get(last_group, list.len(last_group) - 1) in
+      if x == last_elem + 1 then
+        list.concat([list.take(acc, list.len(acc) - 1), [list.concat([last_group, [x]])]])
+      else
+        list.concat([acc, [[x]]])
+    })
+}
+let groups = group_consecutive([1,2,3,5,6,8])
+test "groups count" { list.len(groups) == 3 }
+test "groups first" { list.get(groups, 0) == [1,2,3] }
+test "groups last" { list.get(groups, 2) == [8] }
