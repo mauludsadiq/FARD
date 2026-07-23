@@ -1,0 +1,66 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/math") as math
+import("std/record") as rec
+
+// More property-based tests using the fixed vm_val_eq
+
+// String properties
+fn prop_str_reverse_len(s) { str.len(s) == str.len(str.join(list.reverse(str.chars(s)), "")) }
+test "str reverse len" { prop_str_reverse_len("hello") }
+test "str reverse len empty" { prop_str_reverse_len("") }
+test "str reverse len unicode" { prop_str_reverse_len("fard language") }
+
+fn prop_str_upper_lower(s) { str.lower(str.upper(s)) == str.lower(s) }
+test "upper lower" { prop_str_upper_lower("Hello World") }
+test "upper lower empty" { prop_str_upper_lower("") }
+test "upper lower digits" { prop_str_upper_lower("abc123") }
+
+// List properties with functions (now works with vm_val_eq fix)
+fn prop_sort_contains_all(xs) {
+  let sorted = list.sort_by(xs, fn(a,b) { a - b }) in
+  list.all(xs, fn(x) { list.any(sorted, fn(y) { y == x }) })
+}
+test "sort contains all" { prop_sort_contains_all([5,3,1,4,2]) }
+test "sort contains empty" { prop_sort_contains_all([]) }
+test "sort contains single" { prop_sort_contains_all([42]) }
+
+fn prop_filter_union(xs, pred) {
+  let yes = list.filter(xs, pred) in
+  let no = list.filter(xs, fn(x) { pred(x) == false }) in
+  list.len(yes) + list.len(no) == list.len(xs)
+}
+test "filter union" { prop_filter_union([1,2,3,4,5,6], fn(x) { x % 2 == 0 }) }
+test "filter union empty" { prop_filter_union([], fn(x) { true }) }
+
+// Math properties
+fn prop_sqrt_square(x) { math.abs(math.sqrt(x) * math.sqrt(x) - x) < 0.0001 }
+test "sqrt square 4" { prop_sqrt_square(4.0) }
+test "sqrt square 9" { prop_sqrt_square(9.0) }
+test "sqrt square 2" { prop_sqrt_square(2.0) }
+
+fn prop_log_exp(x) { math.abs(math.log(math.exp(x)) - x) < 0.0001 }
+test "log exp 0" { prop_log_exp(0.0) }
+test "log exp 1" { prop_log_exp(1.0) }
+test "log exp 3" { prop_log_exp(3.0) }
+
+// Record properties
+fn prop_merge_contains(a, b) {
+  let merged = rec.merge(a, b) in
+  list.all(rec.keys(a), fn(k) { rec.has(merged, k) }) &&
+  list.all(rec.keys(b), fn(k) { rec.has(merged, k) })
+}
+test "merge contains all keys" { prop_merge_contains({ x: 1, y: 2 }, { z: 3, w: 4 }) }
+test "merge contains overlap" { prop_merge_contains({ x: 1 }, { x: 2, y: 3 }) }
+test "merge empty left" { prop_merge_contains({}, { x: 1 }) }
+test "merge empty right" { prop_merge_contains({ x: 1 }, {}) }
+
+// Algebraic properties
+fn prop_add_commutative(a, b) { a + b == b + a }
+fn prop_mul_commutative(a, b) { a * b == b * a }
+fn prop_add_associative(a, b, c) { (a + b) + c == a + (b + c) }
+test "add commutative" { prop_add_commutative(3, 7) }
+test "mul commutative" { prop_mul_commutative(4, 6) }
+test "add associative" { prop_add_associative(1, 2, 3) }
+test "distributive" { 3 * (4 + 5) == 3 * 4 + 3 * 5 }

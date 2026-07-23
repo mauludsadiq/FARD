@@ -1,0 +1,65 @@
+
+import("../packages/semver/main") as semver
+import("../packages/glob/main") as glob
+import("../packages/diff/main") as diff
+import("../packages/stream/main") as stream
+import("../packages/template/main") as tmpl
+import("std/list") as list
+import("std/str") as str
+
+// Semver comprehensive
+test "parse 1.0.0" { semver.parse("1.0.0").major == 1 }
+test "parse 2.3.4" { semver.parse("2.3.4").minor == 3 }
+test "parse patch" { semver.parse("1.2.3").patch == 3 }
+test "gt" { semver.gt("2.0.0", "1.9.9") }
+test "lt" { semver.lt("1.0.0", "1.0.1") }
+test "eq" { semver.eq("1.2.3", "1.2.3") }
+test "gte" { semver.gte("1.0.0", "1.0.0") }
+test "lt equal" { semver.lt("1.0.0", "1.0.1") }
+test "bump major" { semver.bump_major("1.2.3") == "2.0.0" }
+test "bump minor" { semver.bump_minor("1.2.3") == "1.3.0" }
+test "bump patch" { semver.bump_patch("1.2.3") == "1.2.4" }
+test "latest" { semver.latest(["1.0.0","3.0.0","2.0.0"]) == "3.0.0" }
+test "sort ascending" { list.get(semver.sort(["3.0","1.0","2.0"]), 0) == "1.0" }
+test "compare" { semver.compare("1.2.3", "1.0.0") > 0 }
+test "compare lt" { semver.compare("1.0.0", "2.0.0") < 0 }
+
+// Glob patterns
+test "star all" { glob.matches("*", "anything.txt") }
+test "star ext" { glob.matches("*.fard", "main.fard") }
+test "star ext no" { glob.matches("*.fard", "main.rs") == false }
+test "double star" { glob.matches("**/*.fard", "src/main.fard") }
+test "exact" { glob.matches("main.fard", "main.fard") }
+test "exact no" { glob.matches("main.fard", "other.fard") == false }
+
+// Diff
+let a = "line1
+line2
+line3
+line4"
+let b = "line1
+modified
+line3
+line4
+new line"
+let d = diff.diff_lines(a, b)
+test "diff has changes" { diff.changed_count(d) > 0 }
+test "diff format" { str.len(diff.format_diff(d)) > 0 }
+test "diff equal" { diff.is_equal(a, a) }
+test "diff not equal" { diff.is_equal(a, b) == false }
+test "same diff 0" { diff.changed_count(diff.diff_lines("x", "x")) == 0 }
+
+// Stream operations
+let s = stream.from_list([1,2,3,4,5,6,7,8,9,10])
+test "stream to_list" { stream.to_list(s) == [1,2,3,4,5,6,7,8,9,10] }
+test "stream take 3" { stream.take(s, 3) == [1,2,3] }
+test "stream fold" { stream.fold(s, 0, fn(acc,x) { acc+x }) == 55 }
+test "stream map" { list.get(stream.to_list(stream.map(s, fn(x) { x*2 })), 0) == 2 }
+test "stream filter even" { list.len(stream.to_list(stream.filter(s, fn(x) { x%2==0 }))) == 5 }
+test "stream range" { list.len(stream.to_list(stream.range_to(1, 6))) == 5 }
+
+// Template
+test "tmpl basic" { tmpl.render("Hello {{name}}!", { name: "World" }) == "Hello World!" }
+test "tmpl int" { str.contains(tmpl.render("v{{n}}", { n: 42 }), "42") }
+test "tmpl multi" { tmpl.render("{{a}}-{{b}}", { a: "x", b: "y" }) == "x-y" }
+test "tmpl empty" { tmpl.render("static", {}) == "static" }
