@@ -5438,7 +5438,7 @@ fn eval_fir(fir: &Val, env: &mut Env, tracer: &mut Tracer, loader: &mut ModuleLo
                         "int.sub" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a - b)); } }
                         "int.mul" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a * b)); } }
                         "int.div" => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Int(a / b)); } }
-                        "int.eq"  => { eprintln!("int.eq args: {:?} {:?}", args.get(0).map(|v| v.type_name()), args.get(1).map(|v| v.type_name())); if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a == b)); } }
+                        "int.eq"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a == b)); } }
                         "int.ne"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a != b)); } }
                         "int.lt"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a < b)); } }
                         "int.le"  => { if let (Val::Int(a), Val::Int(b)) = (&args[0], &args[1]) { return Ok(Val::Bool(a <= b)); } }
@@ -5699,6 +5699,8 @@ fn fir_val_to_expr(v: Val) -> Result<Expr> {
                         "bool.not" => Ok(Expr::Unary("!".to_string(), Box::new(args[0].clone()))),
                         "bool.and" => Ok(Expr::Bin("&&".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
                         "bool.or"  => Ok(Expr::Bin("||".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "value.eq" => Ok(Expr::Bin("==".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
+                        "value.ne" => Ok(Expr::Bin("!=".to_string(), Box::new(args[0].clone()), Box::new(args[1].clone()))),
                         _ => {
                             // Generic: call as module.method(args)
                             let parts: Vec<&str> = name.splitn(2, '.').collect();
@@ -6299,6 +6301,13 @@ fn vm_val_eq(a: &Val, b: &Val) -> bool {
         (Val::Bool(x), Val::Bool(y))   => x == y,
         (Val::Text(x), Val::Text(y))   => x == y,
         (Val::Unit, Val::Unit)         => true,
+        (Val::List(xs), Val::List(ys)) => {
+            xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(x, y)| vm_val_eq(x, y))
+        }
+        (Val::Record(xm), Val::Record(ym)) => {
+            xm.len() == ym.len()
+                && xm.iter().all(|(k, xv)| ym.get(k).map(|yv| vm_val_eq(xv, yv)).unwrap_or(false))
+        }
         _ => false,
     }
 }

@@ -6,10 +6,11 @@ import("std/random") as rand
 import("../packages/base64/main") as b64
 
 // Property: reverse(reverse(xs)) == xs
-test "reverse involution empty" { list.reverse(list.reverse([])) == [] }
-test "reverse involution single" { list.reverse(list.reverse([42])) == [42] }
-test "reverse involution multi" { list.reverse(list.reverse([1,2,3,4,5])) == [1,2,3,4,5] }
-test "reverse involution strings" { list.reverse(list.reverse(["a","b","c"])) == ["a","b","c"] }
+fn prop_reverse_involution(xs) { list.reverse(list.reverse(xs)) == xs }
+test "reverse involution empty" { prop_reverse_involution([]) }
+test "reverse involution single" { prop_reverse_involution([42]) }
+test "reverse involution multi" { prop_reverse_involution([1,2,3,4,5]) }
+test "reverse involution strings" { prop_reverse_involution(["a","b","c"]) }
 
 // Property: len(concat(a,b)) == len(a) + len(b)
 fn prop_concat_len(a, b) {
@@ -48,7 +49,8 @@ test "json roundtrip int" { prop_json_roundtrip(42) }
 test "json roundtrip bool" { prop_json_roundtrip(true) }
 test "json roundtrip null" { prop_json_roundtrip(null) }
 test "json roundtrip string" { prop_json_roundtrip("hello world") }
-test "json roundtrip list" { json.decode(json.encode([1,2,3])) == [1,2,3] }
+fn prop_json_rt_list(xs) { json.decode(json.encode(xs)) == xs }
+test "json roundtrip list" { prop_json_rt_list([1,2,3]) }
 
 // Property: base64 encode/decode roundtrip
 fn prop_b64_roundtrip(s) {
