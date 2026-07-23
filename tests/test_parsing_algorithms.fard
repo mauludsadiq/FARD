@@ -1,0 +1,104 @@
+
+import("std/str") as str
+import("std/list") as list
+import("std/int") as int
+import("std/type") as type
+
+// Parser combinators from scratch
+
+// A parser is a function: str -> { ok, value, rest }
+fn success(v, rest) { { ok: true, value: v, rest: rest } }
+fn failure() { { ok: false, value: null, rest: "" } }
+
+fn parse_char(c) {
+  fn(input) {
+    if str.len(input) == 0 then failure()
+    else if str.slice(input, 0, 1) == c then success(c, str.slice(input, 1, str.len(input)))
+    else failure()
+  }
+}
+
+fn parse_digit() {
+  fn(input) {
+    if str.len(input) == 0 then failure()
+    else
+      let c = str.slice(input, 0, 1) in
+      let code = str.char_code(c) in
+      if code >= 48 && code <= 57 then success(c, str.slice(input, 1, str.len(input)))
+      else failure()
+  }
+}
+
+fn parse_many(parser) {
+  fn(input) {
+    let result = while { input: input, values: [], done: false }
+      fn(s) { str.len(s.input) > 0 && s.done == false }
+      fn(s) {
+        let r = parser(s.input) in
+        if r.ok then { input: r.rest, values: list.concat([s.values, [r.value]]), done: false }
+        else { input: s.input, values: s.values, done: true }
+      }
+    in { ok: true, value: result.value.values, rest: result.value.input }
+  }
+}
+
+fn parse_integer() {
+  fn(input) {
+    let digits_r = parse_many(parse_digit())(input) in
+    if list.len(digits_r.value) == 0 then failure()
+    else
+      let s = str.join(digits_r.value, "") in
+      let r = int.parse(s) in
+      if r.t == "ok" then success(r.v, digits_r.rest)
+      else failure()
+  }
+}
+
+fn parse_sequence(parsers) {
+  fn(input) {
+    list.fold(parsers, { ok: true, value: [], rest: input }, fn(acc, p) {
+      if acc.ok == false then acc
+      else
+        let r = p(acc.rest) in
+        if r.ok then { ok: true, value: list.concat([acc.value, [r.value]]), rest: r.rest }
+        else { ok: false, value: [], rest: acc.rest }
+    })
+  }
+}
+
+fn parse_choice(parsers) {
+  fn(input) {
+    list.fold(parsers, failure(), fn(acc, p) {
+      if acc.ok then acc else p(input)
+    })
+  }
+}
+
+// Tests
+let digit = parse_digit()
+test "digit 5" { digit("5rest").value == "5" }
+test "digit rest" { digit("5rest").rest == "rest" }
+test "digit fail" { digit("abc").ok == false }
+test "digit empty" { digit("").ok == false }
+
+let integer = parse_integer()
+test "integer 42" { integer("42rest").value == 42 }
+test "integer 0" { integer("0").value == 0 }
+test "integer fail" { integer("abc").ok == false }
+test "integer rest" { integer("123abc").rest == "abc" }
+
+let many_digits = parse_many(parse_digit())
+test "many empty" { list.len(many_digits("abc").value) == 0 }
+test "many digits" { list.len(many_digits("123abc").value) == 3 }
+test "many all" { list.len(many_digits("456").value) == 3 }
+
+let seq = parse_sequence([parse_char("a"), parse_char("b"), parse_char("c")])
+test "seq ok" { seq("abcrest").ok }
+test "seq values" { seq("abcrest").value == ["a","b","c"] }
+test "seq rest" { seq("abcrest").rest == "rest" }
+test "seq fail" { seq("axc").ok == false }
+
+let choice = parse_choice([parse_char("a"), parse_char("b"), parse_char("c")])
+test "choice a" { choice("arest").value == "a" }
+test "choice b" { choice("brest").value == "b" }
+test "choice fail" { choice("xrest").ok == false }
