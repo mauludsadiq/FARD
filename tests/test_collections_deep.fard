@@ -1,0 +1,95 @@
+import("std/str") as str
+
+import("std/list") as list
+import("std/record") as rec
+import("std/type") as type
+
+// Priority queue via sorted list
+fn pq_insert(pq, item, priority) {
+  let entry = { item: item, priority: priority } in
+  let inserted = while { remaining: pq, before: [], done: false }
+    fn(s) { list.len(s.remaining) > 0 && s.done == false }
+    fn(s) {
+      let h = list.head(s.remaining) in
+      if h.priority < entry.priority then
+        { remaining: [], before: list.concat([s.before, [entry], s.remaining]), done: true }
+      else
+        { remaining: list.tail(s.remaining), before: list.concat([s.before, [h]]), done: false }
+    }
+  in
+  if inserted.value.done then inserted.value.before
+  else list.concat([inserted.value.before, [entry]])
+}
+fn pq_pop(pq) { { item: list.head(pq).item, queue: list.tail(pq) } }
+fn pq_peek(pq) { list.head(pq).item }
+fn pq_empty(pq) { list.len(pq) == 0 }
+
+let pq0 = []
+let pq1 = pq_insert(pq0, "low", 1)
+let pq2 = pq_insert(pq1, "high", 10)
+let pq3 = pq_insert(pq2, "med", 5)
+test "pq peek" { pq_peek(pq3) == "high" }
+test "pq pop first" { pq_pop(pq3).item == "high" }
+test "pq pop second" { pq_pop(pq_pop(pq3).queue).item == "med" }
+test "pq size" { list.len(pq3) == 3 }
+test "pq empty" { pq_empty(pq0) }
+
+// Trie (prefix tree) via nested records
+fn trie_new() { { children: {}, is_end: false } }
+fn trie_insert(trie, word) {
+  if word == "" then rec.set(trie, "is_end", true)
+  else
+    let c = list.get(str.chars(word), 0) in
+    let rest = str.slice(word, 1, str.len(word)) in
+    let child = if rec.has(trie.children, c) then rec.get(trie.children, c) else trie_new() in
+    let new_child = trie_insert(child, rest) in
+    { children: rec.set(trie.children, c, new_child), is_end: trie.is_end }
+}
+fn trie_search(trie, word) {
+  if word == "" then trie.is_end
+  else
+    let c = list.get(str.chars(word), 0) in
+    let rest = str.slice(word, 1, str.len(word)) in
+    if rec.has(trie.children, c) then trie_search(rec.get(trie.children, c), rest)
+    else false
+}
+
+let t0 = trie_new()
+let t1 = trie_insert(t0, "hello")
+let t2 = trie_insert(t1, "world")
+let t3 = trie_insert(t2, "help")
+test "trie has hello" { trie_search(t3, "hello") }
+test "trie has world" { trie_search(t3, "world") }
+test "trie has help" { trie_search(t3, "help") }
+test "trie no hell" { trie_search(t3, "hell") == false }
+test "trie no xyz" { trie_search(t3, "xyz") == false }
+test "trie empty" { trie_search(t3, "") == false }
+
+// LRU Cache simulation
+fn lru_new(capacity) { { capacity: capacity, items: [], order: [] } }
+fn lru_get(cache, key) {
+  let found = list.find(cache.items, fn(item) { item.key == key }) in
+  if found != null && rec.has(found, "some") then
+    { hit: true, value: found.some.value }
+  else
+    { hit: false, value: null }
+}
+fn lru_put(cache, key, value) {
+  let items_without = list.filter(cache.items, fn(i) { i.key != key }) in
+  let new_items = list.concat([items_without, [{ key: key, value: value }]]) in
+  let trimmed = if list.len(new_items) > cache.capacity
+    then list.drop(new_items, 1)
+    else new_items in
+  { capacity: cache.capacity, items: trimmed, order: cache.order }
+}
+
+let lru = lru_new(3)
+let lru1 = lru_put(lru, "a", 1)
+let lru2 = lru_put(lru1, "b", 2)
+let lru3 = lru_put(lru2, "c", 3)
+test "lru get a" { lru_get(lru3, "a").value == 1 }
+test "lru get b" { lru_get(lru3, "b").value == 2 }
+test "lru miss d" { lru_get(lru3, "d").hit == false }
+let lru4 = lru_put(lru3, "d", 4)
+test "lru evict" { list.len(lru4.items) == 3 }
+test "lru new item" { lru_get(lru4, "d").value == 4 }
