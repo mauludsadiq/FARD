@@ -1,0 +1,65 @@
+
+import("std/list") as list
+import("std/math") as math
+
+// Signal processing fundamentals
+
+// Discrete Fourier Transform (DFT) - simple version
+fn dft_magnitude(xs, k) {
+  let n = list.len(xs) in
+  let re = list.fold(list.range(0, n), 0.0, fn(acc, t) {
+    acc + list.get(xs, t) * math.cos(2.0 * math.pi * k * t / n)
+  }) in
+  let im = list.fold(list.range(0, n), 0.0, fn(acc, t) {
+    acc - list.get(xs, t) * math.sin(2.0 * math.pi * k * t / n)
+  }) in
+  math.sqrt(re * re + im * im)
+}
+
+// DC signal: all ones -> magnitude at k=0 should be n
+let dc_signal = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+test "dft dc k0" { math.abs(dft_magnitude(dc_signal, 0) - 8.0) < 0.001 }
+test "dft dc k1" { dft_magnitude(dc_signal, 1) < 0.001 }
+
+// Convolution
+fn convolve(signal, kernel) {
+  let n = list.len(signal) in
+  let m = list.len(kernel) in
+  list.map(list.range(0, n), fn(i) {
+    list.fold(list.range(0, m), 0.0, fn(acc, j) {
+      if i - j >= 0 && i - j < n then acc + list.get(signal, i-j) * list.get(kernel, j)
+      else acc
+    })
+  })
+}
+let signal = [1.0, 2.0, 3.0, 4.0, 5.0]
+let kernel = [0.5, 0.5]
+let convolved = convolve(signal, kernel)
+test "convolve len" { list.len(convolved) == 5 }
+test "convolve val" { math.abs(list.get(convolved, 1) - 1.5) < 0.001 }
+test "convolve val2" { math.abs(list.get(convolved, 2) - 2.5) < 0.001 }
+
+// Moving average
+fn moving_avg(xs, n) {
+  list.map(list.range(0, list.len(xs)), fn(i) {
+    let window = list.take(list.drop(xs, if i >= n-1 then i-n+1 else 0), if i >= n-1 then n else i+1) in
+    list.fold(window, 0.0, fn(acc, x) { acc + x }) / (list.len(window) + 0.0)
+  })
+}
+let prices = [10.0, 11.0, 12.0, 11.0, 10.0, 11.0, 12.0, 13.0]
+let ma3 = moving_avg(prices, 3)
+test "ma len" { list.len(ma3) == 8 }
+test "ma val" { math.abs(list.get(ma3, 2) - 11.0) < 0.001 }
+
+// Autocorrelation at lag 0
+fn autocorr(xs, lag) {
+  let n = list.len(xs) in
+  let mean = list.fold(xs, 0.0, fn(acc, x) { acc + x }) / n in
+  let num = list.fold(list.range(0, n - lag), 0.0, fn(acc, i) {
+    acc + (list.get(xs, i) - mean) * (list.get(xs, i + lag) - mean)
+  }) in
+  let den = list.fold(xs, 0.0, fn(acc, x) { acc + (x - mean) * (x - mean) }) in
+  if den == 0.0 then 0.0 else num / den
+}
+test "autocorr 0" { math.abs(autocorr([1.0,2.0,3.0,4.0,5.0], 0) - 1.0) < 0.001 }
+test "autocorr neg lag" { autocorr([1.0,2.0,3.0,4.0,5.0], 1) > 0.0 }

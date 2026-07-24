@@ -4294,6 +4294,7 @@ enum Builtin {
     StrFoldChars,
     StrCharAt,
     StrCharCode,
+    StrFromCharCode,
     StrLexTokens,
     Base64Encode, Base64Decode, CsvParse, CsvEncode,
     MapDelete, MapEntries,
@@ -5290,6 +5291,26 @@ fn mk_result_err(e: Val) -> Val {
     m.insert(RESULT_ERR_VAL_KEY.to_string(), e);
     Val::Record(m)
 }
+fn rand_f64() -> f64 {
+    use std::cell::Cell;
+    thread_local! {
+        static STATE: Cell<u64> = Cell::new(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(12345678901234567)
+        );
+    }
+    STATE.with(|s| {
+        let mut x = s.get();
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        s.set(x);
+        (x >> 11) as f64 / (1u64 << 53) as f64
+    })
+}
+
 fn val_eq(a: &Val, b: &Val) -> bool {
     match (a, b) {
         (Val::Int(x), Val::Int(y)) => x == y,
@@ -7760,16 +7781,19 @@ fn call_builtin(
         }
         Builtin::RandFloat => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.float expects 0 args"); }
-            Ok(Val::Float(0.5))
+            Ok(Val::Float(rand_f64()))
         }
         Builtin::RandBool => {
             if args.len() != 0 { bail!("ERROR_RUNTIME rand.bool expects 0 args"); }
-            Ok(Val::Bool(true))
+            Ok(Val::Bool(rand_f64() < 0.5))
         }
         Builtin::RandBytes => {
             if args.len() != 1 { bail!("ERROR_RUNTIME rand.bytes expects 1 arg"); }
             match &args[0] {
-                Val::Int(n) if *n >= 0 => Ok(Val::Bytes(vec![0u8; *n as usize])),
+                Val::Int(n) if *n >= 0 => {
+                    let bytes: Vec<u8> = (0..*n).map(|_| (rand_f64() * 256.0) as u8).collect();
+                    Ok(Val::Bytes(bytes))
+                }
                 _ => bail!("ERROR_RUNTIME rand.bytes expects nonnegative int"),
             }
         }
@@ -10804,11 +10828,11 @@ fn call_builtin(
             let a = vl_to_f64(&args[0])?;
             let b = vl_to_f64(&args[1])?;
             if a.len() != b.len() { bail!("ERROR_BADARG linalg.dot length mismatch"); }
-            Ok(fv(a.iter().zip(b.iter()).map(|(x,y)| x*y).sum()))
+            Ok(Val::Float(a.iter().zip(b.iter()).map(|(x,y)| x*y).sum()))
         }
         Builtin::LinalgNorm => {
             let a = vl_to_f64(&args[0])?;
-            Ok(fv(a.iter().map(|x| x*x).sum::<f64>().sqrt()))
+            Ok(Val::Float(a.iter().map(|x| x*x).sum::<f64>().sqrt()))
         }
         Builtin::LinalgVecAdd => {
             let a = vl_to_f64(&args[0])?;
@@ -11056,6 +11080,14 @@ fn call_builtin(
             _ => bail!("str.char_code expects (str) or (str, int)"),
         }
 
+
+        Builtin::StrFromCharCode => match args.as_slice() {
+            [Val::Int(n)] => {
+                let c = char::from_u32(*n as u32).unwrap_or('?');
+                Ok(Val::Text(c.to_string()))
+            }
+            _ => bail!("str.from_char_code expects (int)"),
+        }
 
         Builtin::StrLexTokens => match args.as_slice() {
             [Val::Text(src)] => {
@@ -12180,10 +12212,8 @@ fn call_builtin(
             Ok(Val::List(xs.iter().map(|&x| qv(q32_ln(x))).collect()))
         }
         Builtin::LinalgVecSum => {
-            let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
-            let mut acc: i128 = 0;
-            for x in xs { acc += x; }
-            Ok(qv(acc))
+            let xs = vl_to_f64(&args[0])?;
+            Ok(Val::Float(xs.iter().sum::<f64>()))
         }
         Builtin::LinalgVecMax => {
             let xs: Vec<i128> = vl_to_q32_vec(&args[0])?;
@@ -13279,6 +13309,7 @@ impl ModuleLoader {
                 m.insert("fold_chars".to_string(), Val::Builtin(Builtin::StrFoldChars));
                 m.insert("char_at".to_string(), Val::Builtin(Builtin::StrCharAt));
                 m.insert("char_code".to_string(), Val::Builtin(Builtin::StrCharCode));
+                m.insert("from_char_code".to_string(), Val::Builtin(Builtin::StrFromCharCode));
                 m.insert("lex_tokens".to_string(), Val::Builtin(Builtin::StrLexTokens));
                 m.insert("url_decode".to_string(), Val::Builtin(Builtin::StrUrlDecode));
                 Ok(m)

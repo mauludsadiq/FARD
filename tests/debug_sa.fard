@@ -1,0 +1,17 @@
+
+import("std/random") as rand
+import("std/list") as list
+
+// Is rand.float seeded fresh each call?
+let r1 = rand.float()
+let r2 = rand.float()
+let r3 = rand.float()
+test "r1 val" { r1 }
+test "r2 val" { r2 }
+test "r3 val" { r3 }
+test "r1 ne r2" { r1 != r2 }
+
+// In a fold
+let vals = list.map(list.range(0, 5), fn(_) { rand.float() })
+test "vals" { vals }
+test "not all same" { list.any(vals, fn(x) { x != list.get(vals, 0) }) }

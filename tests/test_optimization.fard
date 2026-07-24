@@ -1,0 +1,90 @@
+import("std/random") as rand
+
+import("std/list") as list
+import("std/math") as math
+
+// Optimization algorithms
+
+// Hill climbing
+fn hill_climb(f, start, step, iterations) {
+  list.fold(list.range(0, iterations), start, fn(x, _) {
+    let candidates = [x - step, x, x + step] in
+    list.fold(list.tail(candidates), list.head(candidates), fn(best, c) {
+      if f(c) > f(best) then c else best
+    })
+  })
+}
+let max_x = hill_climb(fn(x) { -(x - 3.0) * (x - 3.0) }, 0.0, 0.1, 100)
+test "hill climb max" { math.abs(max_x - 3.0) < 0.5 }
+
+// Simulated annealing (simplified)
+fn simulated_annealing(f, start, temp, cooling, iterations) {
+  list.fold(list.range(0, iterations), { x: start, best: start, temp: temp }, fn(state, _) {
+    let neighbor = state.x + (rand.float() - 0.5) * state.temp in
+    let accept = f(neighbor) > f(state.x) in
+    let new_x = if accept then neighbor else state.x in
+    let new_best = if f(new_x) > f(state.best) then new_x else state.best in
+    { x: new_x, best: new_best, temp: state.temp * cooling }
+  }).best
+}
+let sa_max = simulated_annealing(fn(x) { -(x-5.0)*(x-5.0) }, 0.0, 2.0, 0.99, 200)
+test "sa range" { sa_max > 0.0 && sa_max < 10.0 }
+
+// Linear programming (simple 1D)
+fn minimize_linear(c, lb, ub) {
+  if c >= 0.0 then lb else ub
+}
+test "minimize positive" { minimize_linear(1.0, 0.0, 10.0) == 0.0 }
+test "minimize negative" { minimize_linear(-1.0, 0.0, 10.0) == 10.0 }
+
+// Golden section search
+fn golden_section(f, a, b, tol) {
+  let phi = (math.sqrt(5.0) - 1.0) / 2.0 in
+  let result = while { a: a, b: b }
+    fn(s) { s.b - s.a > tol }
+    fn(s) {
+      let c = s.b - phi * (s.b - s.a) in
+      let d = s.a + phi * (s.b - s.a) in
+      if f(c) < f(d) then { a: s.a, b: d }
+      else { a: c, b: s.b }
+    }
+  in (result.value.a + result.value.b) / 2.0
+}
+let min_x = golden_section(fn(x) { (x - 2.0) * (x - 2.0) }, 0.0, 5.0, 0.001)
+test "golden section" { math.abs(min_x - 2.0) < 0.01 }
+
+// Gradient-free optimization
+fn nelder_mead_1d(f, x0, x1, tol, max_iter) {
+  let result = while { lo: x0, hi: x1, iter: 0 }
+    fn(s) { math.abs(s.hi - s.lo) > tol && s.iter < max_iter }
+    fn(s) {
+      let mid = (s.lo + s.hi) / 2.0 in
+      if f(s.lo) < f(mid) then { lo: s.lo, hi: mid, iter: s.iter + 1 }
+      else { lo: mid, hi: s.hi, iter: s.iter + 1 }
+    }
+  in (result.value.lo + result.value.hi) / 2.0
+}
+let nm_min = nelder_mead_1d(fn(x) { (x-3.0)*(x-3.0) }, 0.0, 6.0, 0.001, 100)
+test "nelder mead" { math.abs(nm_min - 3.0) < 0.1 }
+
+// Fibonacci search
+fn fib_search(f, a, b, n) {
+  let fibs = list.fold(list.range(2, n+1), [1, 1], fn(acc, _) {
+    let len = list.len(acc) in
+    list.concat([acc, [list.get(acc, len-1) + list.get(acc, len-2)]])
+  }) in
+  let result = while { a: a, b: b, k: n }
+    fn(s) { s.k > 1 }
+    fn(s) {
+      let fk = list.get(fibs, s.k) in
+      let fk1 = list.get(fibs, s.k - 1) in
+      let rho = (fk - fk1 + 0.0) / fk in
+      let x1 = s.a + rho * (s.b - s.a) in
+      let x2 = s.b - rho * (s.b - s.a) in
+      if f(x1) < f(x2) then { a: s.a, b: x2, k: s.k - 1 }
+      else { a: x1, b: s.b, k: s.k - 1 }
+    }
+  in (result.value.a + result.value.b) / 2.0
+}
+let fib_min = fib_search(fn(x) { (x-4.0)*(x-4.0) }, 0.0, 8.0, 8)
+test "fib search" { math.abs(fib_min - 4.0) < 0.5 }
