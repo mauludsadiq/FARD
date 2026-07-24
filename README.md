@@ -21,7 +21,13 @@ Installs fardrun to /usr/local/bin. Detects macOS arm64/x86_64 and Linux x86_64 
 
 ## Testing
 
-333 test suites passing across 340 total.
+393 test suites passing across 400 total.
+
+Four critical VM correctness bugs fixed:
+- `vm_val_eq` missing List/Record cases
+- `float` builtins returning bytes instead of floats
+- VM missing Int/Float promotion in arithmetic and comparisons
+- `rand.float/bool/bytes` were hardcoded stubs
 
     for f in tests/test_*.fard; do fardrun test --program "$f"; done
 
