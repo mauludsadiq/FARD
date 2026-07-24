@@ -1,0 +1,74 @@
+
+import("std/str") as str
+import("std/list") as list
+import("std/record") as rec
+import("std/int") as int
+
+fn words(s) { list.filter(str.split(str.lower(s), " "), fn(w) { str.len(w) > 0 }) }
+fn sentences(s) { list.filter(str.split(s, "."), fn(s) { str.len(str.trim(s)) > 0 }) }
+fn word_count(s) { list.len(words(s)) }
+fn char_count(s) { str.len(s) }
+fn unique_words(s) {
+  list.len(rec.keys(list.fold(words(s), {}, fn(acc, w) { rec.set(acc, w, true) })))
+}
+fn avg_word_length(s) {
+  let ws = words(s) in
+  if list.len(ws) == 0 then 0
+  else list.fold(ws, 0, fn(acc, w) { acc + str.len(w) }) / list.len(ws)
+}
+
+let text = "The quick brown fox jumps over the lazy dog"
+test "word count" { word_count(text) == 9 }
+test "char count" { char_count(text) == 43 }
+test "unique words" { unique_words(text) == 8 }
+test "avg word len" { avg_word_length(text) == 3 }
+
+fn most_common_word(s) {
+  let ws = words(s) in
+  let freq = list.fold(ws, {}, fn(acc, w) {
+    let n = if rec.has(acc, w) then rec.get(acc, w) else 0 in
+    rec.set(acc, w, n + 1)
+  }) in
+  let keys = rec.keys(freq) in
+  list.fold(list.tail(keys), list.head(keys), fn(best, k) {
+    if rec.get(freq, k) > rec.get(freq, best) then k else best
+  })
+}
+test "most common" { most_common_word("the cat sat on the mat the") == "the" }
+
+fn truncate(s, n, suffix) {
+  if str.len(s) <= n then s
+  else str.concat(str.slice(s, 0, n), suffix)
+}
+test "truncate long" { truncate("hello world", 5, "...") == "hello..." }
+test "truncate short" { truncate("hi", 10, "...") == "hi" }
+test "truncate exact" { truncate("hello", 5, "...") == "hello" }
+
+fn wrap_lines(s, width) {
+  let ws = str.split(s, " ") in
+  list.fold(ws, { lines: [""], current_len: 0 }, fn(acc, w) {
+    let wl = str.len(w) in
+    if acc.current_len + wl + 1 > width && acc.current_len > 0 then
+      { lines: list.concat([acc.lines, [w]]), current_len: wl }
+    else
+      let last = list.get(acc.lines, list.len(acc.lines) - 1) in
+      let new_last = if acc.current_len == 0 then w else str.concat(last, str.concat(" ", w)) in
+      { lines: list.concat([list.take(acc.lines, list.len(acc.lines) - 1), [new_last]]),
+        current_len: if acc.current_len == 0 then wl else acc.current_len + wl + 1 }
+  }).lines
+}
+let wrapped = wrap_lines("the quick brown fox jumps over", 10)
+test "wrap lines" { list.len(wrapped) > 1 }
+test "wrap first" { str.len(list.get(wrapped, 0)) <= 10 }
+
+fn extract_numbers(s) {
+  let tokens = str.split(s, " ") in
+  list.map(list.filter(tokens, fn(t) {
+    let r = int.parse(str.trim(t)) in r.t == "ok"
+  }), fn(t) {
+    let r = int.parse(str.trim(t)) in r.v
+  })
+}
+test "extract nums" { extract_numbers("buy 3 apples and 5 oranges") == [3, 5] }
+test "extract none" { extract_numbers("no numbers here") == [] }
+test "extract mixed" { list.len(extract_numbers("1 two 3 four 5")) == 3 }

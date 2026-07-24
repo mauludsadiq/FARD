@@ -1,0 +1,74 @@
+import("std/str") as str
+
+import("std/list") as list
+import("std/record") as rec
+
+// Functional data structures
+
+// Finger tree / deque via two stacks
+fn deque_new() { { front: [], back: [] } }
+fn deque_push_front(d, x) { rec.set(d, "front", list.concat([[x], d.front])) }
+fn deque_push_back(d, x) { rec.set(d, "back", list.concat([d.back, [x]])) }
+fn deque_pop_front(d) {
+  if list.len(d.front) > 0 then { value: list.head(d.front), deque: rec.set(d, "front", list.tail(d.front)) }
+  else if list.len(d.back) > 0 then
+    let new_front = list.reverse(d.back) in
+    { value: list.head(new_front), deque: { front: list.tail(new_front), back: [] } }
+  else { value: null, deque: d }
+}
+fn deque_pop_back(d) {
+  if list.len(d.back) > 0 then
+    let n = list.len(d.back) in
+    { value: list.get(d.back, n-1), deque: rec.set(d, "back", list.take(d.back, n-1)) }
+  else if list.len(d.front) > 0 then
+    let n = list.len(d.front) in
+    { value: list.get(d.front, n-1), deque: rec.set(d, "front", list.take(d.front, n-1)) }
+  else { value: null, deque: d }
+}
+fn deque_size(d) { list.len(d.front) + list.len(d.back) }
+
+let d0 = deque_new()
+let d1 = deque_push_back(deque_push_back(deque_push_front(d0, 1), 2), 3)
+test "deque size" { deque_size(d1) == 3 }
+test "deque pop front" { deque_pop_front(d1).value == 1 }
+test "deque pop back" { deque_pop_back(d1).value == 3 }
+
+// Persistent array (via binary tree)
+fn arr_new(size, default) {
+  list.map(list.range(0, size), fn(_) { default })
+}
+fn arr_get(arr, i) { list.get(arr, i) }
+fn arr_set(arr, i, v) {
+  list.map(list.range(0, list.len(arr)), fn(j) { if j == i then v else list.get(arr, j) })
+}
+fn arr_update(arr, i, f) { arr_set(arr, i, f(arr_get(arr, i))) }
+
+let arr = arr_new(5, 0)
+let arr1 = arr_set(arr, 2, 42)
+let arr2 = arr_update(arr1, 2, fn(x) { x * 2 })
+test "arr get" { arr_get(arr1, 2) == 42 }
+test "arr original" { arr_get(arr, 2) == 0 }
+test "arr update" { arr_get(arr2, 2) == 84 }
+test "arr size" { list.len(arr) == 5 }
+
+// Functional map (via sorted association list)
+fn fmap_new() { [] }
+fn fmap_get(m, k) {
+  let found = list.find(m, fn(p) { p.key == k }) in
+  if found != null && rec.has(found, "some") then found.some.value else null
+}
+fn fmap_set(m, k, v) {
+  let filtered = list.filter(m, fn(p) { p.key != k }) in
+  list.concat([filtered, [{ key: k, value: v }]])
+}
+fn fmap_has(m, k) { fmap_get(m, k) != null }
+fn fmap_keys(m) { list.map(m, fn(p) { p.key }) }
+
+let fm = fmap_set(fmap_set(fmap_set(fmap_new(), "c", 3), "a", 1), "b", 2)
+test "fmap get a" { fmap_get(fm, "a") == 1 }
+test "fmap get c" { fmap_get(fm, "c") == 3 }
+test "fmap miss" { fmap_get(fm, "z") == null }
+test "fmap has" { fmap_has(fm, "b") }
+test "fmap keys count" { list.len(fmap_keys(fm)) == 3 }
+test "fmap update" { fmap_get(fmap_set(fm, "a", 99), "a") == 99 }
+test "fmap original" { fmap_get(fm, "a") == 1 }
