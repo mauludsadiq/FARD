@@ -1,0 +1,95 @@
+
+import("std/list") as list
+import("std/str") as str
+import("std/record") as rec
+import("std/random") as rand
+
+// Simple game implementations
+
+// Tic-tac-toe
+fn ttt_new() { { board: list.map(list.range(0, 9), fn(_) { " " }), turn: "X" } }
+fn ttt_move(game, pos) {
+  if list.get(game.board, pos) != " " then game
+  else
+    let new_board = list.map(list.range(0, 9), fn(i) {
+      if i == pos then game.turn else list.get(game.board, i)
+    }) in
+    { board: new_board, turn: if game.turn == "X" then "O" else "X" }
+}
+fn ttt_winner(game) {
+  let b = game.board in
+  let wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]] in
+  let found = list.find(wins, fn(line) {
+    let a = list.get(b, list.get(line, 0)) in
+    a != " " && a == list.get(b, list.get(line, 1)) && a == list.get(b, list.get(line, 2))
+  }) in
+  if found != null && rec.has(found, "some") then
+    list.get(game.board, list.get(found.some, 0))
+  else null
+}
+fn ttt_full(game) { list.all(game.board, fn(c) { c != " " }) }
+
+let g0 = ttt_new()
+let g1 = ttt_move(g0, 4)
+let g2 = ttt_move(g1, 0)
+let g3 = ttt_move(g2, 2)
+let g4 = ttt_move(g3, 1)
+let g5 = ttt_move(g4, 6)
+test "ttt center X" { list.get(g1.board, 4) == "X" }
+test "ttt corner O" { list.get(g2.board, 0) == "O" }
+test "ttt turns" { g1.turn == "O" }
+test "ttt no winner early" { ttt_winner(g3) == null }
+
+let win_game = ttt_move(ttt_move(ttt_move(ttt_move(ttt_move(ttt_new(), 0), 3), 1), 4), 2)
+test "ttt winner X" { ttt_winner(win_game) == "X" }
+
+// Dice game (Yahtzee-like scoring)
+fn score_ones(dice) { list.fold(dice, 0, fn(acc, d) { if d == 1 then acc + 1 else acc }) }
+fn score_sum(dice) { list.fold(dice, 0, fn(acc, d) { acc + d }) }
+fn score_pairs(dice) {
+  let freq = list.fold(dice, {}, fn(acc, d) {
+    let k = str.from_int(d) in
+    rec.set(acc, k, (if rec.has(acc, k) then rec.get(acc, k) else 0) + 1)
+  }) in
+  list.fold(rec.keys(freq), 0, fn(acc, k) {
+    let n = rec.get(freq, k) in
+    acc + (n / 2) * 2 * int.parse(k).v
+  })
+}
+
+import("std/int") as int_mod
+fn score_pairs2(dice) {
+  let freq = list.fold(dice, {}, fn(acc, d) {
+    let k = str.from_int(d) in
+    rec.set(acc, k, (if rec.has(acc, k) then rec.get(acc, k) else 0) + 1)
+  }) in
+  list.fold(rec.keys(freq), 0, fn(acc, k) {
+    let n = rec.get(freq, k) in
+    let r = int_mod.parse(k) in
+    if r.t == "ok" then acc + (n / 2) * 2 * r.v else acc
+  })
+}
+
+let dice = [1, 2, 2, 3, 3]
+test "score ones" { score_ones(dice) == 1 }
+test "score sum" { score_sum(dice) == 11 }
+test "score pairs" { score_pairs2(dice) == 10 }
+test "score all same" { score_sum([6,6,6,6,6]) == 30 }
+
+// Card game (simple)
+fn make_deck() {
+  list.flat_map(["hearts","diamonds","clubs","spades"], fn(suit) {
+    list.map(list.range(1, 14), fn(val) { { suit: suit, value: val } })
+  })
+}
+fn card_name(card) {
+  let v = card.value in
+  let name = if v == 1 then "A" else if v == 11 then "J" else if v == 12 then "Q" else if v == 13 then "K" else str.from_int(v) in
+  str.concat(name, str.concat(" of ", card.suit))
+}
+let deck = make_deck()
+test "deck size" { list.len(deck) == 52 }
+test "deck first" { list.get(deck, 0).suit == "hearts" }
+test "card name ace" { card_name({ suit: "spades", value: 1 }) == "A of spades" }
+test "card name king" { card_name({ suit: "hearts", value: 13 }) == "K of hearts" }
+test "card name num" { card_name({ suit: "clubs", value: 7 }) == "7 of clubs" }
