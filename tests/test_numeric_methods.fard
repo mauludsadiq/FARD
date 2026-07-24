@@ -1,0 +1,64 @@
+
+import("std/math") as math
+import("std/list") as list
+import("std/float") as float
+
+// Numerical methods
+
+// Bisection method for root finding
+fn bisect(f, a, b, tol, max_iter) {
+  let result = while { a: a, b: b, iter: 0 }
+    fn(s) { s.b - s.a > tol && s.iter < max_iter }
+    fn(s) {
+      let mid = (s.a + s.b) / 2.0 in
+      if f(mid) * f(s.a) <= 0.0 then { a: s.a, b: mid, iter: s.iter + 1 }
+      else { a: mid, b: s.b, iter: s.iter + 1 }
+    }
+  in (result.value.a + result.value.b) / 2.0
+}
+let root_x2_minus_2 = bisect(fn(x) { x * x - 2.0 }, 1.0, 2.0, 0.0001, 100)
+test "bisect sqrt2" { math.abs(root_x2_minus_2 - math.sqrt(2.0)) < 0.001 }
+let root_cos = bisect(fn(x) { math.cos(x) }, 1.0, 2.0, 0.0001, 100)
+test "bisect cos" { math.abs(root_cos - math.pi / 2.0) < 0.01 }
+
+// Newton-Raphson
+fn newton_raphson(f, df, x0, tol, max_iter) {
+  let result = while { x: x0, iter: 0 }
+    fn(s) { math.abs(f(s.x)) > tol && s.iter < max_iter }
+    fn(s) { { x: s.x - f(s.x) / df(s.x), iter: s.iter + 1 } }
+  in result.value.x
+}
+let nr_sqrt2 = newton_raphson(fn(x) { x*x - 2.0 }, fn(x) { 2.0*x }, 1.5, 0.0001, 20)
+test "newton sqrt2" { math.abs(nr_sqrt2 - math.sqrt(2.0)) < 0.001 }
+let nr_cbrt8 = newton_raphson(fn(x) { x*x*x - 8.0 }, fn(x) { 3.0*x*x }, 2.0, 0.0001, 20)
+test "newton cbrt8" { math.abs(nr_cbrt8 - 2.0) < 0.001 }
+
+// Numerical differentiation
+fn numerical_deriv(f, x, h) { (f(x + h) - f(x - h)) / (2.0 * h) }
+test "deriv x2" { math.abs(numerical_deriv(fn(x) { x*x }, 3.0, 0.0001) - 6.0) < 0.01 }
+test "deriv sin" { math.abs(numerical_deriv(math.sin, 0.0, 0.0001) - 1.0) < 0.01 }
+test "deriv exp" { math.abs(numerical_deriv(math.exp, 0.0, 0.0001) - 1.0) < 0.01 }
+
+// Numerical integration (trapezoidal)
+fn trapezoid(f, a, b, n) {
+  let h = (b - a) / (n + 0.0) in
+  let sum = list.fold(list.range(1, n), 0.0, fn(acc, i) { acc + f(a + (i + 0.0) * h) }) in
+  h * (f(a) / 2.0 + sum + f(b) / 2.0)
+}
+test "trap x2" { math.abs(trapezoid(fn(x) { x*x }, 0.0, 1.0, 1000) - 1.0/3.0) < 0.001 }
+test "trap sin" { math.abs(trapezoid(math.sin, 0.0, math.pi, 1000) - 2.0) < 0.001 }
+test "trap const" { math.abs(trapezoid(fn(x) { 1.0 }, 0.0, 5.0, 100) - 5.0) < 0.001 }
+
+// Euler method for ODE
+fn euler_ode(f, y0, t0, t_end, dt) {
+  let result = while { t: t0, y: y0 }
+    fn(s) { s.t < t_end }
+    fn(s) { { t: s.t + dt, y: s.y + dt * f(s.t, s.y) } }
+  in result.value.y
+}
+// dy/dt = y, y(0) = 1 => y(t) = e^t
+let euler_exp = euler_ode(fn(t, y) { y }, 1.0, 0.0, 1.0, 0.01)
+test "euler exp" { math.abs(euler_exp - math.e) < 0.1 }
+// dy/dt = -y, y(0) = 1 => y(t) = e^(-t)
+let euler_decay = euler_ode(fn(t, y) { -y }, 1.0, 0.0, 1.0, 0.01)
+test "euler decay" { math.abs(euler_decay - math.exp(-1.0)) < 0.1 }

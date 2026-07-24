@@ -1,0 +1,45 @@
+
+import("std/list") as list
+import("std/math") as math
+import("std/random") as rand
+
+fn factorial(n) { if n <= 1 then 1 else n * factorial(n-1) }
+fn choose(n, k) { factorial(n) / (factorial(k) * factorial(n-k)) }
+
+fn binomial_prob(n, k, p) {
+  choose(n, k) * math.pow(p, k + 0.0) * math.pow(1.0 - p, (n - k) + 0.0)
+}
+test "binom 5" { math.abs(binomial_prob(10, 5, 0.5) - 0.24609375) < 0.001 }
+test "binom sum" { math.abs(list.fold(list.range(0, 5), 0.0, fn(acc, k) { acc + binomial_prob(4, k, 0.5) }) - 1.0) < 0.001 }
+
+fn expected_value(outcomes) {
+  list.fold(outcomes, 0.0, fn(acc, o) { acc + o.value * o.prob })
+}
+let fair_die = list.map(list.range(1, 7), fn(i) { { value: i + 0.0, prob: 1.0/6.0 } })
+test "expected die" { math.abs(expected_value(fair_die) - 3.5) < 0.001 }
+
+fn variance(outcomes) {
+  let ev = expected_value(outcomes) in
+  list.fold(outcomes, 0.0, fn(acc, o) { acc + o.prob * (o.value - ev) * (o.value - ev) })
+}
+test "variance die" { math.abs(variance(fair_die) - 35.0/12.0) < 0.01 }
+
+test "rand float range" { let f = rand.float() in f >= 0.0 && f < 1.0 }
+
+fn normal_pdf(mu, sigma, x) {
+  let z = (x - mu) / sigma in
+  math.exp(-0.5 * z * z) / (sigma * math.sqrt(2.0 * math.pi))
+}
+test "normal peak" { normal_pdf(0.0, 1.0, 0.0) > 0.39 }
+test "normal symmetric" { math.abs(normal_pdf(0.0, 1.0, 1.0) - normal_pdf(0.0, 1.0, -1.0)) < 0.001 }
+
+fn geometric_pmf(p, k) { math.pow(1.0 - p, (k-1) + 0.0) * p }
+test "geometric k1" { math.abs(geometric_pmf(0.5, 1) - 0.5) < 0.001 }
+test "geometric k2" { math.abs(geometric_pmf(0.5, 2) - 0.25) < 0.001 }
+
+fn poisson_pmf(lam, k) {
+  math.pow(lam, k + 0.0) * math.exp(- lam) / (factorial(k) + 0.0)
+}
+test "poisson 0" { math.abs(poisson_pmf(1.0, 0) - 0.3678) < 0.001 }
+test "poisson 1" { math.abs(poisson_pmf(1.0, 1) - 0.3678) < 0.001 }
+test "poisson 2" { math.abs(poisson_pmf(2.0, 2) - 0.2707) < 0.001 }
