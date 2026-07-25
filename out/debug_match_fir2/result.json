@@ -1,1 +1,0 @@
-{"result":{"arms":[{"body":{"t":"lit_int","v":1},"pat_val":{"e":"unsupported_node","t":"err"}},{"body":{"e":"unsupported_node","t":"err"},"pat_val":{"e":"unsupported_node","t":"err"}}],"expr":{"field":"t","obj":{"name":"x","t":"var"},"t":"get_field"},"t":"match_expr"}}

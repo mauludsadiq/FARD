@@ -1,1 +1,0 @@
-{"result":{"next":4,"s":{"0":{"args":[{"id":1,"t":"tvar"}],"ret":{"id":2,"t":"tvar"},"t":"tfun"},"2":"int"},"ty":{"args":[{"id":3,"t":"tvar"}],"ret":"int","t":"tfun"}}}

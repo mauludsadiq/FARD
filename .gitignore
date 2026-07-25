@@ -13,3 +13,4 @@ node_modules/
 *.bak2
 _out_*/
 scratch/
+out/

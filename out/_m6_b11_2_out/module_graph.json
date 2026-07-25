@@ -1,1 +1,0 @@
-{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:2d761370121e0aca71e675095b8faaec93707fb187c384fb60570cab66a2f3ad","id":0,"kind":"rel","path":"out/_m6_b11_2.fard","spec":"out/_m6_b11_2.fard"},{"digest":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","id":1,"kind":"std","spec":"std/list"}]}

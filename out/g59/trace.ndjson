@@ -1,5 +1,0 @@
-{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
-{"cid":"sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03","name":"in.txt","path":"in.txt","t":"artifact_in"}
-{"t":"emit","v":{"n":6,"tag":"g59"}}
-{"cid":"sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03","name":"out.txt","parents":[],"t":"artifact_out"}
-{"cid":"sha256:c243fae938ecded3ef3cef9954de06e76a95fcaa68461c369806a633838d5b3a","t":"module_graph"}

@@ -1,4 +1,0 @@
-{"cid":"sha256:91b5ac684c511e18e1cbd7fd8e2bf0797ab77ee9ae85ee2378041b12ed01445f","kind":"rel","name":"../packages/fard_parse/parse","t":"module_resolve"}
-{"code":"ERROR_PARSE","partial_trace_digest":"sha256:b3bdd82f5f5e2e104948eebd5cb06d0b2ace5ac44e5bb46b5e45a7a427736323","t":"witnessed_failure"}
-{"cid":"sha256:4d189ff2d073981d6bf5be2b7499adc286b26ac1441f2ef95a6ad717d4d9b273","t":"module_graph"}
-{"code":"ERROR_PARSE","message":"ERROR_PARSE unexpected token: Kw(\"as\")","t":"error"}

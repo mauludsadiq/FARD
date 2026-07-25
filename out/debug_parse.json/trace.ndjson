@@ -1,7 +1,0 @@
-{"cid":"sha256:8f314676e1c9f687ae56ae868755046630cdfddb6be14881c0698735f8c8d387","kind":"rel","name":"../packages/fard_parse/parse","t":"module_resolve"}
-{"cid":"sha256:03bd52757041d6d217df1f4ffd173274a7031f731a07f77327a0009936281c89","kind":"rel","name":"../fir/fir","t":"module_resolve"}
-{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
-{"cid":"sha256:e1969d3d0193bc0d79d65c69bb895f85c5b96b9c3b5f182c98c63e71a47b057f","kind":"std","name":"std/str","t":"module_resolve"}
-{"code":"ERROR_RUNTIME","partial_trace_digest":"sha256:18eb964bfb0ad4bebee22e10b40e0f1af7366b5cd61fa879187e5e73f128e6c1","t":"witnessed_failure"}
-{"cid":"sha256:9a294ba4c9105b46fb17041877dbddd0fa86e812a0f63bfb110339a6b95b08c4","t":"module_graph"}
-{"code":"ERROR_RUNTIME","message":"ERROR_RUNTIME vm: GetField on non-record","t":"error"}

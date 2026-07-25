@@ -1,4 +1,0 @@
-{"cid":"sha256:8dc184b2feafba3fedde94337094059d228dd925210020ced0f2901d89e7a58e","kind":"rel","name":"../packages/fard_eval/eval","t":"module_resolve"}
-{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
-{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/record","t":"module_resolve"}
-{"cid":"sha256:09afd6d89448ec0b83642fa7c4b99918ca87534854b9d38d719b8b22964ccc9e","t":"module_graph"}

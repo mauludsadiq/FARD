@@ -1,4 +1,0 @@
-{"cid":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","kind":"std","name":"std/result","t":"module_resolve"}
-{"code":"QMARK_EXPECT_RESULT","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","t":"witnessed_failure"}
-{"cid":"sha256:09a144967284dc78ed893c2a5b82abbe1590aa1cb0876ae865503b4ea155992f","t":"module_graph"}
-{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> spec/tmp/g76_2.fard:3:26: QMARK_EXPECT_RESULT ok missing v","t":"error"}

@@ -1,8 +1,0 @@
-
-fn is_two(x) { x == 2 }
-fn inc(x) { x + 1 }
-
-match 1 {
-  x if (x |> inc |> is_two) => 10,
-  _ => 20,
-}

@@ -1,2 +1,0 @@
-import("std/bytes") as M
-emit("ok")

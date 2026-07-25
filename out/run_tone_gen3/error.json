@@ -1,1 +1,0 @@
-{"code":"ERROR_BADARG","message":"ERROR_BADARG bytes.to_str: bytes are not valid UTF-8","partial_trace_digest":"sha256:f3459c6deb37c186250fb437979698f31fadbecd2dba4fa0e56625247759b99e","span":{"col":79,"file":"apps/tone_gen.fard","line":7},"witnessed_failure":true}

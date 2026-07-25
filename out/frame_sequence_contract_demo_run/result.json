@@ -1,1 +1,0 @@
-{"result":{"artifact_type":"video/x-fard-frame-sequence-contract","bridge_state":"decode_to_frames_contract","frames_dir":"out/frames","pattern":"frame_%06d.ppm","source_artifact_type":"video/x-fard-rawvid","source_path":"out/test_pattern.fvid"}}

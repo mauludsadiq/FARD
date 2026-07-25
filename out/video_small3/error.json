@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"no member 'rawvid_bytes' -- available: encode, frame_rgb_bytes","partial_trace_digest":"sha256:bdfaadf25a663c185b9d6aa3d89f1d78ffa9609df553147ce327434730084a44","span":{"col":73,"file":"apps/video_test_pattern.fard","line":6},"witnessed_failure":true}

@@ -1,1 +1,0 @@
-{"code":"ERROR_PARSE","message":"ERROR_PARSE unexpected token: Kw(\"as\")","partial_trace_digest":"sha256:b3bdd82f5f5e2e104948eebd5cb06d0b2ace5ac44e5bb46b5e45a7a427736323","span":{"byte_end":23,"byte_start":21,"col":22,"file":"tests/../packages/fard_parse/parse.fard","line":489},"witnessed_failure":true}

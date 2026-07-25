@@ -1,4 +1,0 @@
-{"t":"emit","v":{"k":"m3c"}}
-{"cid":"sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881","name":"in0","path":"spec/tmp/m3c_in.bin","t":"artifact_in"}
-{"cid":"sha256:015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862","name":"out0","parents":[{"cid":"sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881","name":"in0"}],"t":"artifact_out"}
-{"cid":"sha256:ba89c27a2ae23c9361beafc131eeca8f5da6616145d50c29a8098ba077e55e98","t":"module_graph"}

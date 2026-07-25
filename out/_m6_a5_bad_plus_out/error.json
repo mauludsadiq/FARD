@@ -1,1 +1,0 @@
-{"code":"ERROR_PARSE","message":"ERROR_PARSE unexpected token: Sym(\"+\")","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","span":{"byte_end":1,"byte_start":0,"col":1,"file":"out/_m6_a5_bad_plus.fard","line":1},"witnessed_failure":true}

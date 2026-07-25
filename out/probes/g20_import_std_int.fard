@@ -1,2 +1,0 @@
-import("std/int") as M
-emit("ok")

@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"  --> tests/probe_read_bytes.fard:7:48: no member 'read_bytes' -- available: delete, exists, make_dir, read_dir, read_text, stat, write_bytes, write_text","partial_trace_digest":"sha256:2855e1d0534a4332ef4e16ca910fccd9fb5bd2b9764c4eea651a6c5783fa9ad9","span":{"col":48,"file":"tests/probe_read_bytes.fard","line":7},"witnessed_failure":true}

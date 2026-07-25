@@ -1,1 +1,0 @@
-{"result":[{"name":"env_empty","t":"def_fn"},{"name":"env_get","t":"def_fn"},{"name":"env_set","t":"def_fn"},{"name":"eval_args","t":"def_fn"},{"name":"apply_builtin","t":"def_fn"},{"name":"make_named_closure","t":"def_fn"},{"name":"bind_params","t":"def_fn"},{"name":"apply_fn","t":"def_fn"},{"name":"a","t":"top_let"},{"name":"eval_bool_or","t":"def_fn"}]}

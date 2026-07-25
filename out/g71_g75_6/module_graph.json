@@ -1,1 +1,0 @@
-{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:716a27076f6fd6852801f7d4c823795dc5784b8963da15752ab47d012900e45b","id":0,"kind":"rel","path":"spec/tmp/g71_g75_kitchen_sink_6.fard","spec":"spec/tmp/g71_g75_kitchen_sink_6.fard"},{"digest":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","id":1,"kind":"std","spec":"std/result"}]}

@@ -1,1 +1,0 @@
-{"result":[{"args":[{"t":"lit_int","v":1},{"t":"lit_bool","v":true}],"name":"int.add","t":"call_builtin"}]}

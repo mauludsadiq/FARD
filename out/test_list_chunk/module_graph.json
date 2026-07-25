@@ -1,1 +1,0 @@
-{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:f37614435c8738b835006beff753af24d26f8a7358d3e701550ceef12e219003","id":0,"kind":"rel","path":"apps/test_list_chunk.fard","spec":"apps/test_list_chunk.fard"},{"digest":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","id":1,"kind":"std","spec":"std/list"}]}

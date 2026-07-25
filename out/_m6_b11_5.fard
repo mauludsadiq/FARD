@@ -1,3 +1,0 @@
-
-fn inc(x) { x + 1 }
-1 |> inc |> std.list.map

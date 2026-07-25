@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"no member 'slice' -- available: all, any, append, apply, chunk, concat, dedupe, dedupe_sorted_int","partial_trace_digest":"sha256:e30e7668a9b4923bb18b10782161999032c1ed23950e171fea98406b8ba1a9cd","span":{"col":62,"file":"apps/gradient_png_64.fard","line":7},"witnessed_failure":true}

@@ -1,1 +1,0 @@
-{"code":"ERROR_BADARG","message":"ERROR_BADARG bytes.to_str: bytes are not valid UTF-8","partial_trace_digest":"sha256:843adb1367c178029bfe2b0045cbddf4bc327f5a7b3bc5f3aaf95487fce4d931","span":{"col":73,"file":"apps/video_test_pattern.fard","line":6},"witnessed_failure":true}

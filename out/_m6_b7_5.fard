@@ -1,4 +1,0 @@
-
-fn bad(x) { {t:"err", e: x} }
-
-(1 |> bad)?

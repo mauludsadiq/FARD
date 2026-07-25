@@ -1,6 +1,0 @@
-{"cid":"sha256:2e4ae191722142a5bfbce4671f5e25f60e9957f326a673cffe03adaf167a438f","kind":"rel","name":"../packages/video-core/src/export_mp4_manifest_artifact","t":"module_resolve"}
-{"cid":"sha256:079b7806d7457a3a32a8dd66d0c8ea06bfdfa5866e33903a291cc43450535630","kind":"std","name":"std/json","t":"module_resolve"}
-{"cid":"sha256:e40c4ab44adf57632dc4a8312892de9002ac28e633b045540bb79ce0cf93c61c","kind":"std","name":"std/artifact","t":"module_resolve"}
-{"cid":"sha256:eed6c32a095bfde3d91f36c1d083cb768d7d62d04032e9269e89e43019e54cd0","kind":"rel","name":"../../video-core/src/mp4_manifest","t":"module_resolve"}
-{"cid":"sha256:17e76c278827002bfca6a709f3eeafbf0e02ebeac8d620aba1a7582585da9fa9","name":"out/test_pattern.mp4.json","parents":[],"t":"artifact_out"}
-{"cid":"sha256:9ffa5822123a4ef8c41af8df7d36da5cfd97402091e0c1afd80274f50cf24799","t":"module_graph"}

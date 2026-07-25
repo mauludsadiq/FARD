@@ -1,2 +1,0 @@
-import("std/fs") as M
-emit("ok")

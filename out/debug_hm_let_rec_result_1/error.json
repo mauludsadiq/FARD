@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"no member 'is_rec' -- available: name, value","partial_trace_digest":"sha256:6528f8fd11a23db723674626e03a6be6d06366101f3891fb3ed544c7315ef0fe","span":{"col":26,"file":"tests/debug_hm_let_rec_result_1.fard","line":27},"witnessed_failure":true}

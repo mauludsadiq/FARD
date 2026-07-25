@@ -1,2 +1,0 @@
-import("std/flow") as M
-emit("ok")

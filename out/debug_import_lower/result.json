@@ -1,1 +1,0 @@
-{"result":[{"alias":"list","path":"std/list","t":"top_import"},{"bindings":[{"name":"x","value":{"args":[{"items":[],"t":"lit_list"}],"fn":{"field":"len","obj":{"name":"list","t":"var"},"t":"get_field"},"t":"call"}}],"body":{"name":"x","t":"var"},"t":"let"}]}

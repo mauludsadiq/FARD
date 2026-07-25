@@ -1,4 +1,0 @@
-{"t":"emit","v":{"k":"m3"}}
-{"code":"ERROR_M3_PARENT_NOT_DECLARED","partial_trace_digest":"sha256:e079adf7e7090527697b455e000c53f2d3f0fd21ad4517eb0227ffdda01d0972","t":"witnessed_failure"}
-{"cid":"sha256:035330edd2c00545491782e22758712fd6417091c401c7b447eaf911d6a1b5a6","t":"module_graph"}
-{"code":"ERROR_M3_PARENT_NOT_DECLARED","message":"ERROR_M3_PARENT_NOT_DECLARED   --> spec/tmp/m3_runtime_safety_missing_parent.fard:4:1: ERROR_M3_PARENT_NOT_DECLARED no_such_parent","t":"error"}

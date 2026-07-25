@@ -1,3 +1,0 @@
-
-fn inc(x) { x + 1 }
-let x = 1 in ((x |> inc) >= 2) && ((x |> inc) <= 2)

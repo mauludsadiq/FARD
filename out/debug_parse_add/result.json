@@ -1,1 +1,0 @@
-{"result":[{"body":{"args":[{"loc":6,"name":"x","t":"var"},{"loc":8,"name":"x","t":"var"}],"loc":6,"name":"int.add","t":"call_builtin"},"name":"double","params":["x"],"t":"def_fn"}]}

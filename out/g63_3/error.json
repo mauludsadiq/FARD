@@ -1,1 +1,0 @@
-{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> spec/tmp/g63_3.fard:4:33: QMARK_EXPECT_RESULT expected result","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","span":{"col":33,"file":"spec/tmp/g63_3.fard","line":4},"witnessed_failure":true}

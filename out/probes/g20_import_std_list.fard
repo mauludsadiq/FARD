@@ -1,2 +1,0 @@
-import("std/list") as M
-emit("ok")

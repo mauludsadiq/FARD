@@ -1,1 +1,0 @@
-{"code":"ERROR_MATCH_NO_ARM","message":"ERROR_MATCH_NO_ARM   --> spec/tmp/m1_reject_match_invalid_shape.fard:7:1: ERROR_MATCH_NO_ARM no match","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","span":{"col":1,"file":"spec/tmp/m1_reject_match_invalid_shape.fard","line":7},"witnessed_failure":true}

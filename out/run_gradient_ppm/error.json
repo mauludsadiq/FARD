@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"no member 'mkdir' -- available: append_file, delete_file, file_exists, list_dir, make_dir, read_file, read_lines, read_stdin","partial_trace_digest":"sha256:e620d69e5c5683fba06098da3a347ade40ce69551855cb8ecc23fc49a444176d","span":{"col":23,"file":"apps/gradient_ppm.fard","line":6},"witnessed_failure":true}

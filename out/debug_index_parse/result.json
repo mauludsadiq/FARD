@@ -1,1 +1,0 @@
-{"result":{"args":[{"idx":{"t":"lit_int","v":0},"loc":6,"obj":{"name":"args","t":"var"},"t":"index"},{"idx":{"t":"lit_int","v":1},"loc":8,"obj":{"name":"args","t":"var"},"t":"index"}],"loc":6,"name":"int.add","t":"call_builtin"}}

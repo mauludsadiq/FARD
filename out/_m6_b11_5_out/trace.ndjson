@@ -1,3 +1,0 @@
-{"code":"ERROR_RUNTIME","partial_trace_digest":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855","t":"witnessed_failure"}
-{"cid":"sha256:744ba0fbd023dede62f696894dfea08f56a994ede1c8f1789a1d21a02f821581","t":"module_graph"}
-{"code":"ERROR_RUNTIME","message":"ERROR_RUNTIME   --> out/_m6_b11_5.fard:3:22: unbound var: std","t":"error"}

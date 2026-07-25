@@ -1,4 +1,0 @@
-
-import("std/list") as L
-
-([1,2,3] |> L.len) + 10

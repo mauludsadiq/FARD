@@ -1,4 +1,0 @@
-
-fn ok_inc(x) { {t:"ok", v: x + 1} }
-
-1 |> ok_inc?

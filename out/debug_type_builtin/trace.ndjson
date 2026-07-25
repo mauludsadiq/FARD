@@ -1,4 +1,0 @@
-{"cid":"sha256:2d128f8f8ea9368d1d88d2ca9a6b1202e3e1a2cf5fd974a11b3a697cca1db448","kind":"std","name":"std/list","t":"module_resolve"}
-{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/record","t":"module_resolve"}
-{"cid":"sha256:7a042d215c7691db332a5136424419f04bbb14be6d1968b4f86e1c65a4d9527a","kind":"std","name":"std/type","t":"module_resolve"}
-{"cid":"sha256:4841169019fab89ec35d6312409bb9b4b7248772cbc7df4a497ef5ecb419bd41","t":"module_graph"}

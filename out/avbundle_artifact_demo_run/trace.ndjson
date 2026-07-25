@@ -1,7 +1,0 @@
-{"cid":"sha256:e0f906430393de64a65b637ba2089f0d49a68af7b95cfb347a9be3e365e87266","kind":"rel","name":"../packages/video-core/src/export_bundle_artifact","t":"module_resolve"}
-{"cid":"sha256:079b7806d7457a3a32a8dd66d0c8ea06bfdfa5866e33903a291cc43450535630","kind":"std","name":"std/json","t":"module_resolve"}
-{"cid":"sha256:e40c4ab44adf57632dc4a8312892de9002ac28e633b045540bb79ce0cf93c61c","kind":"std","name":"std/artifact","t":"module_resolve"}
-{"cid":"sha256:02989792afae022995a50bb01b5c5e620180296e3379a22b2321b8a392cc1daa","kind":"rel","name":"../../video-core/src/avbundle","t":"module_resolve"}
-{"cid":"sha256:8dff43a3f5b27efa3286132064b6e04f5a2acd609e35bdb2907605fb1a984736","kind":"std","name":"std/rec","t":"module_resolve"}
-{"cid":"sha256:cb2e07d3065fb599e5865a5bf94baadae481b0f10e9c715be94538e8cb73ed92","name":"out/demo_bundle.avb.json","parents":[],"t":"artifact_out"}
-{"cid":"sha256:0d7e181c1ade14a4e0e11aade412f7f3fc6bc1af0540ad1441b59eab2187d140","t":"module_graph"}

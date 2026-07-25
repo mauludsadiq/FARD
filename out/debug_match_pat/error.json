@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"no member 'match_pat' -- available: apply_fn, env_empty, env_get, env_set, eval, eval_module, make_closure, make_named_closure","partial_trace_digest":"sha256:1052e9af8a039b765b7dc4ebef8fa9ac626216248b42da0db9962840b64fcdd4","span":{"col":45,"file":"tests/debug_match_pat.fard","line":16},"witnessed_failure":true}

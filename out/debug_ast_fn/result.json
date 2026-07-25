@@ -1,1 +1,0 @@
-{"result":{"body":{"l":{"name":"x","t":"var"},"op":"+","r":{"name":"y","t":"var"},"t":"bin"},"name":"add","params":[{"name":"x"},{"name":"y"}],"t":"fn"}}

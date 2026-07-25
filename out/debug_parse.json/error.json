@@ -1,1 +1,0 @@
-{"code":"ERROR_RUNTIME","message":"vm: GetField on non-record","partial_trace_digest":"sha256:18eb964bfb0ad4bebee22e10b40e0f1af7366b5cd61fa879187e5e73f128e6c1","span":{"col":55,"file":"tests/debug_parse.fard","line":3},"witnessed_failure":true}

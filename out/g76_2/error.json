@@ -1,1 +1,0 @@
-{"code":"QMARK_EXPECT_RESULT","message":"QMARK_EXPECT_RESULT   --> spec/tmp/g76_2.fard:3:26: QMARK_EXPECT_RESULT ok missing v","partial_trace_digest":"sha256:d09bae1abc8cf521e9c5c69c94c95d5757d79905aea9218e179641c03756fbfb","span":{"col":26,"file":"spec/tmp/g76_2.fard","line":3},"witnessed_failure":true}

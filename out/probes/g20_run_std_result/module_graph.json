@@ -1,1 +1,0 @@
-{"edges":[{"from":0,"kind":"import","to":1}],"nodes":[{"digest":"sha256:0931b6dda31611e11bc55da6ec2d03331aecdd862e3813b3c97aa4d673b5be9a","id":0,"kind":"rel","path":"out/probes/g20_import_std_result.fard","spec":"out/probes/g20_import_std_result.fard"},{"digest":"sha256:9afeda62dcd7557c1c493da3dfcec3cfa90aded045f2b35de1998f9fa1440abc","id":1,"kind":"std","spec":"std/result"}]}

@@ -1,1 +1,0 @@
-{"result":{"arms":[{"body":{"t":"int","v":1},"pat":{"t":"str","v":"a"}},{"body":{"t":"int","v":2},"pat":{"t":"str","v":"b"}}],"expr":{"field":"t","obj":{"name":"x","t":"var"},"t":"get"},"t":"match"}}

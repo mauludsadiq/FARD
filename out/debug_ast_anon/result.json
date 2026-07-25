@@ -1,1 +1,0 @@
-{"result":{"name":"f","t":"let","val":{"body":{"l":{"name":"x","t":"var"},"op":"+","r":{"t":"int","v":1},"t":"bin"},"params":[{"name":"x","t":"bind"}],"t":"fn"}}}

@@ -1,4 +1,0 @@
-
-fn mk(x) { [x, x + 1, x + 2] }
-
-let [a, b, c] = (1 |> mk) in a + b + c
