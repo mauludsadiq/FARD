@@ -8,3 +8,6 @@ probe_*.fard
 check_*.fard
 dump_*.fard
 target/
+node_modules/
+*.bak
+*.bak2
