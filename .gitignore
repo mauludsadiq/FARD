@@ -12,3 +12,4 @@ node_modules/
 *.bak
 *.bak2
 _out_*/
+scratch/

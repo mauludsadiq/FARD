@@ -31,30 +31,40 @@ fn parse_kv_line(line) {
   { key: key, v: if str.len(raw) == 0 then null else parse_scalar(raw) }
 }
 
-fn apply_list_item(acc, line) {
-  let existing = if rec.has(acc, "_list") then rec.get(acc, "_list") else []
-  rec.set(acc, "_list", list.concat(existing, [parse_list_item(line)]))
+fn apply_list_item(state, line) {
+  let acc = state.acc in
+  let cur_key = state.cur_key in
+  let item = parse_list_item(line) in
+  if cur_key != null then
+    let existing = if rec.has(acc, cur_key) && type.of(rec.get(acc, cur_key)) == "list"
+      then rec.get(acc, cur_key) else [] in
+    { acc: rec.set(acc, cur_key, list.concat([existing, [item]])), cur_key: cur_key }
+  else
+    let existing = if rec.has(acc, "_list") then rec.get(acc, "_list") else [] in
+    { acc: rec.set(acc, "_list", list.concat([existing, [item]])), cur_key: null }
 }
 
-fn apply_kv(acc, line) {
-  let kv = parse_kv_line(line)
-  rec.set(acc, kv.key, kv.v)
+fn apply_kv(state, line) {
+  let kv = parse_kv_line(line) in
+  { acc: rec.set(state.acc, kv.key, kv.v), cur_key: if kv.v == null then kv.key else null }
 }
 
-fn apply_yaml_line(acc, line) {
-  let trimmed = str.trim(line)
-  if str.len(trimmed) == 0 then acc
-  else if str.starts_with(trimmed, "#") then acc
-  else if is_list_item(line) then apply_list_item(acc, line)
-  else if str.contains(trimmed, ":") then apply_kv(acc, line)
-  else acc
+fn apply_yaml_line(state, line) {
+  let trimmed = str.trim(line) in
+  if str.len(trimmed) == 0 then state
+  else if str.starts_with(trimmed, "#") then state
+  else if is_list_item(line) then apply_list_item(state, line)
+  else if str.contains(trimmed, ":") then apply_kv(state, line)
+  else state
 }
 
 fn parse(src) {
-  let result = list.fold(str.split_lines(src), {}, fn(acc, line) {
-    apply_yaml_line(acc, line)
-  })
-  if rec.has(result, "_list") then rec.get(result, "_list") else result
+  let initial = { acc: {}, cur_key: null } in
+  let result = list.fold(str.split_lines(src), initial, fn(state, line) {
+    apply_yaml_line(state, line)
+  }) in
+  let final = result.acc in
+  if rec.has(final, "_list") then rec.get(final, "_list") else final
 }
 
 fn encode_scalar(v) {

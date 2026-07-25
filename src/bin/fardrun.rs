@@ -3318,17 +3318,31 @@ impl Parser {
                     let tmp = "__destruct_top__".to_string();
                     items.push(Item::Let(tmp.clone(), rhs, None));
                     match pat {
-                        Pat::Obj { items: fields, .. } => {
-                            for (field, sub_pat) in fields {
+                        Pat::Obj { items: fields, rest } => {
+                            for (field, sub_pat) in &fields {
                                 let field_expr = Expr::Get(
                                     Box::new(Expr::Var(tmp.clone())),
                                     field.clone()
                                 );
                                 let bind_name = match sub_pat {
-                                    Pat::Bind(n) => n,
-                                    _ => field,
+                                    Pat::Bind(n) => n.clone(),
+                                    _ => field.clone(),
                                 };
                                 items.push(Item::Let(bind_name, field_expr, None));
+                            }
+                            if let Some(rest_name) = rest {
+                                // Desugar rest as: rec.remove(rec.remove(...tmp..., field1), field2)
+                                let mut rest_expr: Expr = Expr::Var(tmp.clone());
+                                for (field, _) in &fields {
+                                    rest_expr = Expr::Call(
+                                        Box::new(Expr::Get(
+                                            Box::new(Expr::Var("rec".to_string())),
+                                            "remove".to_string()
+                                        )),
+                                        vec![rest_expr, Expr::Str(field.clone())]
+                                    );
+                                }
+                                items.push(Item::Let(rest_name.clone(), rest_expr, None));
                             }
                         }
                         Pat::Bind(name) => {
@@ -7800,7 +7814,10 @@ fn call_builtin(
         Builtin::RandChoice => {
             if args.len() != 1 { bail!("ERROR_RUNTIME rand.choice expects 1 arg"); }
             match &args[0] {
-                Val::List(xs) if !xs.is_empty() => Ok(xs[0].clone()),
+                Val::List(xs) if !xs.is_empty() => {
+                    let idx = (rand_f64() * xs.len() as f64) as usize;
+                    Ok(xs[idx.min(xs.len()-1)].clone())
+                }
                 Val::List(_) => bail!("ERROR_RUNTIME rand.choice expects non-empty list"),
                 _ => bail!("ERROR_RUNTIME rand.choice expects list"),
             }
@@ -7808,7 +7825,15 @@ fn call_builtin(
         Builtin::RandShuffle => {
             if args.len() != 1 { bail!("ERROR_RUNTIME rand.shuffle expects 1 arg"); }
             match &args[0] {
-                Val::List(xs) => Ok(Val::List(xs.clone())),
+                Val::List(xs) => {
+                    let mut result = xs.clone();
+                    let n = result.len();
+                    for i in (1..n).rev() {
+                        let j = (rand_f64() * (i + 1) as f64) as usize;
+                        result.swap(i, j.min(i));
+                    }
+                    Ok(Val::List(result))
+                }
                 _ => bail!("ERROR_RUNTIME rand.shuffle expects list"),
             }
         }

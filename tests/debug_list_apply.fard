@@ -1,6 +1,7 @@
 import("std/list") as list
-import("std/record") as rec
+import("std/str") as str
+import("std/type") as type
 
-let set_fn = rec.get(rec, "set")
-let result = list.apply(set_fn, [{}, "x", 42])
-test "result" { result.x == 42 }
+test "type of str.replace" { type.of(str.replace) }
+let result = list.apply(str.replace, ["hello world", "world", "FARD"])
+test "list.apply builtin" { result == "hello FARD" }
