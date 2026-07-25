@@ -1,9 +1,0 @@
-import("apps/fardparse")  as par
-import("apps/fard_lower") as lower
-import("std/str") as str
-
-let src = "fn add(a, b) { a + b }\nlet x = add(3, 4)\nx"
-let tokens = str.lex_tokens(src)
-let ast    = par.parse_module(tokens, 0)
-let ir     = lower.lower_program(ast.node)
-ir

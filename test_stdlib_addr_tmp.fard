@@ -1,6 +1,0 @@
-import("apps/fard_stdlib") as stdlib
-import("std/array") as array
-
-let buf = array.new()
-let r = stdlib.emit_all_stdlib(buf)
-{ first: array.get(r.addrs, 0), n: array.len(r.addrs), buf_len: array.len(buf) }
