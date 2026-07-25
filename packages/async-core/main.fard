@@ -1,18 +1,50 @@
-// async-core@1.6.0 — Async task primitives and runtime interface for FARD
-// Depends on core-errors.
-// Provides spawn, await, sleep, and task lifecycle management.
+// async-core@2.0.0 — Real async task primitives for FARD, built on
+// std/promise (genuine OS-thread-backed) and std/chan (genuine thread-safe
+// queue). Previously delegated to std/async, whose builtins were no-op or
+// passthrough stubs: spawn ran synchronously, race always returned the
+// first task regardless of completion order, sleep/timeout did nothing.
+//
+// spawn/await/all/race below are genuine fixes with no caveats.
+//
+// sleep/timeout return an error record ({t:"err",...}) instead of silently
+// succeeding, because std/time only exposes whole-second resolution
+// (time.now() truncates to as_secs(); time.Duration.ms(n) does n/1000
+// integer division, collapsing sub-second durations to 0). There is no
+// millisecond clock exposed to FARD anywhere in the runtime, and FARD has
+// no raise/throw primitive for user code — {t:"err",...} is the language's
+// own convention for this (see rejected() below, and std/result).
+// Callers MUST check .t == "err" — see packages/http-retry, which currently
+// does not, and calls std/async directly rather than this module, so it is
+// unaffected by this file either way.
 
-import("std/async") as async
-import("std/list")  as list
+import("std/promise") as promise
+import("std/chan")    as chan
+import("std/list")    as list
 
-fn spawn(f)          { async.spawn(f) }
-fn await(task)       { async.await(task) }
-fn sleep(ms)         { async.sleep(ms) }
-fn yield()           { async.yield() }
-fn all(tasks)        { async.all(tasks) }
-fn race(tasks)       { async.race(tasks) }
-fn timeout(ms, task) { async.timeout(ms, task) }
-fn resolved(v)       { async.resolved(v) }
-fn rejected(e)       { async.rejected(e) }
+fn spawn(f) { promise.spawn(f) }
+
+fn await(task) { promise.await(task) }
+
+fn yield() { null }
+
+fn all(tasks) { list.map(tasks, fn(p) { promise.await(p) }) }
+
+fn race(tasks) {
+  let c = chan.new()
+  let _ = list.map(tasks, fn(p) {
+    promise.spawn(fn() {
+      let v = promise.await(p)
+      chan.send(c, v)
+    })
+  })
+  let r = chan.recv(c)
+  r.v
+}
+
+fn sleep(ms) { { t: "err", v: "ERROR_UNSUPPORTED: async.sleep requires millisecond-precision clock; std/time only supports whole-second resolution" } }
+fn timeout(ms, task) { { t: "err", v: "ERROR_UNSUPPORTED: async.timeout requires millisecond-precision clock; std/time only supports whole-second resolution" } }
+
+fn resolved(v) { v }
+fn rejected(e) { { t: "err", v: e } }
 
 export { spawn, await, sleep, yield, all, race, timeout, resolved, rejected }

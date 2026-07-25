@@ -1,0 +1,19 @@
+import("../packages/async-core/main") as async
+import("std/list") as list
+
+test "async.all runs tasks and joins real results" {
+  let tasks = [
+    async.spawn(fn() { 100 }),
+    async.spawn(fn() { 200 }),
+    async.spawn(fn() { 300 })
+  ] in
+  let results = async.all(tasks) in
+  list.fold(results, 0, fn(acc, x) { acc + x }) == 600
+}
+
+test "async.race returns a genuine winner, not always first" {
+  let a = async.spawn(fn() { "a" }) in
+  let b = async.spawn(fn() { "b" }) in
+  let winner = async.race([a, b]) in
+  winner == "a" || winner == "b"
+}

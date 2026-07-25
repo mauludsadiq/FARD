@@ -1,0 +1,18 @@
+// async-core@1.6.0 — Async task primitives and runtime interface for FARD
+// Depends on core-errors.
+// Provides spawn, await, sleep, and task lifecycle management.
+
+import("std/async") as async
+import("std/list")  as list
+
+fn spawn(f)          { async.spawn(f) }
+fn await(task)       { async.await(task) }
+fn sleep(ms)         { async.sleep(ms) }
+fn yield()           { async.yield() }
+fn all(tasks)        { async.all(tasks) }
+fn race(tasks)       { async.race(tasks) }
+fn timeout(ms, task) { async.timeout(ms, task) }
+fn resolved(v)       { async.resolved(v) }
+fn rejected(e)       { async.rejected(e) }
+
+export { spawn, await, sleep, yield, all, race, timeout, resolved, rejected }
