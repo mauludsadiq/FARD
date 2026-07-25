@@ -1,3 +1,0 @@
-module main
-effect read_file(path: text): bytes
-fn main(): int uses [read_file] { unit }

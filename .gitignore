@@ -11,3 +11,4 @@ target/
 node_modules/
 *.bak
 *.bak2
+_out_*/
